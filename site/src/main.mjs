@@ -343,8 +343,20 @@ async function press(tx) {
     S.busy = "Waiting for the block…"; render();
     const r = await ch.receipt(S.C, hash);
     const n = S.seat.n;
+    // The receipt doesn't say whether the approval landed; the seat does. Anyone could copy the approve
+    // call from the mempool and send it first (it can only do what was signed): then this transaction
+    // reverts, and approval n is on chain in theirs. A smart-account wallet's wrapper may also hide a
+    // revert behind a success. So ask the seat where approval n landed, if it did.
+    const landed = await ch.approvalOnChain(S.C, a.seat, n);
+    if (!landed) {
+      await refresh();
+      throw new Error(`The transaction ${r.status === "reverted" ? "reverted" : "went through"} (${short(hash, 10, 6)}), but approval ${n} didn't land: ` +
+        `the seat is still at key ${n}. The console keeps the approval, and will only ever send this one for key ${n}.`);
+    }
+    const theirs = !!landed.txHash && landed.txHash.toLowerCase() !== hash.toLowerCase();
+    if (theirs) consoleCore.ask({ op: "sent", chainId: S.C.id, seat: a.seat, n, txHash: landed.txHash });
     await refresh();
-    S.last = { n, a, hash, ran: S.safe.nonce > nonceBefore, ok: r.status === "success", m: signed?.m, summary: begin.review.summary };
+    S.last = { n, a, hash: landed.txHash || hash, theirs, ran: S.safe.nonce > nonceBefore, m: signed?.m, summary: begin.review.summary };
     S.step = "done";
   });
   if (S.error) S.step = "ready";
@@ -458,11 +470,22 @@ function pressScreen(s, disabled) {
     el("div", { class: "code" }, r.verify), el("div", { class: "mono small" }, r.safeTxHash))));
   if (r.refuse) { out.push(el("p", { class: "refuse" }, "The console refuses: " + r.refuse)); return out; }
   if (!S.wallet) { out.push(connectButton(disabled, "Connect a wallet to send")); return out; }
-  let ack = r.level !== "red";
+  // This browser found the seat on chain and its console has signed nothing for it: another device's
+  // console holds the ledger. If that device signed with key n and its transaction is still pending, or
+  // was dropped, signing here would be key n's second signature (the danger case). The visitor has to
+  // say that nothing is waiting there before this console signs.
+  const elsewhere = S.home.found && !mine().length && !w;
+  if (elsewhere) out.push(el("p", { class: "note" }, `Another device made this seat. This browser has no record of what its keys signed. ` +
+    `If that device signed with key ${S.seat.n} and the transaction is still pending, or was dropped, signing here would be key ${S.seat.n}'s ` +
+    `second signature: enough to forge a third. Check there that its last approval landed, and use one device per seat.`));
+  const acks = { red: r.level !== "red", elsewhere: !elsewhere };
   const hold = holdButton(w ? `Hold to send approval ${w.n} again` : `Hold to approve with key ${S.seat.n}`, () => press(tx), { red: r.level === "red" });
-  hold.disabled = disabled || !ack;
+  const gate = () => { hold.disabled = disabled || !acks.red || !acks.elsewhere; };
+  const ack = (k, text) => el("label", { class: "small" }, el("input", { type: "checkbox", onchange: (e) => { acks[k] = e.target.checked; gate(); } }), text);
+  gate();
   out.push(el("div", { class: "actions" }, hold,
-    r.level === "red" ? el("label", { class: "small" }, el("input", { type: "checkbox", onchange: (e) => { ack = e.target.checked; hold.disabled = disabled || !ack; } }), "I read the red page") : null,
+    r.level === "red" ? ack("red", "I read the red page") : null,
+    elsewhere ? ack("elsewhere", `Nothing signed with key ${S.seat.n} is waiting on another device`) : null,
     el("button", { class: "reject", type: "button", disabled, onclick: () => { S.tx = { preset: "send", to: S.wallet?.account || "", amount: "0.0001" }; S.error = ""; redraw(); } }, "Reject")));
   out.push(el("p", { class: "small" }, `Holding asks your passkey once. The console signs with key ${S.seat.n}, burns it and names key ${S.seat.n + 1}; your wallet sends it all in one transaction.`));
   return out;
@@ -481,9 +504,12 @@ function redraw() {
 
 function doneScreen() {
   const L = S.last;
-  const out = [el("h3", {}, `Key ${L.n}: signed, sent, burned`),
-    el("p", {}, `${L.summary}. ${L.ran ? "The Safe ran it." : "The approval landed, but the Safe couldn't run it yet (has it the ETH?). Its vote is kept: anyone can run it later."}`),
-    rows([["Transaction", txLink(L.hash)], ["Key now", el("span", { class: "mono" }, `${L.n + 1}: ${short(S.seat?.current || "", 10, 8)}`)]])];
+  const out = [el("h3", {}, `Key ${L.n}: signed, sent, burned`)];
+  if (L.theirs) out.push(el("p", { class: "note" }, `Your transaction reverted: approval ${L.n} had already landed in another transaction. Someone copied it ` +
+    `from the mempool and sent it first. It can only do exactly what you signed, and key ${L.n} is burned either way.`));
+  out.push(el("p", {}, `${L.summary}. ${L.ran ? "The Safe ran it." : L.theirs ? "That transaction only approved; the Safe hasn't run it. Its vote is kept: anyone can run it."
+      : "The approval landed, but the Safe couldn't run it yet (has it the ETH?). Its vote is kept: anyone can run it later."}`),
+    rows([[L.theirs ? "Their transaction" : "Transaction", txLink(L.hash)], ["Key now", el("span", { class: "mono" }, `${L.n + 1}: ${short(S.seat?.current || "", 10, 8)}`)]]));
   if (L.m) {
     out.push(el("p", { class: "small" }, `What key ${L.n} revealed: one value on each of its 67 chains. Below each, the secret steps nobody saw; above, steps anyone can now compute. Nobody can step down a chain, and key ${L.n} will never sign again.`));
     out.push(chainsCanvas(wots.digits(wots.bytes(L.m))));

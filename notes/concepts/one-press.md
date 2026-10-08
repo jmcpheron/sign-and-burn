@@ -47,8 +47,12 @@ sequenceDiagram
    - `seat.approve(...)`, which must succeed;
    - `safe.execTransaction(...)` with the seat's vote as its signature (`r` = the seat, `s` = 0,
      `v` = 1), which may fail.
-8. **The block.** The page reads the seat again and tells the console the chain's new `n`, which marks
-   the approval landed.
+8. **The block.** The receipt alone doesn't say whether the approval landed: someone may have copied
+   the approve call from the mempool and sent it first, so the page's transaction reverted and the
+   approval is in theirs; a smart account's wrapper may hide a revert behind a success. So the page asks
+   the seat where approval `n` landed (`approvedIn`). Landed in another transaction: it says so, and the
+   ledger names that one. Not landed: the console keeps the approval to send again. Then it tells the
+   console the chain's new `n`, which marks the approval landed.
 
 ## Why the Safe transaction may fail
 

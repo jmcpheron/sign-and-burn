@@ -40,8 +40,15 @@ that the passkey signed exactly once.
 - **A lost ledger.** If the browser's site data is cleared after an approval was sent, and that
   transaction is dropped, the console can't tell that key `n` already signed something public. The
   wallet's history is the fallback.
-- **Another device.** A synced passkey on a second device has its own ledger. Two devices pressing at
-  once could each sign key `n`. Use one device at a time.
+- **Another device.** A synced passkey on a second device has its own ledger, empty. The page finds the
+  seat on chain, and until this console has signed for it once, it says that another device's console
+  holds the record and keeps the button held back until the visitor ticks that nothing signed with key
+  `n` is waiting there. It can't check that itself. Use one device per seat.
+- **Someone else's transaction.** Anyone can copy the approve call from the mempool and send it first.
+  It can only do what was signed, so the approval lands all the same, in their transaction, and the
+  page's own reverts. The page asks the seat where approval `n` landed rather than trusting its receipt,
+  says so, and names their transaction. If the seat says `n` hasn't moved, the approval didn't land,
+  whatever the receipt says, and the console keeps it to send again.
 - **A hostile page.** The page sees the seeds. A hostile copy of it could sign anything. See
   [trust](trust.md).
 
