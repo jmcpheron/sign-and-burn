@@ -3,11 +3,17 @@
 Explainers, test plans and a log, in plain words. The design itself is [KICKOFF.md](../KICKOFF.md);
 each folder's README says how its code works.
 
+## Open questions
+
+[research.md](research.md): what may be new, what isn't, and the seven questions that decide
+whether it works, with what was checked for each. [reviews/](reviews/README.md): how contract
+changes are reviewed, and the reviews so far.
+
 ## Concepts: how it works
 
 | | |
 |---|---|
-| [Bunker mode](concepts/bunker-mode.md) | why a key should sign only once, and why a multisig alone doesn't help |
+| [Bunker mode](concepts/bunker-mode.md) | the motivation: why a key should sign only once, and why a multisig alone doesn't help |
 | [The shielded Safe](concepts/shielded-safe.md) | the key ladder, and what anyone can see on chain at each moment |
 | [One-time keys](concepts/one-time-keys.md) | Winternitz signatures: chains, the checksum, and why two signatures are dangerous |
 | [The passkey](concepts/passkey.md) | one tap, two jobs: the curve signature and the PRF seeds |
@@ -43,6 +49,7 @@ each folder's README says how its code works.
 | [2026-10-08: wallets, and the first build](log/2026-10-08-03-wallets-and-first-build.md) | Trezor and WalletConnect, the first real passkey, the first shielded Safe on Base Sepolia |
 | [2026-10-08: the first presses](log/2026-10-08-04-first-presses.md) | three keys burned on Base Sepolia, the attack room live, and a bug it found |
 | [2026-10-08: a read of the page](log/2026-10-08-05-page-review.md) | two gaps found by reading: a second device's empty ledger, and a receipt that says nothing about the approval |
+| [2026-10-08: reframing](log/2026-10-08-06-reframing.md) | what's new and what isn't, the open questions, a review process, and a threat row that said too much |
 
 A new log entry is named `YYYY-MM-DD-NN-topic.md`: what was done, what was found, the numbers, and the
 mistakes.

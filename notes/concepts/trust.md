@@ -8,13 +8,16 @@
 | Copying or replaying an approval | **yes** | The chain, the seat, the Safe and `n` are all in what is signed |
 | A wallet's curve key broken | **yes** | The wallet only pays gas; it approves nothing in the Safe |
 | One key signs two messages, both public, and curves are broken | **no** | [The guardrail](guardrail.md) is the only defence |
-| A bug in the one-time code | **partly** | The curve signature still guards, unless curves are broken too |
+| A bug in the one-time code | **partly** | The curve signature still binds the transaction, but not the next key. Someone who could forge one-time signatures could swap the next key on an approval waiting to land, and take the seat ([open question 1](../research.md#1-complete-authorization)) |
+| A lost ledger (cleared site data, a restored backup), or a synced passkey used on a second device | **no** | The ledger lives in one browser; use one device at a time ([the guardrail](guardrail.md), [open question 3](../research.md#3-signer-state)) |
+| Other owners who can reach the threshold without the seat | **no** | A seat protects a Safe only if every set of owners that meets the threshold includes enough seats. The demo Safe is 1 of 1 ([open question 5](../research.md#5-recovery-and-bypasses)) |
 | A bug in the seat's logic | **maybe not** | Tests, review, and a test network |
 | A hostile copy of the page, or a hostile browser extension | **no** | The page sees the seeds. Check its fingerprint, or run your own copy |
 | A stolen, unlocked device, or a taken-over account that syncs your passkeys | **no** | Whoever has the passkey has both halves |
 | Lost passkey | **stuck** | The seat can't approve again; in a real multisig the other owners replace it |
 
 Nobody has shown that elliptic curves can be broken this way, and nothing here has been audited.
+What is still open: [research.md](../research.md).
 
 ## The page is one folder
 

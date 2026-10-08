@@ -5,7 +5,7 @@
 <h1 align="center">Sign and Burn</h1>
 
 <p align="center">
-  <strong>A Safe owner that signs each approval with a one-time key, then burns it.</strong><br>
+  <strong>One-time keys for an ordinary Safe: a seat whose key changes after every approval.</strong><br>
   Your passkey plays the key. Base Sepolia only.
 </p>
 
@@ -13,14 +13,16 @@
   <a href="https://github.com/jmcpheron/sign-and-burn/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/jmcpheron/sign-and-burn/actions/workflows/ci.yml/badge.svg"></a>
 </p>
 
-Each press of the button approves a real transaction on a test network. One wallet transaction
-reveals the one-time signature, runs the Safe transaction, and names the next key. The key that
-signed is dead; the next one has never been seen, so only its fingerprint is on chain. A Safe
-guarded this way is **shielded**: there is no public key to attack until the moment it is used,
-and by then it is spent.
+The Safe keeps its address, its money and its threshold. One of its owners is a **seat**, and the
+key behind the seat changes after every approval. Each approval needs two signatures from one tap
+of a passkey: a curve signature (P-256) and a one-time signature that rests on SHA-256 alone. One
+wallet transaction reveals the one-time signature, runs the Safe transaction, and names the next
+key. The key that signed is spent; the next one has never signed, so only its fingerprint is on
+chain.
 
-> **Test network only.** This is a rehearsal, not a product. It has not been audited. Nobody has
-> shown that elliptic curves can be broken the way this guards against.
+> **Test network only.** This is a rehearsal, not a product. It has not been audited, and no
+> cryptographer has reviewed it. Nobody has shown that elliptic curves can be broken the way this
+> guards against.
 
 ## Why
 
@@ -29,11 +31,31 @@ mathematics might break elliptic-curve signatures (ECDSA, and P-256 with it) bef
 computers do. Vitalik Buterin agreed it is worth planning for, warned against rushed migrations, and
 said the safe rule for a multisig is for each signer to change their key after each operation.
 
-So, on a real chain:
-- **A key that has never signed is safe from this.** An address is a fingerprint of a public key;
-  the first signature shows the key.
-- **Rotate after every use.** Here each signature retires the key that made it, by itself.
-- **Hash-based signatures are the way out.** They rest on SHA-256 alone, with no curve to break.
+What follows from that:
+- **A key that has never signed shows only a hash of itself.** An address is a fingerprint of a
+  public key; the first signature shows the key.
+- **Rotate after every use.** Here each signature retires the key that made it.
+- **Hash-based signatures don't use curves.** They rest on a hash function alone.
+
+## What's new, and what isn't
+
+None of the cryptography is new. Hash-based one-time signatures, keys derived from one secret, and
+key rotation all have a long history. What may be new is the way they are combined into a working
+approval system around an ordinary Safe:
+- **A stable seat, a changing key.** No new wallet address for each approval.
+- **Two signatures over the same approval.** If curve signatures become forgeable, the one-time
+  signature still has to authorize the transaction.
+- **A console that signs only what it worked out itself**, and shows the transaction before it asks
+  for a signature.
+- **One-time signing that survives ordinary failure.** A key is spent once its signature is public,
+  even if the transaction never lands. So the console remembers what each key signed, sends the same
+  approval again when needed, and never signs a second message with that key. Today this works in
+  one browser on one device. Making it work across devices and backups is the main open problem.
+
+Whether the integration is novel, and whether it gives the protection it aims for, depends on the
+exact construction and on how it behaves when things fail. The questions that decide it, and what
+was checked for each: [notes/research.md](notes/research.md). Changes to the contracts go through
+[a review process](notes/reviews/README.md).
 
 ## How it works
 
@@ -43,7 +65,10 @@ So, on a real chain:
   **one-time signature** (Winternitz, 67 chains of SHA-256, usable once).
 - **Every approval names the next key.** The seat records its fingerprint and accepts nothing else.
 - **One tap does both.** The passkey signs `c` with its curve key, and its PRF extension answers two
-  labels with two seeds: the seeds of keys *n* and *n*+1. Neither secret leaves the passkey.
+  labels with two seeds: the seeds of keys *n* and *n*+1. The passkey's own secrets never leave it;
+  the seeds pass through the page and the console for one request. The curve signature covers `c`
+  but not the next key, because the seeds arrive in the same tap. Only the one-time signature binds
+  the next key ([open question 1](notes/research.md#1-complete-authorization)).
 - **One press, one transaction.** The visitor's wallet sends one Multicall3 call: `seat.approve`, then
   `safe.execTransaction`. The wallet pays gas and approves nothing.
 
@@ -92,10 +117,14 @@ wallet: it builds a shielded Safe, presses twice, runs every attack, and checks 
 | The contracts | 22 Foundry tests: every refusal in the attack table, and two presses against Base Sepolia's real Safe 1.4.1, passkey signer and Multicall3 bytecode, with a real P-256 key. About 660,000 gas a press. |
 | The page | `site/e2e.mjs`, in Chromium against a local chain with that same bytecode: passkey, first key, shielded Safe, two presses, five attacks refused, red pages and refusals, the guardrail across a refused wallet, a reload and a browser with no ledger, a front-run approval, the danger case, and the CSP. |
 
-What wasn't: an audit; a real device's passkey (M3 in the kickoff publishes which ones have PRF);
-Base Sepolia itself (nothing is deployed yet; the page deploys the SeatFactory, at
-`0x0a6514135d34dfd19c3f1a636f3e952caeba3871` on every chain, the first time anyone builds a
-shielded Safe); the console on a real board.
+On Base Sepolia, by hand ([notes/testing/live.md](notes/testing/live.md)): a MacBook's Touch ID
+passkey has PRF; the first shielded Safe was built, which deployed the SeatFactory at
+`0x0a6514135d34dfd19c3f1a636f3e952caeba3871` (its code is byte for byte this repository's build); three
+presses landed and the Safe ran each; the attack room's five attacks were refused by the live seat.
+
+What wasn't: an audit, or a cryptographer's review; any passkey but that one; a real second device; the
+console on a real board. An AI review of the contracts is under way
+([notes/reviews/](notes/reviews/README.md)).
 
 ## The build you're looking at
 
@@ -115,7 +144,7 @@ rebuilds it and fails on any difference. `docs/SHA256SUMS` lists every file for 
 | path | what |
 |---|---|
 | [`KICKOFF.md`](KICKOFF.md) | the design, the decisions, and the test ladder |
-| [`notes/`](notes/) | explainers of each idea, test plans (with the by-hand tests on Base Sepolia), and a dated log |
+| [`notes/`](notes/) | explainers of each idea, [the open questions](notes/research.md), test plans (with the by-hand tests on Base Sepolia), reviews, and a dated log |
 | [`reference/`](reference/) | the one-time keys in Python and JavaScript, and the v1 test vectors |
 | [`contracts/`](contracts/) | `OneTimeKey`, `Seat`, `SeatFactory`, in Foundry |
 | [`console/`](console/) | the console: MicroPython that runs in the page and could run on a board |

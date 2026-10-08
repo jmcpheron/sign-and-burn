@@ -51,6 +51,18 @@ dependency, a network call or a new way to sign without asking first.
       job gets the least permissions it needs.
 11. **No claims of safety.** The docs say what was checked and how, and what wasn't.
 
+## Changing the contracts
+
+Follow [notes/reviews/README.md](notes/reviews/README.md):
+- Name the [open questions](notes/research.md) the change touches, and update that file.
+- Run the tests below.
+- Get an outside review of the exact commit, and answer every finding in a file under
+  `notes/reviews/`.
+- A person pays for a review, from their own wallet. An agent never pays, never holds a key for it,
+  and never asks for one. Write the review's job ID into its file as soon as it is known.
+- Any change to the contracts moves the factory to a new address. A change to what is signed means
+  new tags.
+
 ## Before you push
 
 Run what CI runs for the parts you changed (`.github/workflows/ci.yml`):

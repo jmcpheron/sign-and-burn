@@ -1,4 +1,4 @@
-# Bunker mode: why a key should sign only once
+# Bunker mode: the motivation
 
 ## The worry
 
@@ -13,9 +13,9 @@ Nobody has shown that curves can be broken this way. Sign and Burn is a rehearsa
 
 ## What follows from it
 
-**A key that has never signed is safe.** An Ethereum address is a hash of a public key. The public
-key itself appears only with the first signature. A curve break needs the public key, so an address
-that has never signed has nothing to attack.
+**A key that has never signed shows only a hash of itself.** An Ethereum address is a hash of a
+public key. The public key itself appears only with the first signature. A curve break needs the
+public key, so an address that has never signed has nothing to attack.
 
 **A multisig doesn't help much on its own.** Each owner's signature shows that owner's public key. In
 a 2-of-3, one transaction shows two keys, which is the whole threshold. After that, an attacker who
@@ -35,5 +35,10 @@ test network lets people see the idea working before anyone moves anything.
 
 It keeps the Safe, which already works, and replaces one owner with a [seat](seat.md): a contract
 that needs both a passkey's curve signature and a one-time signature, and names the next one-time
-key in every approval. If curves break, the attacker can make curve signatures, and nothing else.
-See [the shielded Safe](shielded-safe.md) for what is visible on chain at each moment.
+key in every approval. If curves break, an attacker can make curve signatures, but not the one-time
+signature that each approval also needs. See [the shielded Safe](shielded-safe.md) for what is
+visible on chain at each moment.
+
+Whether that holds in practice depends on more than the math: a key must never sign twice, even
+when transactions fail or devices change, and the Safe's other owners must not be able to reach the
+threshold without the seat. Those are [the open questions](../research.md).

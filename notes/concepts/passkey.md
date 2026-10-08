@@ -43,7 +43,8 @@ navigator.credentials.get({
 
 The page learns `seed(n+1)` only during the tap, so the curve signature can't include the next key.
 That is why there are two messages: the passkey signs `c`, and the one-time key signs `m`, which holds
-the next key.
+the next key. So only the one-time signature binds the next key. A way to have the passkey sign it
+too, by working the next key out one press early, is [open question 1](../research.md#1-complete-authorization).
 
 ## User verification, always
 
@@ -55,7 +56,8 @@ user-verified flag anyway, and the console checks it before it packs anything.
 
 From the passkey to the page, into one request to the console, and nowhere else. They are never
 stored, never shown in the serial log, and never logged. The passkey's own secret never leaves the
-passkey at all.
+passkey at all. The seeds do sit in the page's memory for a moment, so a hostile page or extension
+would see them ([trust](trust.md), [open question 4](../research.md#4-secret-handling)).
 
 ## Which passkeys have PRF
 

@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
 <meta name="color-scheme" content="dark light">
-<meta name="description" content="A Safe owner that signs each approval with a one-time key, then burns it. Your passkey plays the key. Base Sepolia only.">
+<meta name="description" content="One-time keys for an ordinary Safe: a seat that keeps its place among the owners while the key behind it changes after every approval. Your passkey plays the key. Base Sepolia only.">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="style.css">
 </head>
@@ -27,11 +27,11 @@
 
 <main>
   <section class="hero">
-    <p class="eyebrow">Bunker mode, rehearsed</p>
-    <h1>A Safe owner that burns its key after every&nbsp;approval.</h1>
-    <p class="lede">Each press approves a real transaction on a test network with a one-time key, and names the next key in the
-      same transaction. The key that signed is dead. The next one has never been seen, so there is nothing yet to attack.
-      If elliptic curves fall, a stolen curve key gets nowhere.</p>
+    <p class="eyebrow">One-time keys for an ordinary Safe</p>
+    <h1>A seat in your Safe whose key changes after every&nbsp;approval.</h1>
+    <p class="lede">The Safe keeps its address, its money and its threshold. One owner is a seat, and each approval it gives
+      needs two signatures from one tap of your passkey: a curve signature, and a one-time signature that rests on SHA-256
+      alone. Each approval names the next key and burns the one that signed. Try it on a test network.</p>
     <ol class="press" aria-label="One press, one transaction">
       <li><b>Reveal</b><span>the one-time signature: key <i>n</i> is spent</span></li>
       <li><b>Run</b><span>the Safe transaction it approves</span></li>
@@ -98,12 +98,13 @@
       <div>
         <h3>One passkey, two jobs, one tap</h3>
         <p>Your passkey signs <code>c</code> with its curve key. In the same tap, its PRF extension turns two labels
-          into two 32-byte seeds, from a secret that never leaves it. The console turns the seed of key <i>n</i> into 67
+          into two 32-byte seeds, from a secret that never leaves it. The seeds pass through this page for one request. The console turns the seed of key <i>n</i> into 67
           secrets and signs <code>m</code>; the seed of key <i>n</i>+1 gives the next fingerprint.</p>
         <pre class="formula">c = sha256("sign-and-burn/approve/v1" ‖ chain ‖ seat ‖ safe ‖ n ‖ safeTxHash)
 m = sha256("sign-and-burn/one-time/v1" ‖ c ‖ nextKey)</pre>
         <p>The passkey signs <code>c</code>; key <i>n</i> signs <code>m</code>. Swap the next key and the one-time
-          signature no longer fits.</p>
+          signature no longer fits. Only the one-time signature binds the next key: the passkey's seeds arrive in the same
+          tap, after its challenge was fixed.</p>
       </div>
       <div>
         <h3>The console</h3>
@@ -121,6 +122,41 @@ m = sha256("sign-and-burn/one-time/v1" ‖ c ‖ nextKey)</pre>
           danger case shows why.</p>
       </div>
     </div>
+    <h3>Why</h3>
+    <p>In October 2026 Justin Drake asked the industry to plan calmly for "bunker mode": AI-accelerated mathematics might
+      break elliptic-curve signatures before quantum computers do. Vitalik Buterin said the safe rule for a multisig is for
+      each signer to change their key after each operation. A key that has never signed shows only a hash of itself. Sign
+      and Burn rehearses that rule on a test network, with a one-time key that can sign only once.</p>
+    <h3>What's new, and what isn't</h3>
+    <div class="cols">
+      <div>
+        <p>None of the cryptography is new. Hash-based one-time signatures, keys derived from one secret, and key rotation all
+          have a long history. What may be new is putting them together around an ordinary Safe: a seat that keeps its place
+          among the owners while the key behind it changes, two signatures over the same approval, and a console that signs
+          only what it worked out itself.</p>
+        <p>The hard part is ordinary failure. A key is spent once its signature is public, even if the transaction never
+          lands: a refused wallet, a crashed tab, a restored backup. The console keeps a ledger so that a key never signs a
+          second message, and it sends the same approval again instead. That works here on one device. Making it work
+          everywhere is the open problem.</p>
+        <p>Whether this is novel, and whether it gives the protection it aims for, depends on the details and on how it
+          behaves when things go wrong. It hasn't been reviewed by a cryptographer.</p>
+      </div>
+      <div>
+        <p><b>Open questions</b></p>
+        <ul>
+          <li><b>Binding.</b> The passkey's signature covers the approval but not the next key. Only the one-time signature
+            binds that.</li>
+          <li><b>Signer state.</b> Lost storage, or a synced passkey on a second device, could let a key sign twice.</li>
+          <li><b>Secrets.</b> The seeds pass through the page for one request.</li>
+          <li><b>Bypasses.</b> In a real multisig, the other owners must not be able to reach the threshold without the
+            seats.</li>
+          <li><b>Cost and prior art.</b> About 900,000 gas a press, all in. It hasn't yet been compared with XMSS, LMS or
+            SLH-DSA, or with earlier hash-based wallets.</li>
+        </ul>
+        <p><a href="https://github.com/jmcpheron/sign-and-burn/blob/main/notes/research.md">All seven questions, with what
+          was checked</a></p>
+      </div>
+    </div>
     <h3>What it protects, and what it doesn't</h3>
     <table class="threats">
       <thead><tr><th>Threat</th><th>Holds?</th><th>Why</th></tr></thead>
@@ -128,7 +164,9 @@ m = sha256("sign-and-burn/one-time/v1" ‖ c ‖ nextKey)</pre>
         <tr><td>Curves broken; the attacker sees everything public</td><td class="ok">yes</td><td>They can make curve signatures, but not the next one-time signature.</td></tr>
         <tr><td>Copying or replaying an approval</td><td class="ok">yes</td><td>The chain, the seat, the Safe and <i>n</i> are all in what is signed.</td></tr>
         <tr><td>One key signs two messages, both public, and curves are broken</td><td class="bad">no</td><td>The guardrail is the only defence.</td></tr>
-        <tr><td>A bug in the one-time code</td><td class="warn">partly</td><td>The curve signature still guards, unless curves are broken too.</td></tr>
+        <tr><td>A bug in the one-time code</td><td class="warn">partly</td><td>The curve signature still binds the transaction, but not the next key. Someone who could forge one-time signatures could swap the next key on an approval waiting to land, and take the seat.</td></tr>
+        <tr><td>A lost ledger (cleared site data, a restored backup), or a synced passkey used on a second device</td><td class="bad">no</td><td>The console's ledger lives in one browser. Use one device at a time.</td></tr>
+        <tr><td>Other owners who can reach the threshold without the seat</td><td class="bad">no</td><td>A seat protects a Safe only if every set of owners that meets the threshold includes enough seats. The demo Safe is 1 of 1.</td></tr>
         <tr><td>A hostile copy of this page, or a hostile browser extension</td><td class="bad">no</td><td>The page sees the seeds. Check its fingerprint, or run your own copy.</td></tr>
         <tr><td>A stolen, unlocked device, or a taken-over account that syncs your passkeys</td><td class="bad">no</td><td>Whoever has the passkey has both halves.</td></tr>
         <tr><td>Lost passkey</td><td class="warn">stuck</td><td>Here the seat can't approve again. In a real multisig the other owners replace it.</td></tr>

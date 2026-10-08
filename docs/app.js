@@ -20476,7 +20476,7 @@ function screen(s) {
     case "nokey":
       out.push(
         el("h3", {}, "Make a passkey"),
-        el("p", {}, "Your passkey is the console's only key. It signs with its curve key, and its PRF extension makes the seeds of your one-time keys. Neither secret ever leaves it."),
+        el("p", {}, "Your passkey is the console's only key. It signs with its curve key, and its PRF extension makes the seeds of your one-time keys. Its private key and its PRF secret never leave it; the seeds pass through this page for one request."),
         el("p", { class: "small" }, "It is made for this site only. Touch ID, Windows Hello, a phone or a security key. It needs PRF: most current ones have it."),
         el(
           "div",

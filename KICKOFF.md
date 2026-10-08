@@ -1,15 +1,22 @@
 # Sign and Burn: Project Kickoff
 
-> **Living draft, started 2026-10-08.** M0 to M2 are built; nothing is deployed yet ([Where it
-> stands](#where-it-stands)). Edit this file as decisions get made, and move settled decisions out of
+> **Living draft, started 2026-10-08.** M0 to M2 are built, and M3 has begun on Base Sepolia ([Where
+> it stands](#where-it-stands)). The open questions that decide whether it works are in
+> [notes/research.md](notes/research.md). Edit this file as decisions get made, and move settled decisions out of
 > [Open decisions](#open-decisions) with a one-line reason.
 
 **Repo:** https://github.com/jmcpheron/sign-and-burn (public)
-**Site:** https://signandburn.app (registered; its DNS and GitHub Pages are not set up yet)
+**Site:** https://signandburn.app (GitHub Pages, from `docs/`)
 
-A demo of a Safe owner that signs each approval with a one-time key and then burns it. Your passkey
-plays the key. Each press of the button approves a real transaction on a test network, and the key
-that signed it is replaced by a fresh one nobody has seen.
+A demo of one-time keys for an ordinary Safe: a seat that keeps its place among the owners while the
+key behind it changes after every approval. Your passkey plays the key. Each press of the button
+approves a real transaction on a test network, and the key that signed it is replaced by a fresh one
+nobody has seen.
+
+None of the cryptography is new. What may be new is the integration: a stable seat with a rotating
+key, two signatures over the same approval, a console that signs only what it worked out itself, and
+one-time signing that survives ordinary failure. Whether that is novel, and whether it protects what
+it aims to, depends on the questions in [notes/research.md](notes/research.md).
 
 ## Where it stands
 
@@ -20,7 +27,7 @@ that signed it is replaced by a fresh one nobody has seen.
 | **M0** Reference | Done. Python and JavaScript agree on the 7 cases of `reference/vectors/v1.json`. The Solidity, the console on MicroPython and the page's JavaScript check the same file. |
 | **M1** Contracts | Done, with one change of plan: instead of an Anvil fork, the integration test puts Base Sepolia's real bytecode (Safe 1.4.1, the passkey signer, Daimo's verifier, Multicall3) at its own addresses, so CI needs no RPC. A weekly job checks that bytecode against the chain. 22 tests, every refusal in the attack table. Gas measured: about 660,000 a press with the P-256 precompile. |
 | **M2** Page, locally | Done. `site/e2e.mjs` runs the whole flow in Chromium with a virtual authenticator that has PRF, against a local chain with that same bytecode, and checks the CSP. |
-| **M3** Base Sepolia | Next. Needs the domain's DNS and GitHub Pages, then real devices. |
+| **M3** Base Sepolia | Begun. The site is live; one passkey (MacBook, Touch ID) has PRF; the first shielded Safe is built and three presses landed; the attack room was refused by the live seat ([notes/testing/live.md](notes/testing/live.md)). Still to do: other platforms, a second device, ten in a row. |
 | **M4**, **M5** | Not started. The attack room's simulations and the danger case are built; the Bunker Box isn't. |
 
 Changes from the first draft, each for a reason found while building:
@@ -65,7 +72,7 @@ rushed migrations, and added that the safe rule for multisigs is for each signer
 key after each operation.
 
 What we take from that, and what this demo shows:
-- **A key that has never signed is safe from this threat.** An address is a fingerprint of a
+- **A key that has never signed shows only a hash of itself.** An address is a fingerprint of a
   public key. The first signature shows the public key.
 - **A multisig doesn't help much on its own.** In a 2-of-3, one transaction shows two keys, which
   is the whole threshold.
@@ -473,7 +480,9 @@ A standing challenge that stands in for a world where curves are broken.
 | Curves broken; the attacker sees everything public | **yes** | They can make curve signatures, but not the next one-time signature |
 | Copying or replaying an approval | **yes** | `n`, the chain, the seat and the Safe are all in what is signed |
 | One key signs two messages, both public, and curves are broken | **no** | The guardrail is the only defence |
-| A bug in our one-time code | **partly** | The curve signature still guards, unless curves are broken too |
+| A bug in our one-time code | **partly** | The curve signature still binds the transaction, but not the next key: someone who could forge one-time signatures could swap the next key on a waiting approval and take the seat |
+| A lost ledger, or a synced passkey used on a second device | **no** | The ledger lives in one browser; one device at a time |
+| Other owners who reach the threshold without the seat | **no** | A seat protects a Safe only if every set of owners that meets the threshold includes enough seats |
 | A bug in the seat's logic | **maybe not** | Tests, review and the test network |
 | A hostile copy of the page, or a malicious browser extension | **no** | The page derives the seeds and builds the messages. The defences are the reproducible build, `SHA256SUMS`, and running your own copy (which then needs its own passkeys). |
 | A stolen device that unlocks the passkey, or a compromised Apple or Google account with synced passkeys | **no** | Whoever has the passkey has both halves |
@@ -540,6 +549,8 @@ The bridge back comes later: the same seat could take approvals from a PicoQuoru
 | The Bunker Box | Amount, refills, rules, whether to publish attempts | to decide in M4 |
 | The console on a board | Web Serial from the page to a Pico or ESP32 running `main.py`, or a board with its own screen | Web Serial first: the same lines, a second check of the hash and the words |
 | A cheaper `OneTimeKey` | Plain Solidity, or assembly with one reused buffer | plain until someone needs the gas |
+| Binding the next key ([research.md](notes/research.md#1-complete-authorization)) | Keep v1, where only the one-time signature binds `nextKey`; or a v2 that works out the next key one press early, so the passkey's challenge includes it | Keep v1 until the baseline review is in; v2 would be new tags and a new seat |
+| Keeping signer state across devices ([research.md](notes/research.md#3-signer-state)) | One device at a time (today); a reservation on chain before revealing; a ledger stored with the passkey (`largeBlob`) | Write down the trade-offs first |
 | WalletConnect | Reown's Ethereum provider (a dependency, its relay hosts and a project ID in the CSP), or not | **Not yet.** Asked for to pay gas from a Trezor, but Trezor Suite's WalletConnect covers Base, not Base Sepolia (its own issue #32283, September 2026). A Trezor already works through a browser wallet that drives it (Rabby, MetaMask, Frame), which the page picks from all EIP-6963 wallets in the browser |
 
 ### Settled
