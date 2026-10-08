@@ -1,6 +1,7 @@
 # contracts
 
-Three small contracts, in Foundry. The design is in [KICKOFF.md](../KICKOFF.md) ("The contracts").
+Three small contracts, in Foundry. The design is in [KICKOFF.md](../KICKOFF.md) ("The contracts"). Read line by line, with
+ideas for more contract code: [notes/concepts/contracts.md](../notes/concepts/contracts.md).
 
 | | |
 |---|---|
