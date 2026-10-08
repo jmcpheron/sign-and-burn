@@ -13,6 +13,13 @@
   <a href="https://github.com/jmcpheron/sign-and-burn/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/jmcpheron/sign-and-burn/actions/workflows/ci.yml/badge.svg"></a>
 </p>
 
+<p align="center">
+  <a href="https://youtu.be/Kjxk-1oTdZg"><img src="https://img.youtube.com/vi/Kjxk-1oTdZg/maxresdefault.jpg" width="560" alt="Sign and Burn: The 1979 Idea That Could Protect Crypto From AI Math Breakthroughs (video, 6 minutes)"></a><br>
+  <sub><b>The idea in six minutes:</b> from elliptic curves and bunker mode to Lamport's one-time
+  signatures, and the seat. The backup seats it mentions (a chip, a sealed seed phrase) aren't built
+  yet.</sub>
+</p>
+
 The Safe keeps its address, its money and its threshold. One of its owners is a **seat**, and the
 key behind the seat changes after every approval. Each approval needs two signatures from one tap
 of a passkey: a curve signature (P-256) and a one-time signature that rests on SHA-256 alone. One
