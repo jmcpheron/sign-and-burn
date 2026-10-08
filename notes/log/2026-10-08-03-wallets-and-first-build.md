@@ -57,4 +57,4 @@ Checked on chain:
 - **The Safe** `0xDB6B5258fD85005F7037B67292E43D130C07D60F`: Safe 1.4.1, 1 of 1, its one owner the
   seat, nonce 0, balance 0.
 
-Next: fund it, and the first press ([testing/live.md](../testing/live.md)).
+Next: fund it, and the first press ([the first presses](2026-10-08-04-first-presses.md)).

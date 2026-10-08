@@ -19236,6 +19236,7 @@ init_isAddress();
 init_concat();
 init_pad();
 init_keccak256();
+init_toFunctionSelector();
 init_formatEther();
 
 // src/console.mjs
@@ -19847,17 +19848,28 @@ async function approvalOnChain(C, seat, k) {
   const [log2] = await C.pc.getLogs({ address: seat, event, args: { n: BigInt(k) }, fromBlock: block, toBlock: block });
   if (!log2) return { k, block };
   const tx = await C.pc.getTransaction({ hash: log2.transactionHash });
-  let args = null;
-  try {
-    const outer = decodeFunctionData({ abi: MULTICALL_ABI, data: tx.input });
-    for (const call2 of outer.args[0]) {
-      if (call2.target.toLowerCase() !== seat.toLowerCase()) continue;
-      const inner = decodeFunctionData({ abi: SEAT_ABI, data: call2.callData });
-      if (inner.functionName === "approve" && inner.args[0] && inner.args[2] === log2.args.nextKey) args = inner.args;
+  return {
+    k,
+    block,
+    txHash: log2.transactionHash,
+    safe: log2.args.safe,
+    safeTxHash: log2.args.safeTxHash,
+    nextKey: log2.args.nextKey,
+    args: findApprove(tx.input, log2.args)
+  };
+}
+var APPROVE = toFunctionSelector(SEAT_ABI.find((x) => x.type === "function" && x.name === "approve")).slice(2);
+function findApprove(input, event) {
+  const hex3 = input.slice(2).toLowerCase();
+  for (let i = hex3.indexOf(APPROVE); i >= 0; i = hex3.indexOf(APPROVE, i + 1)) {
+    if (i % 2) continue;
+    try {
+      const d = decodeFunctionData({ abi: SEAT_ABI, data: "0x" + hex3.slice(i) });
+      if (d.args[1] === event.safeTxHash && d.args[2] === event.nextKey) return d.args;
+    } catch {
     }
-  } catch {
   }
-  return { k, block, txHash: log2.transactionHash, safe: log2.args.safe, safeTxHash: log2.args.safeTxHash, nextKey: log2.args.nextKey, args };
+  return null;
 }
 function safeInitializer(C, seat) {
   return encodeFunctionData({

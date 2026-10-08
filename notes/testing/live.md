@@ -25,14 +25,15 @@ another device must give the same seeds there, or its seat stops working.
 
 | date | wallet | how it sent | build | presses |
 |---|---|---|---|---|
-| 2026-10-08 | not recorded | an EIP-7702 transaction (type 4) to a delegation manager's `redeemDelegations`, which then called Multicall3 | worked: 2,191,473 gas | not yet |
+| 2026-10-08 | not recorded; a smart account (EIP-7702) | the build as a type-4 transaction, the presses as type-2, each to a delegation manager's `redeemDelegations`, which then called Multicall3 | worked: 2,191,473 gas | 3 of 3: the Safe ran each |
 | | MetaMask, a plain account | | | |
 | | Rabby with a Trezor | | | |
 
-For a smart account, watch the first press: such a wallet may set the gas itself. If the done screen
-says the Safe "couldn't run it yet" while the Safe holds enough ETH, the wallet's gas was short for
-the Safe transaction. The approval still landed and the key still burned. Record it here; the fix
-would be a "Run it now" button that sends the Safe transaction alone.
+A smart account sets the gas itself. This one set about 11% over what each press used, and the Safe
+ran every transaction. If a wallet's done screen ever says the Safe "couldn't run it yet" while the
+Safe holds enough ETH, its gas was short for the Safe transaction: the approval still landed and the
+key still burned. Record it here; the fix would be a "Run it now" button that sends the Safe
+transaction alone.
 
 ## The first shielded Safe
 
@@ -61,13 +62,24 @@ cast call 0xCE5fa5f2f0Ae07123c8C5358e9D424d94B74207e "n()(uint64)" --rpc-url htt
 cast call 0xDB6B5258fD85005F7037B67292E43D130C07D60F "nonce()(uint256)" --rpc-url https://sepolia.base.org
 ```
 
-| date | press | key | Safe ran it | gas | wallet | notes |
+| date | press | key | Safe ran it | gas used (limit) | wallet | transaction |
 |---|---|---|---|---|---|---|
-| | 1 | 0 | | | | |
+| 2026-10-08 07:47:58 UTC | 1 | 0 | yes | 888,402 (986,282) | smart account | `0x0fa8860e474e478bd5a4c7ebc3849ae6c6eed7b0b45d1dec85fed68391fcf22d` |
+| 2026-10-08 07:49:16 UTC | 2 | 1 | yes | 916,782 (1,017,747) | smart account | `0x9fb626b32505eb365db9c797d8d73d966be9bdd0d27652627087f88e3cf010c6` |
+| 2026-10-08 07:50:52 UTC | 3 | 2 | yes | 869,611 (965,448) | smart account | `0xdf215b469b38d2d8bcafc4916112515b9801b7e209a87b393c444219fd59cf98` |
+
+870,000 to 920,000 gas a press, all in. The ~660,000 in the contract tests counts the call's execution
+only; the rest is the transaction's base cost (21,000), its calldata (about 57,000), and the smart
+account's own wrapper. At 0.006 gwei, about 0.0000053 test ETH a press. After the three: the seat at key
+3, the Safe's nonce 3, its balance 0.048 ETH.
 
 ## After the first press
 
-- [ ] **The attack room.** All five attacks, against the live seat: each should come back "Refused".
+- [x] **The attack room.** All five attacks against the live seat, by simulation, with approval 2 as
+      read from the chain: replay `BadNextKey`; your own next key, another Safe, another transaction
+      and a curve signature alone, each `BadOneTimeSignature` (2026-10-08). This found a bug first: the
+      page looked for the approval only in a plain Multicall3 call, so with a smart account the attack
+      room stayed empty. It now finds the approval wherever the wallet wrapped it.
 - [ ] **The danger case**, which needs no chain.
 - [ ] **The guardrail, live.** Press, tap, then reject in the wallet. The console should offer only
       "send approval `n` again", with no new tap. Reload: still. Send it: it lands.

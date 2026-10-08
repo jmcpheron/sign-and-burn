@@ -53,6 +53,10 @@ Screenshots go to `site/shots/` (not committed).
 | The page took the first wallet the browser announced | a chooser, remembered by the wallet's `rdns` |
 | The danger case sometimes found no forgery in two million tries: four random signatures can leave long odds | it signs until the odds are about 1 in 50,000, and says how many it took |
 
+Found live, not by the e2e: with a smart-account wallet the attack room stayed empty, because the page
+looked for the approval only in a plain Multicall3 call, and that wallet wraps it. It now searches the
+whole transaction (`findApprove`); `site/test.mjs` checks a plain call and a wrapped one.
+
 And two in the test itself: it matched "Fund it" in the steps bar, which names every step, and it
 first used `eval` inside the page, which the page's CSP refuses.
 
@@ -60,4 +64,5 @@ first used `eval` inside the page, which the page's CSP refuses.
 
 - [ ] Run the e2e against a fork of Base Sepolia too, once in a while, for anything the bytecode copy
       misses.
-- [ ] A smart-account wallet (EIP-7702) in the e2e, if the live test shows it sends differently.
+- [ ] A smart-account wallet in the e2e: the test wallet could wrap its calls in a delegation
+      manager, as the live one did.

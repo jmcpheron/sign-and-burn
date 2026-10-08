@@ -40,6 +40,7 @@ each folder's README says how its code works.
 | [2026-10-08: the page](log/2026-10-08-01-page.md) | the page, and six things the e2e test caught |
 | [2026-10-08: publishing](log/2026-10-08-02-publishing.md) | a private history, a fresh one, Pages and the domain, the live check |
 | [2026-10-08: wallets, and the first build](log/2026-10-08-03-wallets-and-first-build.md) | Trezor and WalletConnect, the first real passkey, the first shielded Safe on Base Sepolia |
+| [2026-10-08: the first presses](log/2026-10-08-04-first-presses.md) | three keys burned on Base Sepolia, the attack room live, and a bug it found |
 
 A new log entry is named `YYYY-MM-DD-NN-topic.md`: what was done, what was found, the numbers, and the
 mistakes.

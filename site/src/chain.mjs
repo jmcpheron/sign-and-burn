@@ -7,7 +7,7 @@
 // viem's client keeps ccipRead off: the page never follows a contract's request to fetch elsewhere.
 import {
   ContractFunctionRevertedError, concat, createPublicClient, createWalletClient, custom, decodeFunctionData, decodeFunctionResult,
-  encodeFunctionData, getAddress, getContractAddress, http, keccak256, pad, parseAbi, zeroAddress,
+  encodeFunctionData, getAddress, getContractAddress, http, keccak256, pad, parseAbi, toFunctionSelector, zeroAddress,
 } from "viem";
 import deployment from "../../contracts/deployment.json" with { type: "json" };
 
@@ -142,16 +142,25 @@ export async function approvalOnChain(C, seat, k) {
   const [log] = await C.pc.getLogs({ address: seat, event, args: { n: BigInt(k) }, fromBlock: block, toBlock: block });
   if (!log) return { k, block };
   const tx = await C.pc.getTransaction({ hash: log.transactionHash });
-  let args = null;
-  try {
-    const outer = decodeFunctionData({ abi: MULTICALL_ABI, data: tx.input });
-    for (const call of outer.args[0]) {
-      if (call.target.toLowerCase() !== seat.toLowerCase()) continue;
-      const inner = decodeFunctionData({ abi: SEAT_ABI, data: call.callData });
-      if (inner.functionName === "approve" && inner.args[0] && inner.args[2] === log.args.nextKey) args = inner.args;
-    }
-  } catch {}
-  return { k, block, txHash: log.transactionHash, safe: log.args.safe, safeTxHash: log.args.safeTxHash, nextKey: log.args.nextKey, args };
+  return { k, block, txHash: log.transactionHash, safe: log.args.safe, safeTxHash: log.args.safeTxHash, nextKey: log.args.nextKey,
+    args: findApprove(tx.input, log.args) };
+}
+
+const APPROVE = toFunctionSelector(SEAT_ABI.find((x) => x.type === "function" && x.name === "approve")).slice(2);
+/** The seat.approve call inside a transaction's input, however the wallet wrapped it: the page's
+ * Multicall3 call, or a smart account's own call around that (EIP-7702 wallets send through a
+ * delegation manager). The approve calldata sits whole somewhere in the input; the one whose next
+ * key and Safe transaction hash are the event's is it. */
+export function findApprove(input, event) {
+  const hex = input.slice(2).toLowerCase();
+  for (let i = hex.indexOf(APPROVE); i >= 0; i = hex.indexOf(APPROVE, i + 1)) {
+    if (i % 2) continue;
+    try {
+      const d = decodeFunctionData({ abi: SEAT_ABI, data: "0x" + hex.slice(i) });
+      if (d.args[1] === event.safeTxHash && d.args[2] === event.nextKey) return d.args;
+    } catch {}
+  }
+  return null;
 }
 
 // ----------------------------------------------------------------------------- the shielded Safe

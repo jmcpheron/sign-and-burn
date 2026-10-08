@@ -1,9 +1,11 @@
 // The page's own JavaScript, without a browser: src/wots.mjs against reference/vectors/v1.json, the
-// danger case's forgery against a throwaway key, and console/cfg.py against what the page reads.
+// danger case's forgery against a throwaway key, finding an approval inside a wallet's transaction,
+// and console/cfg.py against what the page reads.
 //   cd site && npm ci && node test.mjs
 import { readFileSync } from "node:fs";
 import * as w from "./src/wots.mjs";
-import { parseCfg } from "./src/chain.mjs";
+import { encodeFunctionData, parseAbi } from "viem";
+import { MULTICALL_ABI, approveCalls, findApprove, parseCfg } from "./src/chain.mjs";
 
 let fails = 0;
 const check = (what, ok) => { if (!ok) { fails++; console.log("FAIL", what); } };
@@ -28,6 +30,22 @@ const low = w.lowest(ms.map((m) => w.sign(pub, n, seed, m)), ms);
 const got = w.forge(pub, n, low, (t) => w.h(new TextEncoder().encode("forged " + t)));
 check("a forgery from four signatures", got && w.hex(w.recover(pub, n, got.m, got.sig)) === w.hex(key));
 console.log(`danger case: forged after ${got?.tries} tries (estimated chance per try ${w.chance(low).toExponential(1)})`);
+
+// The attack room reads an approval's revealed signature from the transaction that carried it, however
+// the wallet wrapped the page's Multicall3 call: as is, or inside a smart account's own call (EIP-7702
+// wallets send through a delegation manager's redeemDelegations).
+const a = { seat: "0x" + "33".repeat(20), safe: "0x" + "44".repeat(20), safeTxHash: "0x" + "ab".repeat(32), nextKey: "0x" + "cd".repeat(32),
+  oneTime: Array.from({ length: 67 }, (_, j) => "0x" + j.toString(16).padStart(64, "0")), curveSig: "0x" + "ee".repeat(300) };
+const multicall = encodeFunctionData({ abi: MULTICALL_ABI, functionName: "aggregate3", args: [approveCalls(a, { to: a.safe, value: "1", data: "0x", operation: 0 })] });
+const wrapped = encodeFunctionData({ abi: parseAbi(["function redeemDelegations(bytes[] delegations, bytes32[] modes, bytes[] executions)"]),
+  functionName: "redeemDelegations", args: [["0x" + "99".repeat(97)], ["0x" + "00".repeat(32)], ["0x" + "11".repeat(52) + multicall.slice(2)]] });
+const event = { safeTxHash: a.safeTxHash, nextKey: a.nextKey };
+for (const [what, input] of [["a plain Multicall3 call", multicall], ["a smart account's wrapper", wrapped]]) {
+  const got = findApprove(input, event);
+  check(`the approval inside ${what}`, got && got[3][66] === a.oneTime[66] && got[4] === a.curveSig);
+}
+check("not an approval with another next key", findApprove(wrapped, { ...event, nextKey: "0x" + "00".repeat(32) }) === null);
+console.log("findApprove: plain and wrapped");
 
 const cfg = parseCfg(readFileSync(new URL("../console/cfg.py", import.meta.url), "utf8"));
 const dep = JSON.parse(readFileSync(new URL("../contracts/deployment.json", import.meta.url), "utf8"));

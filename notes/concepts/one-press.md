@@ -65,9 +65,14 @@ silently doesn't happen. The e2e test caught this. So the page estimates as if e
 succeed, adds a quarter, and passes that to the wallet.
 
 A wallet that sends through a smart account (EIP-7702, ERC-4337) may wrap the call and set the gas
-itself. The first build on Base Sepolia went this way, through a delegation manager's
-`redeemDelegations`. Whether such a wallet keeps the page's gas for a press is
-[still to see](../testing/live.md).
+itself. The first presses on Base Sepolia went this way, through a delegation manager's
+`redeemDelegations`: that wallet set about 11% over what each press used, and the Safe ran all three
+([live.md](../testing/live.md)). A wallet that set less would still burn the key; the Safe
+transaction would wait.
+
+The wrapper also hides where the approval is: the transaction goes to the wallet's delegation
+manager, not to Multicall3. The page finds the seat's `approve` call wherever it sits in the
+transaction, by its next key and Safe transaction hash, so the attack room works with either.
 
 ## Who pays, and with what
 
