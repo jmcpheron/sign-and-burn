@@ -13,6 +13,7 @@ each folder's README says how its code works.
 | [The passkey](concepts/passkey.md) | one tap, two jobs: the curve signature and the PRF seeds |
 | [The messages](concepts/messages.md) | every hash, byte by byte, and what each field stops |
 | [The seat](concepts/seat.md) | the one contract: what it holds, what `approve` checks, the factory, gas |
+| [The contracts, and ideas for more](concepts/contracts.md) | ours and borrowed, the three read line by line, and contract ideas with their costs |
 | [One press](concepts/one-press.md) | from the button to the block, the wallet's part, and gas |
 | [The console](concepts/console.md) | the MicroPython that decides, in the page and on a board |
 | [The guardrail](concepts/guardrail.md) | one signature per key, ever, and what's left |
