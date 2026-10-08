@@ -1,0 +1,19 @@
+{
+  "name": "sign-and-burn-site",
+  "private": true,
+  "type": "module",
+  "description": "The Sign and Burn page: one folder (docs/) that GitHub Pages serves at signandburn.app, built from here",
+  "license": "MIT",
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "node build.mjs --dev",
+    "test": "node test.mjs",
+    "e2e": "node e2e.mjs"
+  },
+  "devDependencies": {
+    "@micropython/micropython-webassembly-pyscript": "1.26.0",
+    "esbuild": "0.28.2",
+    "playwright-core": "1.56.1",
+    "viem": "2.56.8"
+  }
+}

@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sign and Burn</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="dark light">
+<meta name="description" content="A Safe owner that signs each approval with a one-time key, then burns it. Your passkey plays the key. Base Sepolia only.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="./" aria-label="Sign and Burn, home">
+    <img src="favicon.svg" width="26" height="26" alt="">
+    <span>Sign and Burn</span>
+  </a>
+  <span class="net">Base Sepolia · test network only</span>
+  <nav aria-label="Main">
+    <a href="#how">How it works</a>
+    <a href="#attacks">Attack room</a>
+    <a href="#check">Check this page</a>
+    <a href="https://github.com/jmcpheron/sign-and-burn">Source</a>
+  </nav>
+</header>
+
+<main>
+  <section class="hero">
+    <p class="eyebrow">Bunker mode, rehearsed</p>
+    <h1>A Safe owner that burns its key after every&nbsp;approval.</h1>
+    <p class="lede">Each press approves a real transaction on a test network with a one-time key, and names the next key in the
+      same transaction. The key that signed is dead. The next one has never been seen, so there is nothing yet to attack.
+      If elliptic curves fall, a stolen curve key gets nowhere.</p>
+    <ol class="press" aria-label="One press, one transaction">
+      <li><b>Reveal</b><span>the one-time signature: key <i>n</i> is spent</span></li>
+      <li><b>Run</b><span>the Safe transaction it approves</span></li>
+      <li><b>Rotate</b><span>to key <i>n</i>+1: only its fingerprint goes on chain</span></li>
+    </ol>
+  </section>
+
+  <section class="grid">
+    <div class="console" aria-label="The console">
+      <div class="console-head">
+        <span class="lamp" id="lamp" aria-hidden="true"></span>
+        <strong>Console</strong>
+        <span class="chip">MicroPython <span id="mpv">1.26</span> in WebAssembly</span>
+        <span class="chip board" title="console/main.py serves the same JSON requests over USB serial">Could run on a Raspberry Pi Pico&nbsp;2&nbsp;W or an&nbsp;ESP32</span>
+      </div>
+      <p class="console-stats" id="stats">Starting MicroPython…</p>
+      <div class="screen" id="screen" aria-live="polite"></div>
+      <details class="serial">
+        <summary>Serial: every line the page and the console said</summary>
+        <p class="small">On a board these lines would cross USB. Here they cross into MicroPython. Your passkey's seeds are
+          secret and are never shown.</p>
+        <pre id="log"></pre>
+      </details>
+    </div>
+
+    <aside class="side">
+      <section class="card">
+        <h2>Your shielded Safe</h2>
+        <div id="safe"><p class="muted">Make a passkey to start.</p></div>
+      </section>
+      <section class="card">
+        <h2>The key ladder</h2>
+        <div id="ladder"><p class="muted">Every approval burns a key. They'll show here.</p></div>
+      </section>
+      <section class="card">
+        <h2>History</h2>
+        <div id="history"><p class="muted">Nothing approved yet.</p></div>
+      </section>
+    </aside>
+  </section>
+
+  <section class="wide" id="attacks">
+    <h2>The attack room</h2>
+    <p class="lede">Try to use what your approvals put on chain. Each attack asks the live seat with a simulation
+      (<code>eth_call</code>): it costs nothing and moves nothing. The seat's own error comes back.</p>
+    <div id="attack-list"><p class="muted">The attacks use your last approval. Make one first.</p></div>
+    <div class="danger" id="danger"></div>
+  </section>
+
+  <section class="wide prose" id="how">
+    <h2>How it works</h2>
+    <div class="cols">
+      <div>
+        <h3>The Safe stays the multisig</h3>
+        <p>An ordinary Safe 1.4.1 holds the money, keeps the owners, counts approvals and runs transactions. Nothing about
+          it changes. Its one owner here is a <b>seat</b>: a small contract that approves only when two signatures check out.</p>
+        <ul>
+          <li><b>A curve signature</b> from your passkey, P-256, checked by Safe's own passkey signer.</li>
+          <li><b>A one-time signature</b> that uses only SHA-256, and only once: Winternitz, 67 chains of 15 steps.</li>
+        </ul>
+        <p>Every approval names the next key's fingerprint. The seat records it and accepts nothing else. The key that
+          just signed is dead.</p>
+      </div>
+      <div>
+        <h3>One passkey, two jobs, one tap</h3>
+        <p>Your passkey signs <code>c</code> with its curve key. In the same tap, its PRF extension turns two labels
+          into two 32-byte seeds, from a secret that never leaves it. The console turns the seed of key <i>n</i> into 67
+          secrets and signs <code>m</code>; the seed of key <i>n</i>+1 gives the next fingerprint.</p>
+        <pre class="formula">c = sha256("sign-and-burn/approve/v1" ‖ chain ‖ seat ‖ safe ‖ n ‖ safeTxHash)
+m = sha256("sign-and-burn/one-time/v1" ‖ c ‖ nextKey)</pre>
+        <p>The passkey signs <code>c</code>; key <i>n</i> signs <code>m</code>. Swap the next key and the one-time
+          signature no longer fits.</p>
+      </div>
+      <div>
+        <h3>The console</h3>
+        <p>The console is about a thousand lines of MicroPython: PicoQuorum's Safe hash and decoder, the one-time keys, and
+          a core that answers one JSON line with another. It works out the Safe transaction hash itself, says what the
+          transaction does, refuses what it can't explain, and keeps the guardrail.</p>
+        <p>It runs here in WebAssembly. Copy the same files to a Pico or an ESP32 and <code>main.py</code> answers the
+          same lines over USB. That hasn't been tried on a board yet.</p>
+      </div>
+      <div>
+        <h3>The guardrail: one signature per key</h3>
+        <p>The seat makes sure a spent key is dead. It can't make sure a key signs only once: two signatures with one key
+          reveal enough to forge a third. So the console records every approval before it lets one out, and while key
+          <i>n</i>'s approval waits it signs nothing else with key <i>n</i>, only sends that one again. The attack room's
+          danger case shows why.</p>
+      </div>
+    </div>
+    <h3>What it protects, and what it doesn't</h3>
+    <table class="threats">
+      <thead><tr><th>Threat</th><th>Holds?</th><th>Why</th></tr></thead>
+      <tbody>
+        <tr><td>Curves broken; the attacker sees everything public</td><td class="ok">yes</td><td>They can make curve signatures, but not the next one-time signature.</td></tr>
+        <tr><td>Copying or replaying an approval</td><td class="ok">yes</td><td>The chain, the seat, the Safe and <i>n</i> are all in what is signed.</td></tr>
+        <tr><td>One key signs two messages, both public, and curves are broken</td><td class="bad">no</td><td>The guardrail is the only defence.</td></tr>
+        <tr><td>A bug in the one-time code</td><td class="warn">partly</td><td>The curve signature still guards, unless curves are broken too.</td></tr>
+        <tr><td>A hostile copy of this page, or a hostile browser extension</td><td class="bad">no</td><td>The page sees the seeds. Check its fingerprint, or run your own copy.</td></tr>
+        <tr><td>A stolen, unlocked device, or a taken-over account that syncs your passkeys</td><td class="bad">no</td><td>Whoever has the passkey has both halves.</td></tr>
+        <tr><td>Lost passkey</td><td class="warn">stuck</td><td>Here the seat can't approve again. In a real multisig the other owners replace it.</td></tr>
+      </tbody>
+    </table>
+    <p class="small">Nobody has shown that elliptic curves can be broken this way. This is a rehearsal on a test network, not a
+      response to a known attack, and it has not been audited.</p>
+  </section>
+
+  <section class="wide" id="check">
+    <h2>Check this page</h2>
+    <div class="check">
+      <canvas id="fp-blockie" width="8" height="8" aria-hidden="true"></canvas>
+      <div>
+        <p>The console fingerprint, worked out in your browser over the files it runs:</p>
+        <p class="mono" id="fp">…</p>
+        <p class="small">The README's build table names the same one, and so would a board running these files
+          (<code>node tools/fingerprint.mjs</code>).</p>
+      </div>
+    </div>
+    <ol class="steps">
+      <li><b>Save a copy.</b> <code>SHA256SUMS</code> lists every file in this folder. Fetch them, then <code>sha256sum -c SHA256SUMS</code>.</li>
+      <li><b>Rebuild it.</b> <code>cd site &amp;&amp; npm ci &amp;&amp; npm run build</code> writes the same bytes into <code>docs/</code>. CI checks that on every push.</li>
+      <li><b>Run your copy.</b> <code>python3 -m http.server</code> in the folder, then open <code>localhost:8000</code>. A passkey made there belongs to your copy, and this site can never ask it to sign.</li>
+    </ol>
+  </section>
+</main>
+
+<footer>
+  <p><b>Test network only.</b> Base Sepolia; every other chain is refused. Not audited, and not for real money.</p>
+  <p class="muted">Built on PicoQuorum's console, Safe and its passkey module,
+    and MicroPython. One-time signatures: Lamport, Merkle and Winternitz. MIT code, CC BY-SA docs.
+    <a href="https://github.com/jmcpheron/sign-and-burn">Source</a></p>
+</footer>
+<script type="module" src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,2 @@
+MicroPython 1.26.0, WebAssembly build (@micropython/micropython-webassembly-pyscript).
+MIT License, Copyright (c) 2013-2025 Damien P. George and others. https://github.com/micropython/micropython

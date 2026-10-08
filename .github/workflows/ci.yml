@@ -1,0 +1,102 @@
+# Every test a contributor runs locally (AGENTS.md, "Before you push"), on every pull request and
+# every push to main. Actions are pinned by commit (the version is in the comment); the token can
+# only read.
+#
+#   console    the one-time keys (reference/, Python and JavaScript), and the console on CPython and
+#              on MicroPython 1.26; the README names the console fingerprint
+#   contracts  Foundry 1.8.3: the seat with mocks, then against Base Sepolia's real Safe, passkey
+#              signer and Multicall3 bytecode, without and with the P-256 precompile; the SeatFactory
+#              address in contracts/deployment.json is what this source builds
+#   site       the page's own tests, a rebuild that must equal docs/ as committed, then the whole flow
+#              in Chromium against a local chain
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  console:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - run: npm ci
+        working-directory: site
+      - name: The one-time keys, twice, against reference/vectors/v1.json
+        run: |
+          python3 reference/python/test_vectors.py
+          node reference/js/test-vectors.mjs
+      - name: The console on CPython, then on MicroPython 1.26
+        run: |
+          python3 console/test/run.py
+          node console/test/run-micropython.mjs
+      - name: The README names the console fingerprint
+        run: node tools/fingerprint.mjs --check
+
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.8.3
+      - name: Seat, SeatFactory and OneTimeKey
+        working-directory: contracts
+        run: |
+          forge build
+          forge test -vv
+          FOUNDRY_PROFILE=osaka forge test
+      - name: contracts/deployment.json is what this source builds
+        run: node tools/chain/deployment.mjs --check
+
+  site:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.8.3
+      - run: npm ci
+        working-directory: site
+      - run: npm test
+        working-directory: site
+      - name: Rebuild; it must equal docs/ as committed
+        working-directory: site
+        run: |
+          npm run build
+          if [ -n "$(git status --porcelain -- ../docs)" ]; then
+            git status --short -- ../docs
+            echo "::error::docs/ differs from a rebuild of this commit. Run cd site && npm ci && npm run build, and commit docs/."
+            exit 1
+          fi
+      - name: The whole flow in Chromium, against a local chain
+        working-directory: site
+        run: |
+          npx playwright-core install --with-deps chromium
+          npm run e2e

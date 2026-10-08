@@ -1,0 +1,14 @@
+{
+  "about": "The console image: the files a Pico or an ESP32 would run, by their names there, with their SHA-256. The page fetches exactly these and runs them in MicroPython. Their fingerprint (tools/fingerprint.mjs) is the console fingerprint the page and the README show.",
+  "fingerprint": "a46b5cfdc0f904fa3f14f6b69402b61b766f7a47de7c07e1dc8c025cb1a5163d",
+  "files": {
+    "cfg.py": "c1903ccd1398363e1d5c4de04980aa43568b6f1cc9090b0913fdcd63e1a9cdcc",
+    "core.py": "15cb62ad89c6028c17c7e9864e0804abea39ca5c46a340b76e8c7e08a3ed0376",
+    "decode.py": "efeffa4f75f6e61f2b128266c9b857b5efa54bac248fd3840825158da9be1df9",
+    "keccak.py": "3ec7b2afd6098834aad6e456da8448503d44c0e06cefe816d227ed724ebb6bcf",
+    "main.py": "ce72829c21d7134dc749110f8208ca0f29fe2a8e22df02d0cacc480e9bae0b63",
+    "safe_tx.py": "23928b86d1dd954da9bfe5128f71f0dc1a238a8821b42b834cace79fdbdd7568",
+    "sign_and_burn.py": "666431420f29c460a7de985cc63b79a05bde1f43f9188a6d3e5c2721f0ae7c6f",
+    "webauthn.py": "30a261d02fa730b488ef57ce38b6b126b6512437c147bc3a5be04b74112ec968"
+  }
+}

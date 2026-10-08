@@ -1,0 +1,13 @@
+{
+  "about": "The console image: each file a board runs, by its name there, and where it comes from here. site/build.mjs copies exactly these into docs/console/, tools/fingerprint.mjs hashes them to the console fingerprint, and console/test/run-micropython.mjs runs them on MicroPython 1.26. sign_and_burn.py is the reference implementation itself, not a copy.",
+  "files": {
+    "cfg.py": "console/cfg.py",
+    "core.py": "console/core.py",
+    "decode.py": "console/decode.py",
+    "keccak.py": "console/keccak.py",
+    "main.py": "console/main.py",
+    "safe_tx.py": "console/safe_tx.py",
+    "sign_and_burn.py": "reference/python/sign_and_burn.py",
+    "webauthn.py": "console/webauthn.py"
+  }
+}

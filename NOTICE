@@ -1,0 +1,47 @@
+Sign and Burn
+https://github.com/jmcpheron/sign-and-burn
+Copyright (c) 2026 Jason McPheron, and the contributors named in each file and in the git history.
+
+LICENSES, BY PATH
+
+  Code: MIT (LICENSE)
+    console/, contracts/, reference/ (code), site/, tools/, .github/, and the site built from them,
+    docs/.
+
+  Documentation: CC BY-SA 4.0 (LICENSE-DOCS)
+    README.md, KICKOFF.md, AGENTS.md, and the README in each folder.
+
+WHERE IT COMES FROM
+
+PicoQuorum, by Jason McPheron (MIT): a hardware console that is one owner of a Safe. Sign and Burn
+  began in its repository. console/safe_tx.py, console/decode.py and console/webauthn.py come from
+  its console, site/src/blockies.mjs and site/src/webauthn.mjs from its pages, tools/fingerprint.mjs
+  from its release tools, and console/test/safe_tx.json and passkey.json from its test vectors.
+
+picowallet, by Austin Griffith (https://github.com/austintgriffith/picowallet), MIT,
+  Copyright (c) 2026 Austin Griffith. PicoQuorum began as a fork of it. console/keccak.py comes from
+  it and says so on its first line. It is under the MIT license in LICENSE, which carries Austin
+  Griffith's copyright.
+
+MicroPython (https://micropython.org), MIT, Copyright (c) 2013-2025 Damien P. George and others:
+  the WebAssembly build the page runs the console on, in docs/vendor/micropython/ with its notice.
+
+viem, @noble/hashes, @noble/curves, @scure/base, abitype and ox, MIT: bundled into docs/app.js, with
+  their notices at the end of that file.
+
+Blockies (https://github.com/ethereum/blockies): site/src/blockies.mjs draws the same identicons,
+  ported from its algorithm.
+
+console/cfg.py holds the SafeWebAuthnSignerProxy's creation code (safe-modules passkey 0.2.1,
+  LGPL-3.0, Safe Ecosystem Foundation), so the console can work out a passkey's signer address. It is
+  in the built site too, in docs/console/cfg.py.
+
+tools/chain/code.json holds the runtime bytecode of contracts deployed on Base Sepolia, fetched from
+  the chain, for the tests and the local chain only:
+    Safe 1.4.1 (SafeL2, SafeProxyFactory, CompatibilityFallbackHandler, MultiSendCallOnly), LGPL-3.0,
+      Safe Ecosystem Foundation (https://github.com/safe-global/safe-smart-account)
+    SafeWebAuthnSignerFactory and SafeWebAuthnSignerSingleton (safe-modules passkey 0.2.1), LGPL-3.0,
+      Safe Ecosystem Foundation (https://github.com/safe-global/safe-modules)
+    Daimo's P-256 verifier, MIT (https://github.com/daimo-eth/p256-verifier)
+    Multicall3, MIT (https://github.com/mds1/multicall)
+    The deterministic deployment proxy, Unlicense, Arachnid (https://github.com/Arachnid/deterministic-deployment-proxy)
