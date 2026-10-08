@@ -73,5 +73,9 @@ Say exactly what ran, what didn't, and what you assumed. Don't call a change sec
 
 ## Writing
 
+`notes/` holds the explainers (`concepts/`), the test plans (`testing/`) and a dated log (`log/`).
+Keep them true when you change what they describe. A test done by hand goes in `testing/live.md`'s
+tables; anything found along the way goes in a new log entry, mistakes included.
+
 The docs use short sentences and plain words, and say what was checked and how. Match them, and keep
 comments as dense as the code around them.

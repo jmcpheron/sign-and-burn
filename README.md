@@ -47,7 +47,8 @@ So, on a real chain:
 - **One press, one transaction.** The visitor's wallet sends one Multicall3 call: `seat.approve`, then
   `safe.execTransaction`. The wallet pays gas and approves nothing.
 
-The whole design, with every message's bytes: [KICKOFF.md](KICKOFF.md).
+The whole design, with every message's bytes: [KICKOFF.md](KICKOFF.md). Each idea on its own, in
+plain words: [notes/concepts](notes/README.md).
 
 ### The console
 
@@ -114,6 +115,7 @@ rebuilds it and fails on any difference. `docs/SHA256SUMS` lists every file for 
 | path | what |
 |---|---|
 | [`KICKOFF.md`](KICKOFF.md) | the design, the decisions, and the test ladder |
+| [`notes/`](notes/) | explainers of each idea, test plans (with the by-hand tests on Base Sepolia), and a dated log |
 | [`reference/`](reference/) | the one-time keys in Python and JavaScript, and the v1 test vectors |
 | [`contracts/`](contracts/) | `OneTimeKey`, `Seat`, `SeatFactory`, in Foundry |
 | [`console/`](console/) | the console: MicroPython that runs in the page and could run on a board |
