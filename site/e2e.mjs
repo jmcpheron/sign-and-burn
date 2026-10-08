@@ -7,7 +7,7 @@
 //   the console's refusals and red page → the guardrail: a wallet that says no, then the same
 //   approval sent again with no new signature → the danger case → a browser with no ledger finds
 //   the seat and is warned → a front-run approval lands in someone else's transaction → the CSP
-//   refuses other hosts → a reload keeps the ledger.
+//   refuses other hosts → a reload keeps the ledger. Before all that, the explainers in "How it works".
 //   cd site && npm ci && node e2e.mjs        (Chromium: SAB_CHROMIUM=/path/to/chrome if playwright-core has none)
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, statSync } from "node:fs";
@@ -132,6 +132,12 @@ try {
   check((await page.locator("#fp").innerText()).trim() === want, `the console boots in MicroPython, and the page works out its fingerprint (${stats})`);
   check(await waitFor(/Make a passkey/), "first visit: make a passkey");
   await shot("1-welcome");
+  // the explainers in "How it works", drawn with src/wots.mjs and a throwaway key
+  await page.locator("#chain-demo .bar").nth(64).click();
+  const chainSaid = await page.locator("#chain-demo").innerText();
+  check(/Chain 64 of 67\. Checksum digit 1 of 3/.test(chainSaid) && /the key's fingerprint, so the signature is good/.test(chainSaid), "the chain explainer: pick a chain, and the signature checks out");
+  await page.locator("#once-demo").getByRole("button", { name: "4", exact: true }).click();
+  check(/^1 in [\d,]+$/.test(await page.locator("#once-demo .odds").innerText()), "the only-once explainer: four signatures by one key, and a forger's odds per try");
 
   // 2. a passkey, and key 0 from its PRF
   await click("Make a passkey");

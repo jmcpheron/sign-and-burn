@@ -123,6 +123,29 @@ m = sha256("sign-and-burn/one-time/v1" ‖ c ‖ nextKey)</pre>
           danger case shows why.</p>
       </div>
     </div>
+    <h3>One tap, two jobs, step by step</h3>
+    <figure class="tap">
+      <div class="tap-grid">
+        <span class="tap-h"></span><span class="tap-h">The passkey returns</span><span class="tap-h">The console makes</span><span class="tap-h">On chain, checked by</span>
+        <div class="tap-you"><b>One tap</b><span>user verified</span></div>
+        <div><b>A curve signature</b><span>P-256, over <code>c</code></span></div>
+        <div><b>Checks it</b><span>exactly its own <code>c</code>, user verified</span></div>
+        <div class="tap-chain"><b>Safe's passkey signer</b><span>P-256</span></div>
+        <div><b>seed(<i>n</i>)</b><span>the PRF's answer to salt(<i>n</i>)</span></div>
+        <div class="tap-key"><b>Key <i>n</i> signs <code>m</code></b><span>67 secrets, 67 revealed values</span></div>
+        <div class="tap-chain"><b>OneTimeKey</b><span>walks them up to key <i>n</i>'s fingerprint</span></div>
+        <div><b>seed(<i>n</i>+1)</b><span>the PRF's answer to salt(<i>n</i>+1)</span></div>
+        <div><b>nextKey</b><span>key <i>n</i>+1's fingerprint, named inside <code>m</code></span></div>
+        <div class="tap-chain"><b>The seat</b><span>stores it as the next current key</span></div>
+      </div>
+      <figcaption class="small">The curve half alone gets nowhere: the seat also wants key <i>n</i>'s one-time signature, and
+        <code>m</code> names the next key, so nobody can swap it. The seeds pass through the page and the console for this one
+        request and are never logged or shown.</figcaption>
+    </figure>
+    <h3>A one-time key, up close</h3>
+    <div class="demo" id="chain-demo"><p class="muted">Drawn by the page's script.</p></div>
+    <h3>Why a key signs only once</h3>
+    <div class="demo" id="once-demo"><p class="muted">Drawn by the page's script.</p></div>
     <h3>Why</h3>
     <p>In October 2026 Justin Drake asked the industry to plan calmly for "bunker mode": AI-accelerated mathematics might
       break elliptic-curve signatures before quantum computers do. Vitalik Buterin said the safe rule for a multisig is for
