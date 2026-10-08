@@ -2,9 +2,8 @@
   "note": "SHA-256 of every file site/build.mjs wrote. Rebuild from the same commit (cd site && npm ci && npm run build) and compare. SHA256SUMS lists the same files for sha256sum -c.",
   "console": "a46b5cfdc0f904fa3f14f6b69402b61b766f7a47de7c07e1dc8c025cb1a5163d",
   "files": {
-    "CNAME": "f0931fa2552e5cd1f680511da080421637722e9213b3661e1136da1f2499cfba",
     "LICENSE": "84d2bd6f4370ad28bb4f23f9ebf7a9f659b3ccc043120566711c2325a5858800",
-    "SHA256SUMS": "c668ca0d019574a7bc02c732ec4bf2784c9d468cd55ccf9bceabeeb73c94ba2e",
+    "SHA256SUMS": "cfee60c7bf1c789492b9860071b9e96e1e57ae41edf949d14678925209aa70d5",
     "app.js": "a72e2fc70699008547c05a70cb19993092a0b397a958841949fc9a17bb03cb51",
     "console/cfg.py": "c1903ccd1398363e1d5c4de04980aa43568b6f1cc9090b0913fdcd63e1a9cdcc",
     "console/core.py": "15cb62ad89c6028c17c7e9864e0804abea39ca5c46a340b76e8c7e08a3ed0376",

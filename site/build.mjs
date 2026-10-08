@@ -8,8 +8,8 @@
 //   console/               the console image, exactly the files console/manifest.json lists, by the
 //                          names a board gives them. They hash to the console fingerprint.
 //   vendor/micropython/    MicroPython 1.26 for WebAssembly, from npm, pinned by its hash
-//   CNAME                  signandburn.app, for GitHub Pages
-//   SHA256SUMS, BUILD.json every file's SHA-256, for sha256sum -c, and for CI to compare
+//   CNAME                  signandburn.app, for GitHub Pages, which reads it and doesn't serve it
+//   SHA256SUMS, BUILD.json every served file's SHA-256, for sha256sum -c against the live site
 //
 //   node build.mjs           docs/, Base Sepolia only
 //   node build.mjs --dev     site/dev/, with the local Anvil chain (tools/chain/anvil.mjs, port 8545)
@@ -97,8 +97,11 @@ if (!DEV) {
 // any whose name starts with "_" or "."
 const jekyll = walk(OUT).filter((p) => readFileSync(p).subarray(0, 4).toString() === "---\n" || /(^|\/)[_.]/.test(rel(p)));
 if (jekyll.length) throw new Error(`Jekyll on Pages would rewrite or drop: ${jekyll.map(rel).join(", ")}`);
-put("SHA256SUMS", walk(OUT).map((p) => `${sha256(readFileSync(p))}  ${rel(p)}\n`).join(""));
-const all = walk(OUT);
+// CNAME is GitHub's setting, not the page: Pages reads it for the domain and doesn't serve it, so the
+// lists a visitor checks the live site against leave it out.
+const served = () => walk(OUT).filter((p) => rel(p) !== "CNAME");
+put("SHA256SUMS", served().map((p) => `${sha256(readFileSync(p))}  ${rel(p)}\n`).join(""));
+const all = served();
 put("BUILD.json", JSON.stringify({
   note: "SHA-256 of every file site/build.mjs wrote. Rebuild from the same commit (cd site && npm ci && npm run build) and compare. SHA256SUMS lists the same files for sha256sum -c.",
   console: fp, files: Object.fromEntries(all.map((p) => [rel(p), sha256(readFileSync(p))])),
