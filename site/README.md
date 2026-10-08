@@ -13,7 +13,7 @@ npm run e2e       # the whole flow in Chromium against the local chain (needs an
 | | |
 |---|---|
 | `index.html`, `style.css`, `favicon.svg` | the page; no inline script or style |
-| `src/main.mjs` | the screens, the panels, the attack room |
+| `src/main.mjs` | the screens, the panels, the attack room, the explainers in "How it works" |
 | `src/console.mjs` | MicroPython 1.26 in the page, the console's files, the ledger kept in localStorage, the serial log (seeds never shown) |
 | `src/passkey.mjs` | make a passkey; one tap that signs `c` and answers two PRF salts; find a passkey made elsewhere |
 | `src/chain.mjs` | viem: reads, the shielded Safe's calls, one Multicall3 transaction per press, simulations, the browser's wallets (EIP-6963) |

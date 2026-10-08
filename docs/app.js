@@ -20813,7 +20813,97 @@ function danger(out) {
     el("p", { class: "small" }, "That's why the console signs each key once, ever, and sends the same approval again rather than make a second one.")
   );
 }
+var PIC;
+function pic() {
+  if (PIC) return PIC;
+  const enc2 = new TextEncoder(), pub = pubSeed(84532, "0x" + "de".repeat(20), 0), n = 0n;
+  const seed = h(enc2.encode("a throwaway key for the pictures"));
+  const ms = [1, 2, 3, 4].map((i) => h(enc2.encode(`an example message ${i}`)));
+  const sigs = ms.map((m) => sign(pub, n, seed, m)), key = keyFingerprint(pub, n, seed);
+  return PIC = { pub, n, seed, ms, sigs, key, checks: hex2(recover(pub, n, ms[0], sigs[0])) === hex2(key) };
+}
+function drawChainDemo(j = 0) {
+  const P2 = pic(), box = $("#chain-demo"), d = digits(P2.ms[0]), at = d[j];
+  const refocus = box.contains(document.activeElement) && document.activeElement.classList.contains("bar");
+  const xs = [secret(P2.seed, j)];
+  for (let s = 0; s < STEPS; s++) xs.push(step(P2.pub, P2.n, j, s, xs[s]));
+  const which = j < 64 ? `Digit ${j} of the message m is ${d[j].toString(16)}` : `Checksum digit ${j - 63} of 3 is ${d[j].toString(16)}`;
+  const band = (cls, count, text) => {
+    const b = el("span", { class: cls }, text);
+    b.style.flex = `${count} 1 0`;
+    if (!count) b.hidden = true;
+    return b;
+  };
+  const bars = d.map((x, i) => {
+    const b = el("button", {
+      type: "button",
+      class: "bar" + (i >= 64 ? " ck" : "") + (i === j ? " on" : ""),
+      "aria-pressed": String(i === j),
+      "aria-label": `Chain ${i}: reveals position ${x}`,
+      onclick: () => drawChainDemo(i)
+    });
+    b.style.height = `${(x + 1) / 16 * 100}%`;
+    return b;
+  });
+  const steps = d.reduce((a, x) => a + STEPS - x, 0);
+  box.replaceChildren(
+    el("p", {}, "A chain starts from a secret and hashes it 15 times. Anyone can walk up a chain: hash a value and you get the next. Nobody can walk down: that would mean undoing a hash. A key has 67 chains, and each digit of what it signs reveals one position on one chain."),
+    el("p", { class: "small" }, `Chain ${j} of 67. ${which}, so the signature reveals position ${at}: the value `, el("span", { class: "mono" }, hex2(xs[at]).slice(0, 10) + "…"), "."),
+    el("ol", { class: "chain", "aria-label": `Chain ${j}, positions 0 to 15` }, ...xs.map((x, s) => el(
+      "li",
+      { class: s < at ? "secret" : s === at ? "shown" : "public" },
+      el("span", { class: "pos" }, s === 0 ? "secret" : s === 15 ? "end" : String(s)),
+      el("span", { class: "mono" }, s < at ? "····" : hex2(x).slice(2, 6))
+    ))),
+    el("div", { class: "bands", "aria-hidden": "true" }, band("", at, "still secret"), band("", 1, ""), band("up", 15 - at, `anyone can hash up ${15 - at} times`)),
+    el("div", { class: "bars" }, ...bars),
+    el(
+      "div",
+      { class: "legend" },
+      el("span", {}, el("i", { class: "lg-public" }), "64 chains for m"),
+      el("span", {}, el("i", { class: "lg-shown" }), "3 for the checksum"),
+      el("span", {}, "Bar height: the position revealed. Pick a chain.")
+    ),
+    el("p", { class: "small" }, `To check a signature, the seat walks every revealed value the rest of the way up, ${steps} SHA-256 steps for this one, and hashes the 67 ends. ` + (P2.checks ? `Here they give ${short(hex2(P2.key), 10, 6)}, the key's fingerprint, so the signature is good.` : "Here they don't give the key's fingerprint: that is a bug."))
+  );
+  if (refocus) box.querySelectorAll(".bar")[j].focus();
+}
+function drawOnceDemo(k = 2) {
+  const P2 = pic(), box = $("#once-demo"), low = lowest(P2.sigs.slice(0, k), P2.ms.slice(0, k));
+  const refocus = box.contains(document.activeElement);
+  const known = low.reduce((a, l) => a + 16 - l.at, 0), share = Math.round(known / (16 * CHAINS) * 100);
+  const p = chance(low), tries = 1 / p;
+  const big = tries < 1e7 ? `1 in ${Number(tries.toPrecision(2)).toLocaleString("en-US")}` : `1 in ${tries.toExponential(1).replace(/e\+(\d+)/, " × 10^$1")}`;
+  const say = {
+    1: ["ok", "None", "One signature can't be stretched into another. Pushing any digit up pulls a checksum digit down, and that would mean walking down a chain."],
+    2: ["warn", big, "per message tried. The forger picks the next key named in the message, so they can try as many messages as they like: a GPU's work."],
+    4: ["bad", big, "per message tried: well under a second in this browser. The attack room's danger case does exactly this."]
+  }[k];
+  box.replaceChildren(
+    el("p", {}, "One signature shows one position on each chain. Two signatures by the same key show, on each chain, the lower of two, and everything above it is free for anyone to compute. A forger needs a message whose every digit sits at or above what was shown."),
+    el(
+      "div",
+      { class: "choices", role: "group", "aria-label": "Signatures by one key" },
+      el("span", { class: "small" }, "Signatures by one key:"),
+      ...[1, 2, 4].map((v) => el("button", { type: "button", "aria-pressed": String(v === k), onclick: () => drawOnceDemo(v) }, v === 1 ? "1, as meant" : String(v)))
+    ),
+    chainsCanvas(low.map((l) => l.at)),
+    el(
+      "div",
+      { class: "legend" },
+      el("span", {}, el("i", { class: "lg-secret" }), "still secret"),
+      el("span", {}, el("i", { class: "lg-shown" }), "lowest position shown"),
+      el("span", {}, el("i", { class: "lg-public" }), `anyone can compute: ${share}% of the key`)
+    ),
+    el("p", { class: `odds ${say[0]}` }, say[1]),
+    el("p", { class: "small" }, `${say[2]} ${k > 1 ? "Worked out for these signatures, from the 64 message digits only." : ""}`),
+    el("p", { class: "small" }, "The seat can't stop this: it only sees signatures that reach it. That's why the console keeps a ledger.")
+  );
+  if (refocus) box.querySelector(`.choices button[aria-pressed="true"]`).focus();
+}
 boot2();
+drawChainDemo();
+drawOnceDemo();
 /*! Bundled license information:
 
 @noble/hashes/esm/utils.js:
