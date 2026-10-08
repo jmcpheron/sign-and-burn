@@ -21,7 +21,7 @@ its own addresses (`tools/chain/anvil.mjs`, chain 31337), and serves the folder 
 - **The wallets** are two, as EIP-6963 announces them: a test wallet backed by Anvil's unlocked
   accounts, and another that refuses everything, so the page must let you choose.
 
-The 38 checks, in order:
+The 46 checks, in order:
 
 1. The console boots in MicroPython; the page's fingerprint is the manifest's.
 2. Make a passkey; its signer address, worked out by the console, matches Safe's factory.
@@ -40,7 +40,14 @@ The 38 checks, in order:
 12. The guardrail: the wallet refuses approval 2 after the passkey signed it. The console offers only
     that approval again; the serial log shows the request and never the seeds; after a reload too; then
     it lands with no new passkey signature. History: three approvals, all landed.
-13. The CSP refuses another host. A phone-width screen has no sideways scroll. No page errors.
+13. A browser with no ledger (its site data cleared, as a second device with the synced passkey would
+    be): it finds the seat on chain, says another device's console holds its record, and holds the
+    button back until the visitor ticks that nothing is waiting there. Then key 3 signs; the warning is
+    gone once this ledger has an approval.
+14. A front-run: a third account copies the approve call out of the page's transaction and sends it
+    first. The page's transaction reverts; the page says approval 4 landed in another transaction and
+    names it, the seat is at key 5, and the Safe hasn't run it.
+15. The CSP refuses another host. A phone-width screen has no sideways scroll. No page errors.
 
 Screenshots go to `site/shots/` (not committed).
 
@@ -56,6 +63,10 @@ Screenshots go to `site/shots/` (not committed).
 Found live, not by the e2e: with a smart-account wallet the attack room stayed empty, because the page
 looked for the approval only in a plain Multicall3 call, and that wallet wraps it. It now searches the
 whole transaction (`findApprove`); `site/test.mjs` checks a plain call and a wrapped one.
+
+Found by reading the page, not by the e2e (2026-10-08): a browser with no ledger adopted a seat it found
+on chain in silence, and the done screen trusted the receipt, so a front-run approval would have read
+as "has the Safe the ETH?". Checks 13 and 14 cover both now.
 
 And two in the test itself: it matched "Fund it" in the steps bar, which names every step, and it
 first used `eval` inside the page, which the page's CSP refuses.

@@ -90,7 +90,7 @@ wallet: it builds a shielded Safe, presses twice, runs every attack, and checks 
 | The one-time keys | Python and JavaScript, against 7 vectors in `reference/vectors/v1.json`. The Solidity, the page's JavaScript and the console on MicroPython check the same file. |
 | The console | `console/test/`: the Safe hash against 17 vectors (real mainnet transactions among them), the decoder against 15 expectations, a real browser passkey's assertion that Safe's signer accepted on chain, and every request and refusal. On CPython and on MicroPython 1.26. |
 | The contracts | 22 Foundry tests: every refusal in the attack table, and two presses against Base Sepolia's real Safe 1.4.1, passkey signer and Multicall3 bytecode, with a real P-256 key. About 660,000 gas a press. |
-| The page | `site/e2e.mjs`, in Chromium against a local chain with that same bytecode: passkey, first key, shielded Safe, two presses, five attacks refused, red pages and refusals, the guardrail across a refused wallet and a reload, the danger case, and the CSP. |
+| The page | `site/e2e.mjs`, in Chromium against a local chain with that same bytecode: passkey, first key, shielded Safe, two presses, five attacks refused, red pages and refusals, the guardrail across a refused wallet, a reload and a browser with no ledger, a front-run approval, the danger case, and the CSP. |
 
 What wasn't: an audit; a real device's passkey (M3 in the kickoff publishes which ones have PRF);
 Base Sepolia itself (nothing is deployed yet; the page deploys the SeatFactory, at
@@ -105,7 +105,7 @@ The page works it out again in your browser over the files it runs and shows it 
 
 | | fingerprint |
 |---|---|
-| **console** | `a46b5cfdc0f904fa3f14f6b69402b61b766f7a47de7c07e1dc8c025cb1a5163d` |
+| **console** | `4ab406c3611fa40dce02fcd1763db83ae4233a5c608847df1d8ec8f9008e785f` |
 
 `docs/` is the site, built by `cd site && npm ci && npm run build`. The build is reproducible: CI
 rebuilds it and fails on any difference. `docs/SHA256SUMS` lists every file for `sha256sum -c`.

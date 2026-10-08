@@ -20432,8 +20432,15 @@ async function press(tx) {
     render();
     const r = await receipt(S.C, hash3);
     const n = S.seat.n;
+    const landed = await approvalOnChain(S.C, a.seat, n);
+    if (!landed) {
+      await refresh();
+      throw new Error(`The transaction ${r.status === "reverted" ? "reverted" : "went through"} (${short(hash3, 10, 6)}), but approval ${n} didn't land: the seat is still at key ${n}. The console keeps the approval, and will only ever send this one for key ${n}.`);
+    }
+    const theirs = !!landed.txHash && landed.txHash.toLowerCase() !== hash3.toLowerCase();
+    if (theirs) ask({ op: "sent", chainId: S.C.id, seat: a.seat, n, txHash: landed.txHash });
     await refresh();
-    S.last = { n, a, hash: hash3, ran: S.safe.nonce > nonceBefore, ok: r.status === "success", m: signed?.m, summary: begin.review.summary };
+    S.last = { n, a, hash: landed.txHash || hash3, theirs, ran: S.safe.nonce > nonceBefore, m: signed?.m, summary: begin.review.summary };
     S.step = "done";
   });
   if (S.error) S.step = "ready";
@@ -20604,17 +20611,24 @@ function pressScreen(s, disabled) {
     out.push(connectButton(disabled, "Connect a wallet to send"));
     return out;
   }
-  let ack = r.level !== "red";
+  const elsewhere = S.home.found && !mine().length && !w;
+  if (elsewhere) out.push(el("p", { class: "note" }, `Another device made this seat. This browser has no record of what its keys signed. If that device signed with key ${S.seat.n} and the transaction is still pending, or was dropped, signing here would be key ${S.seat.n}'s second signature: enough to forge a third. Check there that its last approval landed, and use one device per seat.`));
+  const acks = { red: r.level !== "red", elsewhere: !elsewhere };
   const hold = holdButton(w ? `Hold to send approval ${w.n} again` : `Hold to approve with key ${S.seat.n}`, () => press(tx), { red: r.level === "red" });
-  hold.disabled = disabled || !ack;
+  const gate = () => {
+    hold.disabled = disabled || !acks.red || !acks.elsewhere;
+  };
+  const ack = (k, text) => el("label", { class: "small" }, el("input", { type: "checkbox", onchange: (e) => {
+    acks[k] = e.target.checked;
+    gate();
+  } }), text);
+  gate();
   out.push(el(
     "div",
     { class: "actions" },
     hold,
-    r.level === "red" ? el("label", { class: "small" }, el("input", { type: "checkbox", onchange: (e) => {
-      ack = e.target.checked;
-      hold.disabled = disabled || !ack;
-    } }), "I read the red page") : null,
+    r.level === "red" ? ack("red", "I read the red page") : null,
+    elsewhere ? ack("elsewhere", `Nothing signed with key ${S.seat.n} is waiting on another device`) : null,
     el("button", { class: "reject", type: "button", disabled, onclick: () => {
       S.tx = { preset: "send", to: S.wallet?.account || "", amount: "0.0001" };
       S.error = "";
@@ -20643,11 +20657,12 @@ function redraw() {
 }
 function doneScreen() {
   const L = S.last;
-  const out = [
-    el("h3", {}, `Key ${L.n}: signed, sent, burned`),
-    el("p", {}, `${L.summary}. ${L.ran ? "The Safe ran it." : "The approval landed, but the Safe couldn't run it yet (has it the ETH?). Its vote is kept: anyone can run it later."}`),
-    rows([["Transaction", txLink(L.hash)], ["Key now", el("span", { class: "mono" }, `${L.n + 1}: ${short(S.seat?.current || "", 10, 8)}`)]])
-  ];
+  const out = [el("h3", {}, `Key ${L.n}: signed, sent, burned`)];
+  if (L.theirs) out.push(el("p", { class: "note" }, `Your transaction reverted: approval ${L.n} had already landed in another transaction. Someone copied it from the mempool and sent it first. It can only do exactly what you signed, and key ${L.n} is burned either way.`));
+  out.push(
+    el("p", {}, `${L.summary}. ${L.ran ? "The Safe ran it." : L.theirs ? "That transaction only approved; the Safe hasn't run it. Its vote is kept: anyone can run it." : "The approval landed, but the Safe couldn't run it yet (has it the ETH?). Its vote is kept: anyone can run it later."}`),
+    rows([[L.theirs ? "Their transaction" : "Transaction", txLink(L.hash)], ["Key now", el("span", { class: "mono" }, `${L.n + 1}: ${short(S.seat?.current || "", 10, 8)}`)]])
+  );
   if (L.m) {
     out.push(el("p", { class: "small" }, `What key ${L.n} revealed: one value on each of its 67 chains. Below each, the secret steps nobody saw; above, steps anyone can now compute. Nobody can step down a chain, and key ${L.n} will never sign again.`));
     out.push(chainsCanvas(digits(bytes(L.m))));

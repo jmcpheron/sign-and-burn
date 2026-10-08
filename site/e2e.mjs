@@ -5,8 +5,9 @@
 //   make a passkey → key 0 → build the shielded Safe (deploying the SeatFactory too) → fund it →
 //   two presses, each burning a key and running the Safe transaction → every attack refused →
 //   the console's refusals and red page → the guardrail: a wallet that says no, then the same
-//   approval sent again with no new signature → the danger case → the CSP refuses other hosts →
-//   a reload keeps the ledger.
+//   approval sent again with no new signature → the danger case → a browser with no ledger finds
+//   the seat and is warned → a front-run approval lands in someone else's transaction → the CSP
+//   refuses other hosts → a reload keeps the ledger.
 //   cd site && npm ci && node e2e.mjs        (Chromium: SAB_CHROMIUM=/path/to/chrome if playwright-core has none)
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, statSync } from "node:fs";
@@ -14,8 +15,9 @@ import { createServer } from "node:http";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
-import { createPublicClient, formatEther, http, parseAbi } from "viem";
+import { createPublicClient, decodeFunctionData, formatEther, http, parseAbi } from "viem";
 import { startChain } from "../tools/chain/anvil.mjs";
+import { MULTICALL_ABI } from "./src/chain.mjs";
 
 const SITE = fileURLToPath(new URL(".", import.meta.url));
 const SHOTS = join(SITE, "shots");
@@ -41,15 +43,27 @@ await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const URL_ = `http://localhost:${server.address().port}/`;
 
 // ---- the stand-in wallet: Anvil's first account, unlocked, so Anvil signs what it sends. Beside it,
-// another wallet that refuses everything, so the page has to let the visitor choose.
-const ACCOUNT = "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266", SECOND = "0x70997970c51812dc3a010c7d01b50e0d17dc79c8";
-const wallet = { refuseNext: false, sent: 0, account: ACCOUNT };
+// another wallet that refuses everything, so the page has to let the visitor choose. A third account
+// plays someone watching the mempool.
+const ACCOUNT = "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266", SECOND = "0x70997970c51812dc3a010c7d01b50e0d17dc79c8", THIRD = "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc";
+const wallet = { refuseNext: false, frontRun: false, frontRunHash: "", sent: 0, account: ACCOUNT };
+const rpc = async (method, params) => (await (await fetch(chain.url, { method: "POST", headers: { "content-type": "application/json" },
+  body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) })).json());
 async function walletRpc(method, params) {
   if (method === "eth_requestAccounts" || method === "eth_accounts") return { result: [wallet.account] };
   if (method === "wallet_switchEthereumChain" || method === "wallet_addEthereumChain") return { result: null };
   if (method === "eth_sendTransaction" && wallet.refuseNext) { wallet.refuseNext = false; return { error: { code: 4001, message: "User rejected the request." } }; }
+  if (method === "eth_sendTransaction" && wallet.frontRun) {
+    // Someone copies the seat.approve call out of the page's Multicall3 call and sends it first, alone.
+    wallet.frontRun = false;
+    const [calls] = decodeFunctionData({ abi: MULTICALL_ABI, data: params[0].data }).args;
+    const r = await rpc("eth_sendTransaction", [{ from: THIRD, to: calls[0].target, data: calls[0].callData, gas: "0x" + (1500000).toString(16) }]);
+    if (r.error) throw new Error(`front-run: ${r.error.message}`);
+    wallet.frontRunHash = r.result;
+    await pc.waitForTransactionReceipt({ hash: r.result });
+  }
   if (method === "eth_sendTransaction") wallet.sent++;
-  const r = await (await fetch(chain.url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) })).json();
+  const r = await rpc(method, params);
   return r.error ? { error: { code: r.error.code, message: r.error.message } } : { result: r.result };
 }
 
@@ -215,7 +229,34 @@ try {
   const hist = await page.locator("#history").innerText();
   check(["#0", "#1", "#2"].every((k) => hist.includes(k)) && (hist.match(/landed/g) || []).length === 3, "history: three approvals, all landed");
 
-  // 8. the page reaches only this folder and the RPC
+  // 8. a browser whose console has no ledger for the seat (a second device with the synced passkey):
+  // it finds the seat on chain, warns that another device's console holds its record, and signs only
+  // once the visitor says nothing is waiting there
+  await page.evaluate(() => { localStorage.removeItem("sab.ledger"); localStorage.removeItem("sab.home"); });
+  await page.reload();
+  check(await waitFor(/Another device made this seat/), "a browser with no ledger finds the seat on chain, and is told another device's console holds its record");
+  check(await page.locator("button.hold").isDisabled(), "…holding waits until the visitor says nothing is waiting on that device");
+  await page.getByLabel(/Nothing signed with key 3 is waiting/).check();
+  before = await signCount();
+  await hold();
+  check(await waitFor(/Key 3: signed, sent, burned/, 60000) && (await signCount()) === before + 1, "…then key 3 signs and burns, from this browser's new ledger");
+  await click("Another one");
+  check(await waitFor(/Press the button/) && !/Another device made this seat/.test(await screen()), "with an approval in its ledger, this browser is the seat's device: no warning");
+
+  // 9. a front-run: someone copies the approve call from the mempool and sends it first. The page's own
+  // transaction reverts; the approval has landed all the same, in theirs, and key 4 is burned
+  wallet.frontRun = true;
+  const nonceBefore = Number(await pc.readContract({ address: H.safe, abi: SAFE_ABI, functionName: "nonce" }));
+  await hold();
+  check(await waitFor(/already landed in another transaction/, 60000), "front-run: the page says approval 4 landed in someone else's transaction, not the page's");
+  check(Number(await pc.readContract({ address: H.seat, abi: SEAT_ABI, functionName: "n" })) === 5, "on chain: the seat is at key 5 all the same");
+  check(Number(await pc.readContract({ address: H.safe, abi: SAFE_ABI, functionName: "nonce" })) === nonceBefore && /Safe hasn't run it/.test(await screen()),
+    "…the Safe hasn't run it, and the page says so");
+  const theirs = `${wallet.frontRunHash.slice(0, 10)}…${wallet.frontRunHash.slice(-6)}`;
+  check((await page.locator("#history").innerText()).includes(theirs) && (await page.locator("#screen").innerText()).includes(theirs),
+    "the screen and the history name their transaction, the one the approval is in");
+
+  // 10. the page reaches only this folder and the RPC
   const reach = await page.evaluate(() => fetch("https://example.com/").then(() => "reached", () => "blocked"));
   check(reach === "blocked" && csp.some((m) => /example\.com/.test(m)), "the CSP refuses any other host");
   await page.setViewportSize({ width: 390, height: 900 });

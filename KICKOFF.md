@@ -358,8 +358,10 @@ keeps one short line.
 
 **What's left:** if a page loses its stored approval *after* sending it, and the transaction is
 dropped, the page can't tell that key `n` has already signed something public. The wallet's history
-is the fallback. The attack room's danger case shows why it matters: a throwaway key signs several
-messages, and a forger with no secret signs one more.
+is the fallback. A second device with the synced passkey has the same blind spot: it finds the seat on
+chain but has no ledger for it, so the page says so and holds the button until the visitor confirms
+nothing is waiting on the other device. The attack room's danger case shows why it matters: a
+throwaway key signs several messages, and a forger with no secret signs one more.
 
 ## The page
 

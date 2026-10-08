@@ -128,6 +128,10 @@ def run():
     check("sent", ask("sent", chainId=CHAIN, seat=SEAT, n=0, txHash="0x" + "ab" * 32)["ok"])
     e = ask("ledger")["entries"][0]
     check("the ledger has it, sent", e["status"] == "sent" and e["txHash"] == "0x" + "ab" * 32 and e["approval"] == a, e)
+    # sent again (the first transaction reverted, say): the ledger follows the newest one
+    ask("sent", chainId=CHAIN, seat=SEAT, n=0, txHash="0x" + "cd" * 32)
+    e = ask("ledger")["entries"][0]
+    check("sent again: the newest transaction", e["status"] == "sent" and e["txHash"] == "0x" + "cd" * 32 and e["approval"] == a, e)
 
     # it lands: the chain says n = 1. The ledger keeps a short line.
     out = ask("chain", chainId=CHAIN, seat=SEAT, n=1)

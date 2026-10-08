@@ -213,10 +213,12 @@ def sign(req):
 
 
 def sent(req):
+    """Approval n went out in transaction txHash. Again, if it is sent again: the newest hash is the
+    one to show, since an earlier one may have reverted, or it may have landed in someone else's."""
     chain, seat, n = _chain(req), req["seat"].lower(), int(req["n"])
     entries = _load()
     for e in _mine(entries, chain, seat):
-        if e["n"] == n and e["status"] == "signed":
+        if e["n"] == n and e["status"] != "landed":
             e["status"], e["txHash"] = "sent", req["txHash"]
     _save(entries)
     return {}
