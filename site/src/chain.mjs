@@ -66,7 +66,7 @@ export function findWallets() {
   window.dispatchEvent(new Event("eip6963:requestProvider"));
   return new Promise((done) => setTimeout(() => {
     window.removeEventListener("eip6963:announceProvider", add);
-    if (!found.length && window.ethereum) found.push({ info: { name: "Browser wallet", uuid: "injected" }, provider: window.ethereum });
+    if (!found.length && window.ethereum) found.push({ info: { name: "Browser wallet", uuid: "injected", rdns: "injected" }, provider: window.ethereum });
     done(found);
   }, 300));
 }

@@ -538,6 +538,7 @@ The bridge back comes later: the same seat could take approvals from a PicoQuoru
 | The Bunker Box | Amount, refills, rules, whether to publish attempts | to decide in M4 |
 | The console on a board | Web Serial from the page to a Pico or ESP32 running `main.py`, or a board with its own screen | Web Serial first: the same lines, a second check of the hash and the words |
 | A cheaper `OneTimeKey` | Plain Solidity, or assembly with one reused buffer | plain until someone needs the gas |
+| WalletConnect | Reown's Ethereum provider (a dependency, its relay hosts and a project ID in the CSP), or not | **Not yet.** Asked for to pay gas from a Trezor, but Trezor Suite's WalletConnect covers Base, not Base Sepolia (its own issue #32283, September 2026). A Trezor already works through a browser wallet that drives it (Rabby, MetaMask, Frame), which the page picks from all EIP-6963 wallets in the browser |
 
 ### Settled
 
@@ -545,7 +546,7 @@ The bridge back comes later: the same seat could take approvals from a PicoQuoru
 |---|---|---|
 | Hash for the chains | **SHA-256** | A precompile on chain, native in browsers, and `hashlib.sha256` in MicroPython on the boards |
 | The curve check | **Call the deployed signer** | Safe's audited passkey signer; the console already packs its format |
-| Who pays gas | **The visitor's wallet** | Nothing to run; it pays gas and approves nothing |
+| Who pays gas | **The visitor's wallet** | Nothing to run; it pays gas and approves nothing. Any EIP-6963 wallet in the browser, picked by the visitor; a hardware wallet through one that drives it |
 | Demo Safe | **1 of 1** first | The seat alone shows the ladder; 2 of 2 comes later |
 | Safe version | **1.4.1 L2** | At Safe's canonical addresses on Base Sepolia, checked against its bytecode |
 | Parameters | **w = 16** | Frozen by `v1.json`: 2,144-byte signatures, about 500 hashes to check |

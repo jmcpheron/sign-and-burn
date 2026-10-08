@@ -40,11 +40,12 @@ const server = createServer((req, res) => {
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const URL_ = `http://localhost:${server.address().port}/`;
 
-// ---- the stand-in wallet: Anvil's first account, unlocked, so Anvil signs what it sends
-const ACCOUNT = "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266";
-const wallet = { refuseNext: false, sent: 0 };
+// ---- the stand-in wallet: Anvil's first account, unlocked, so Anvil signs what it sends. Beside it,
+// another wallet that refuses everything, so the page has to let the visitor choose.
+const ACCOUNT = "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266", SECOND = "0x70997970c51812dc3a010c7d01b50e0d17dc79c8";
+const wallet = { refuseNext: false, sent: 0, account: ACCOUNT };
 async function walletRpc(method, params) {
-  if (method === "eth_requestAccounts" || method === "eth_accounts") return { result: [ACCOUNT] };
+  if (method === "eth_requestAccounts" || method === "eth_accounts") return { result: [wallet.account] };
   if (method === "wallet_switchEthereumChain" || method === "wallet_addEthereumChain") return { result: null };
   if (method === "eth_sendTransaction" && wallet.refuseNext) { wallet.refuseNext = false; return { error: { code: 4001, message: "User rejected the request." } }; }
   if (method === "eth_sendTransaction") wallet.sent++;
@@ -56,17 +57,25 @@ const browser = await chromium.launch({ executablePath: process.env.SAB_CHROMIUM
 const ctx = await browser.newContext({ viewport: { width: 1360, height: 1000 } });
 await ctx.exposeFunction("__e2eWallet", walletRpc);
 await ctx.addInitScript(() => {
+  const listeners = {};
   const provider = {
     request: async ({ method, params }) => {
       const r = await window.__e2eWallet(method, params || []);
       if (r.error) { const e = new Error(r.error.message); e.code = r.error.code; throw e; }
       return r.result;
     },
-    on() {}, removeListener() {},
+    on(ev, f) { (listeners[ev] ||= []).push(f); }, removeListener() {},
   };
-  const info = Object.freeze({ uuid: "0b4c3a52-e2e0-4a11-9a0e-5ab0000000e2", name: "Test wallet (Anvil #0)", rdns: "app.signandburn.e2e",
-    icon: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'/%3E" });
-  window.addEventListener("eip6963:requestProvider", () => window.dispatchEvent(new CustomEvent("eip6963:announceProvider", { detail: Object.freeze({ info, provider }) })));
+  window.__e2eEmit = (ev, data) => (listeners[ev] || []).forEach((f) => f(data));
+  const other = { request: async () => { const e = new Error("not this wallet"); e.code = 4001; throw e; }, on() {}, removeListener() {} };
+  const icon = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'/%3E";
+  // a new uuid on every page load, as wallets do; the page remembers the rdns
+  const info = Object.freeze({ uuid: crypto.randomUUID(), name: "Test wallet (Anvil)", rdns: "app.signandburn.e2e", icon });
+  const otherInfo = Object.freeze({ uuid: crypto.randomUUID(), name: "Another wallet", rdns: "app.signandburn.other", icon });
+  window.addEventListener("eip6963:requestProvider", () => {
+    window.dispatchEvent(new CustomEvent("eip6963:announceProvider", { detail: Object.freeze({ info: otherInfo, provider: other }) }));
+    window.dispatchEvent(new CustomEvent("eip6963:announceProvider", { detail: Object.freeze({ info, provider }) }));
+  });
 });
 const page = await ctx.newPage();
 const csp = [], errors = [];
@@ -119,6 +128,10 @@ try {
 
   // 3. the shielded Safe, in one transaction: SeatFactory (first time on this chain), signer, seat, Safe
   await click("Connect a wallet");
+  await page.locator(".chooser").waitFor();
+  const names = await page.locator(".chooser .actions button").allInnerTexts();
+  check(names.includes("Test wallet (Anvil)") && names.includes("Another wallet"), "two wallets in the browser: the page lets you choose");
+  await click("Test wallet (Anvil)");
   await page.getByRole("button", { name: "Build it: one transaction" }).waitFor();
   await click("Build it: one transaction");
   check(await waitFor(/Fund it/, 60000), "one wallet transaction builds the shielded Safe");
@@ -141,11 +154,18 @@ try {
     check((await signCount()) === before + 1, `press ${k + 1}: exactly one passkey signature`);
     check(Number(await pc.readContract({ address: H.seat, abi: SEAT_ABI, functionName: "n" })) === k + 1, `on chain: the seat is at key ${k + 1}`);
     check(Number(await pc.readContract({ address: H.safe, abi: SAFE_ABI, functionName: "nonce" })) === k + 1, `on chain: the Safe ran transaction ${k}`);
-    if (k === 0) await shot("4-done");
+    if (k === 0) {
+      await shot("4-done");
+      // the visitor picks another account in their wallet (say, the Trezor's in Rabby)
+      wallet.account = SECOND;
+      await page.evaluate((a) => window.__e2eEmit("accountsChanged", [a]), SECOND);
+      await page.waitForFunction((a) => document.querySelector("#safe").innerText.includes(a), SECOND.slice(0, 8), { timeout: 10000 });
+    }
     await click("Another one");
     await waitFor(/Press the button/);
   }
   check(formatEther(await pc.getBalance({ address: TO })) === "0.0002", "on chain: the recipient got 0.0001 ETH twice");
+  check((await pc.getTransactionCount({ address: SECOND })) === 1, "the wallet switched accounts: the second press's gas came from the new one");
 
   // 5. the attack room: everything a replay can do, refused by the seat itself
   await page.locator("#attacks").scrollIntoViewIfNeeded();

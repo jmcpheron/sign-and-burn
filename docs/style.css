@@ -215,3 +215,7 @@ footer { max-width: 1240px; margin: 0 auto; padding: 10px 24px 40px; font-size: 
 .lg-secret { background: var(--line); }
 .lg-shown { background: var(--flame-2); }
 .lg-public { background: var(--flame); opacity: 0.35; }
+.chooser { border: 1px solid var(--flame); border-radius: 12px; padding: 12px 14px; margin: 0 0 16px; background: var(--panel-2); }
+.chooser p { margin: 0 0 6px; }
+.chooser .actions { margin-top: 6px; }
+.chooser button img { vertical-align: -4px; margin-right: 8px; border-radius: 4px; }

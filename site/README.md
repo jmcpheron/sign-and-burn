@@ -16,7 +16,7 @@ npm run e2e       # the whole flow in Chromium against the local chain (needs an
 | `src/main.mjs` | the screens, the panels, the attack room |
 | `src/console.mjs` | MicroPython 1.26 in the page, the console's files, the ledger kept in localStorage, the serial log (seeds never shown) |
 | `src/passkey.mjs` | make a passkey; one tap that signs `c` and answers two PRF salts; find a passkey made elsewhere |
-| `src/chain.mjs` | viem: reads, the shielded Safe's calls, one Multicall3 transaction per press, simulations |
+| `src/chain.mjs` | viem: reads, the shielded Safe's calls, one Multicall3 transaction per press, simulations, the browser's wallets (EIP-6963) |
 | `src/wots.mjs` | the one-time keys in the page's JavaScript, to draw what a signature reveals and run the danger case |
 | `build.mjs` | writes the folder, its Content-Security-Policy, `SHA256SUMS` and `BUILD.json` |
 | `e2e.mjs` | Chromium, a virtual passkey with PRF, a test wallet (Anvil's first account), the local chain |

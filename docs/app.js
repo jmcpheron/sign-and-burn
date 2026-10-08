@@ -19780,7 +19780,7 @@ function findWallets() {
   window.dispatchEvent(new Event("eip6963:requestProvider"));
   return new Promise((done) => setTimeout(() => {
     window.removeEventListener("eip6963:announceProvider", add2);
-    if (!found.length && window.ethereum) found.push({ info: { name: "Browser wallet", uuid: "injected" }, provider: window.ethereum });
+    if (!found.length && window.ethereum) found.push({ info: { name: "Browser wallet", uuid: "injected", rdns: "injected" }, provider: window.ethereum });
     done(found);
   }, 300));
 }
@@ -20255,34 +20255,94 @@ async function firstKey() {
     pickStep();
   });
 }
-async function connectWallet() {
-  await guard("Looking for a wallet in this browser…", async () => {
+var HARDWARE = "A Trezor or a Ledger pays the gas through a browser wallet that drives it, such as Rabby, MetaMask or Frame: connect it there, then pick that wallet here. The device will show a call to Multicall3 (0xcA11…CA11) on Base Sepolia. What that call approves is on this console's screen.";
+var walletId = (info) => info.rdns || info.uuid;
+async function connectWallet(choose = false) {
+  await guard("Looking for wallets in this browser…", async () => {
     const found = await findWallets();
-    if (!found.length) throw new Error("No wallet in this browser. Any wallet that can switch to Base Sepolia works; it only pays gas.");
-    S.wallet = await useWallet(S.C, found[0].provider);
-    S.wallet.name = found[0].info.name;
-    try {
-      localStorage.setItem("sab.wallet", found[0].info.uuid);
-    } catch {
+    if (!found.length) throw new Error("No wallet in this browser. Any wallet that can switch to Base Sepolia works; it only pays gas. " + HARDWARE);
+    if (found.length > 1 || choose && S.wallet) {
+      S.choosing = found;
+      return;
     }
-    if (!S.tx.to) S.tx.to = S.wallet.account;
-    await refresh();
+    await useChosen(found[0]);
+  });
+}
+async function chooseWallet(w) {
+  S.choosing = null;
+  await guard(`Asking ${w.info.name} for an account on ${S.C.chain.name}…`, () => useChosen(w));
+}
+async function useChosen(w, got = null) {
+  got ||= await useWallet(S.C, w.provider);
+  S.wallet = { ...got, name: w.info.name, provider: w.provider };
+  try {
+    localStorage.setItem("sab.wallet", walletId(w.info));
+  } catch {
+  }
+  if (!S.tx.to) S.tx.to = S.wallet.account;
+  follow(w.provider);
+  await refresh();
+}
+var followed = /* @__PURE__ */ new WeakSet();
+function follow(provider) {
+  if (followed.has(provider) || !provider.on) return;
+  followed.add(provider);
+  provider.on("accountsChanged", async (accounts) => {
+    if (S.wallet?.provider !== provider) return;
+    if (!accounts?.length) {
+      S.wallet = null;
+      return render();
+    }
+    if (S.tx.to === S.wallet.account) S.tx.to = accounts[0];
+    S.wallet = { ...S.wallet, account: accounts[0] };
+    await refresh().catch(() => {
+    });
+    render();
+  });
+  provider.on("chainChanged", (id) => {
+    if (S.wallet?.provider === provider && Number(id) !== S.C.id) {
+      S.wallet = null;
+      S.error = `The wallet moved to another network. Connect it again for ${S.C.chain.name}.`;
+      render();
+    }
   });
 }
 async function reconnectWallet() {
-  let uuid = null;
+  let id = null;
   try {
-    uuid = localStorage.getItem("sab.wallet");
+    id = localStorage.getItem("sab.wallet");
   } catch {
   }
-  if (!uuid) return;
-  const w = (await findWallets()).find((x) => x.info.uuid === uuid);
+  if (!id) return;
+  const w = (await findWallets()).find((x) => walletId(x.info) === id || x.info.uuid === id);
   const got = w && await useWallet(S.C, w.provider, { quiet: true }).catch(() => null);
-  if (got) {
-    S.wallet = { ...got, name: w.info.name };
-    if (!S.tx.to) S.tx.to = got.account;
-  }
+  if (got) await useChosen(w, got);
 }
+function chooser() {
+  if (!S.choosing) return null;
+  const icon = (info) => /^data:image\//.test(info.icon || "") ? el("img", { src: info.icon, alt: "", width: 20, height: 20 }) : null;
+  return el(
+    "div",
+    { class: "chooser", role: "group", "aria-label": "Wallets in this browser" },
+    el("p", {}, "Which wallet pays the gas?"),
+    el(
+      "div",
+      { class: "actions" },
+      ...S.choosing.map((w) => el("button", { type: "button", onclick: () => chooseWallet(w) }, icon(w.info), w.info.name || "A wallet")),
+      el("button", { class: "link", type: "button", onclick: () => {
+        S.choosing = null;
+        render();
+      } }, "Cancel")
+    ),
+    el("p", { class: "small" }, HARDWARE)
+  );
+}
+var connectButton = (disabled, label = "Connect a wallet") => el(
+  "div",
+  {},
+  el("div", { class: "actions" }, el("button", { class: "go", type: "button", disabled, onclick: () => connectWallet() }, label)),
+  el("p", { class: "small" }, HARDWARE)
+);
 async function build() {
   await guard("Your wallet sends one transaction: signer, seat and Safe…", async () => {
     const calls = await buildCalls(S.C, { pk: S.pk, signer: S.signer, seatNumber: S.home.seatNumber, firstKey: S.home.firstKey, seat: S.home.seat });
@@ -20382,6 +20442,7 @@ function render() {
 function screen(s) {
   const out = [];
   if (S.step !== "boot") out.push(stepsBar());
+  if (S.choosing) out.push(chooser());
   if (S.warn) out.push(el("p", { class: "note" }, S.warn));
   const status = S.busy ? el("p", { class: "status" }, el("span", { class: "spin" }), S.busy) : null;
   const err = S.error ? el("p", { class: "note error", role: "alert" }, S.error) : null;
@@ -20426,7 +20487,7 @@ function screen(s) {
           ["Safe, 1 of 1", addr(H.safe)]
         ]),
         el("p", { class: "small" }, "The seat holds only key 0's fingerprint. The Safe's one owner is the seat. If nobody has deployed the SeatFactory on this chain yet, the same transaction deploys it, at the address it has on every chain."),
-        el("div", { class: "actions" }, S.wallet ? el("button", { class: "go", type: "button", disabled, onclick: build }, "Build it: one transaction") : el("button", { class: "go", type: "button", disabled, onclick: connectWallet }, "Connect a wallet"))
+        S.wallet ? el("div", { class: "actions" }, el("button", { class: "go", type: "button", disabled, onclick: build }, "Build it: one transaction")) : connectButton(disabled)
       );
       break;
     }
@@ -20438,9 +20499,10 @@ function screen(s) {
         el(
           "div",
           { class: "actions" },
-          S.wallet ? el("button", { class: "go", type: "button", disabled, onclick: fund }, "Send 0.001 test ETH from my wallet") : el("button", { class: "go", type: "button", disabled, onclick: connectWallet }, "Connect a wallet"),
+          S.wallet ? el("button", { class: "go", type: "button", disabled, onclick: fund }, "Send 0.001 test ETH from my wallet") : null,
           el("a", { href: "https://docs.base.org/base-chain/tools/network-faucets", target: "_blank", rel: "noopener noreferrer" }, "Base Sepolia faucets")
-        )
+        ),
+        S.wallet ? null : connectButton(disabled)
       );
       break;
     case "ready":
@@ -20527,7 +20589,7 @@ function pressScreen(s, disabled) {
     return out;
   }
   if (!S.wallet) {
-    out.push(el("div", { class: "actions" }, el("button", { class: "go", type: "button", disabled, onclick: connectWallet }, "Connect a wallet to send")));
+    out.push(connectButton(disabled, "Connect a wallet to send"));
     return out;
   }
   let ack = r.level !== "red";
@@ -20615,7 +20677,13 @@ function drawSide() {
     H?.seat && [`Seat #${H.seatNumber ?? "?"}`, addr(H.seat)],
     ["Passkey signer", addr(S.signer)],
     ["Your passkey", `made ${S.pk.made}${S.pk.attachment ? ` · ${S.pk.attachment === "platform" ? "this device" : "another device"}` : ""}`],
-    ["Wallet", S.wallet ? el("span", {}, addr(S.wallet.account), el("span", { class: "small" }, S.walletBalance != null ? ` ${eth(S.walletBalance)} · pays gas only` : " pays gas only")) : el("button", { class: "link", type: "button", onclick: connectWallet }, "Connect a wallet")]
+    ["Wallet", S.wallet ? el(
+      "span",
+      {},
+      addr(S.wallet.account),
+      el("span", { class: "small" }, ` ${S.wallet.name}${S.walletBalance != null ? ` · ${eth(S.walletBalance)}` : ""} · pays gas only · `),
+      el("button", { class: "link", type: "button", onclick: () => connectWallet(true) }, "change")
+    ) : el("button", { class: "link", type: "button", onclick: () => connectWallet() }, "Connect a wallet")]
   ]));
   if (!S.seat) return;
   const n = S.seat.n, items = [];

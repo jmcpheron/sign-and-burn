@@ -202,27 +202,80 @@ async function firstKey() {
   });
 }
 
-async function connectWallet() {
-  await guard("Looking for a wallet in this browser…", async () => {
+// ----------------------------------------------------------------------------- the wallet
+// Any wallet in this browser that speaks EIP-6963 or EIP-1193 can pay the gas. A hardware wallet
+// (a Trezor, a Ledger) does it through a browser wallet that drives it, such as Rabby, MetaMask or
+// Frame. A wallet is remembered by its rdns, which stays the same from visit to visit; its uuid
+// doesn't.
+const HARDWARE = "A Trezor or a Ledger pays the gas through a browser wallet that drives it, such as Rabby, MetaMask or Frame: connect it there, then pick that wallet here. The device will show a call to Multicall3 (0xcA11…CA11) on Base Sepolia. What that call approves is on this console's screen.";
+const walletId = (info) => info.rdns || info.uuid;
+
+/** Find the wallets in this browser; with more than one (or `choose`), let the visitor pick. */
+async function connectWallet(choose = false) {
+  await guard("Looking for wallets in this browser…", async () => {
     const found = await ch.findWallets();
-    if (!found.length) throw new Error("No wallet in this browser. Any wallet that can switch to Base Sepolia works; it only pays gas.");
-    S.wallet = await ch.useWallet(S.C, found[0].provider);
-    S.wallet.name = found[0].info.name;
-    try { localStorage.setItem("sab.wallet", found[0].info.uuid); } catch {}
-    if (!S.tx.to) S.tx.to = S.wallet.account;
-    await refresh();
+    if (!found.length) throw new Error("No wallet in this browser. Any wallet that can switch to Base Sepolia works; it only pays gas. " + HARDWARE);
+    if (found.length > 1 || (choose && S.wallet)) { S.choosing = found; return; }
+    await useChosen(found[0]);
+  });
+}
+
+async function chooseWallet(w) {
+  S.choosing = null;
+  await guard(`Asking ${w.info.name} for an account on ${S.C.chain.name}…`, () => useChosen(w));
+}
+
+async function useChosen(w, got = null) {
+  got ||= await ch.useWallet(S.C, w.provider);
+  S.wallet = { ...got, name: w.info.name, provider: w.provider };
+  try { localStorage.setItem("sab.wallet", walletId(w.info)); } catch {}
+  if (!S.tx.to) S.tx.to = S.wallet.account;
+  follow(w.provider);
+  await refresh();
+}
+
+/** Keep up with the wallet: another account (say, the Trezor's, picked in Rabby after connecting),
+ * or another chain, which leaves the page without a wallet until it is connected again. */
+const followed = new WeakSet();
+function follow(provider) {
+  if (followed.has(provider) || !provider.on) return;
+  followed.add(provider);
+  provider.on("accountsChanged", async (accounts) => {
+    if (S.wallet?.provider !== provider) return;
+    if (!accounts?.length) { S.wallet = null; return render(); }
+    if (S.tx.to === S.wallet.account) S.tx.to = accounts[0];
+    S.wallet = { ...S.wallet, account: accounts[0] };
+    await refresh().catch(() => {});
+    render();
+  });
+  provider.on("chainChanged", (id) => {
+    if (S.wallet?.provider === provider && Number(id) !== S.C.id) { S.wallet = null; S.error = `The wallet moved to another network. Connect it again for ${S.C.chain.name}.`; render(); }
   });
 }
 
 /** The wallet this page used last time, if it is still connected and on this chain: no prompt. */
 async function reconnectWallet() {
-  let uuid = null;
-  try { uuid = localStorage.getItem("sab.wallet"); } catch {}
-  if (!uuid) return;
-  const w = (await ch.findWallets()).find((x) => x.info.uuid === uuid);
+  let id = null;
+  try { id = localStorage.getItem("sab.wallet"); } catch {}
+  if (!id) return;
+  const w = (await ch.findWallets()).find((x) => walletId(x.info) === id || x.info.uuid === id);
   const got = w && await ch.useWallet(S.C, w.provider, { quiet: true }).catch(() => null);
-  if (got) { S.wallet = { ...got, name: w.info.name }; if (!S.tx.to) S.tx.to = got.account; }
+  if (got) await useChosen(w, got);
 }
+
+function chooser() {
+  if (!S.choosing) return null;
+  const icon = (info) => (/^data:image\//.test(info.icon || "") ? el("img", { src: info.icon, alt: "", width: 20, height: 20 }) : null);
+  return el("div", { class: "chooser", role: "group", "aria-label": "Wallets in this browser" },
+    el("p", {}, "Which wallet pays the gas?"),
+    el("div", { class: "actions" }, ...S.choosing.map((w) => el("button", { type: "button", onclick: () => chooseWallet(w) }, icon(w.info), w.info.name || "A wallet")),
+      el("button", { class: "link", type: "button", onclick: () => { S.choosing = null; render(); } }, "Cancel")),
+    el("p", { class: "small" }, HARDWARE));
+}
+
+const connectButton = (disabled, label = "Connect a wallet") =>
+  el("div", {}, el("div", { class: "actions" }, el("button", { class: "go", type: "button", disabled, onclick: () => connectWallet() }, label)),
+    el("p", { class: "small" }, HARDWARE));
 
 async function build() {
   await guard("Your wallet sends one transaction: signer, seat and Safe…", async () => {
@@ -316,6 +369,7 @@ function render() {
 function screen(s) {
   const out = [];
   if (S.step !== "boot") out.push(stepsBar());
+  if (S.choosing) out.push(chooser());
   if (S.warn) out.push(el("p", { class: "note" }, S.warn));
   const status = S.busy ? el("p", { class: "status" }, el("span", { class: "spin" }), S.busy) : null;
   const err = S.error ? el("p", { class: "note error", role: "alert" }, S.error) : null;
@@ -347,17 +401,17 @@ function screen(s) {
         rows([["Passkey signer", addr(S.signer)], [`Seat #${H.seatNumber}`, addr(H.seat)], ["Key 0", el("span", { class: "mono" }, short(H.firstKey || "", 10, 8))],
           ["Safe, 1 of 1", addr(H.safe)]]),
         el("p", { class: "small" }, "The seat holds only key 0's fingerprint. The Safe's one owner is the seat. If nobody has deployed the SeatFactory on this chain yet, the same transaction deploys it, at the address it has on every chain."),
-        el("div", { class: "actions" }, S.wallet ? el("button", { class: "go", type: "button", disabled, onclick: build }, "Build it: one transaction")
-          : el("button", { class: "go", type: "button", disabled, onclick: connectWallet }, "Connect a wallet")));
+        S.wallet ? el("div", { class: "actions" }, el("button", { class: "go", type: "button", disabled, onclick: build }, "Build it: one transaction"))
+          : connectButton(disabled));
       break;
     }
     case "fund":
       out.push(el("h3", {}, "Fund it"),
         el("p", {}, "Your Safe is empty. Send it a little test ETH, from your wallet or a Base Sepolia faucet."),
         rows([["Safe", addr(S.home.safe)], ["Balance", eth(S.safe.balance)]]),
-        el("div", { class: "actions" }, S.wallet ? el("button", { class: "go", type: "button", disabled, onclick: fund }, "Send 0.001 test ETH from my wallet")
-          : el("button", { class: "go", type: "button", disabled, onclick: connectWallet }, "Connect a wallet"),
-        el("a", { href: "https://docs.base.org/base-chain/tools/network-faucets", target: "_blank", rel: "noopener noreferrer" }, "Base Sepolia faucets")));
+        el("div", { class: "actions" }, S.wallet ? el("button", { class: "go", type: "button", disabled, onclick: fund }, "Send 0.001 test ETH from my wallet") : null,
+          el("a", { href: "https://docs.base.org/base-chain/tools/network-faucets", target: "_blank", rel: "noopener noreferrer" }, "Base Sepolia faucets")),
+        S.wallet ? null : connectButton(disabled));
       break;
     case "ready":
     case "working":
@@ -403,7 +457,7 @@ function pressScreen(s, disabled) {
   out.push(el("div", { class: "verify" }, vc, el("div", {}, el("div", { class: "small" }, "Safe transaction hash, worked out by the console"),
     el("div", { class: "code" }, r.verify), el("div", { class: "mono small" }, r.safeTxHash))));
   if (r.refuse) { out.push(el("p", { class: "refuse" }, "The console refuses: " + r.refuse)); return out; }
-  if (!S.wallet) { out.push(el("div", { class: "actions" }, el("button", { class: "go", type: "button", disabled, onclick: connectWallet }, "Connect a wallet to send"))); return out; }
+  if (!S.wallet) { out.push(connectButton(disabled, "Connect a wallet to send")); return out; }
   let ack = r.level !== "red";
   const hold = holdButton(w ? `Hold to send approval ${w.n} again` : `Hold to approve with key ${S.seat.n}`, () => press(tx), { red: r.level === "red" });
   hold.disabled = disabled || !ack;
@@ -466,8 +520,9 @@ function drawSide() {
     H?.seat && [`Seat #${H.seatNumber ?? "?"}`, addr(H.seat)],
     ["Passkey signer", addr(S.signer)],
     ["Your passkey", `made ${S.pk.made}${S.pk.attachment ? ` · ${S.pk.attachment === "platform" ? "this device" : "another device"}` : ""}`],
-    ["Wallet", S.wallet ? el("span", {}, addr(S.wallet.account), el("span", { class: "small" }, S.walletBalance != null ? ` ${eth(S.walletBalance)} · pays gas only` : " pays gas only"))
-      : el("button", { class: "link", type: "button", onclick: connectWallet }, "Connect a wallet")],
+    ["Wallet", S.wallet ? el("span", {}, addr(S.wallet.account), el("span", { class: "small" }, ` ${S.wallet.name}${S.walletBalance != null ? ` · ${eth(S.walletBalance)}` : ""} · pays gas only · `),
+      el("button", { class: "link", type: "button", onclick: () => connectWallet(true) }, "change"))
+      : el("button", { class: "link", type: "button", onclick: () => connectWallet() }, "Connect a wallet")],
   ]));
   if (!S.seat) return;
   const n = S.seat.n, items = [];
