@@ -54,6 +54,16 @@ loses its gas, and the phone never sees that seat, because it looks only at the 
 out itself. Meanwhile the phone's page reads the chain every few seconds and moves on when the Safe
 is built, and again when it has ETH. The paying page offers to send that ETH too.
 
+The build makes only what isn't there yet. Anyone may create the seat, or deploy the Safe with its
+initializer, on their own; a build that made either again would revert every time, and the passkey's
+device would be stuck at "Build". The e2e has a stranger create the seat first.
+
+The steps follow the chain, not the order of clicks: no seat yet means key 0, a seat or Safe missing
+means the build, an empty Safe means funding it, then presses. ETH sent to the Safe's address before
+the build isn't lost (the address is fixed) and the page simply skips funding. With no wallet that can
+pay, the funding step offers the build link again (its page sees the Safe built and offers to fund
+it) and the Safe's address to copy.
+
 The same request could go to a relay that pays the gas: it would rebuild the same calls the same way
 (`site/src/pay.mjs`). None exists yet, and the page makes no call to one. Presses can go the same
 way, as a second kind of link: [one press](one-press.md#sent-from-another-device).

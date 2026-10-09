@@ -18,7 +18,7 @@ import { createServer } from "node:http";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
-import { createPublicClient, decodeFunctionData, formatEther, http, parseAbi } from "viem";
+import { concat, createPublicClient, decodeFunctionData, encodeFunctionData, formatEther, http, parseAbi } from "viem";
 import { startChain } from "../tools/chain/anvil.mjs";
 import { MULTICALL_ABI } from "./src/chain.mjs";
 
@@ -192,12 +192,23 @@ try {
   wallet.refuseNext = true;
   await click("Pay: one transaction", payer);
   check(await waitFor(/wallet said no/, 30000, payer) && !(await pc.getCode({ address: H.safe })), "the payer's wallet says no: nothing is built");
+  // Meanwhile a stranger deploys the SeatFactory and creates the seat on its own, as anyone may. The
+  // build must still go through: it makes only what isn't there yet.
+  const dep = JSON.parse(readFileSync(join(SITE, "..", "contracts", "deployment.json"), "utf8"));
+  const signer = shown[0];
+  for (const tx of [{ to: dep.create2Deployer, data: concat([dep.salt, dep.SeatFactory.initCode]) },
+    { to: dep.SeatFactory.address, data: encodeFunctionData({ abi: dep.abi.SeatFactory, functionName: "createSeat", args: [signer, H.seatNumber, H.firstKey] }) }]) {
+    const r = await rpc("eth_sendTransaction", [{ from: THIRD, ...tx, gas: "0x" + (5000000).toString(16) }]);
+    await pc.waitForTransactionReceipt({ hash: r.result });
+  }
+  check(!!(await pc.getCode({ address: H.seat })) && !(await pc.getCode({ address: H.safe })), "a stranger creates the seat alone: half built");
   await click("Pay: one transaction", payer);
   check(await waitFor(/Built\./, 60000, payer), "then one wallet transaction from the other browser builds the shielded Safe");
   const owners = await pc.readContract({ address: H.safe, abi: SAFE_ABI, functionName: "getOwners" });
   check(owners.length === 1 && owners[0].toLowerCase() === H.seat.toLowerCase(), "on chain: a Safe whose one owner is the seat");
   check((await pc.readContract({ address: H.seat, abi: SEAT_ABI, functionName: "current" })) === H.firstKey, "on chain: the seat holds key 0's fingerprint and nothing else");
-  check(await waitFor(/Your Safe is built, and empty/, 30000), "the first browser sees the Safe and moves on by itself");
+  check(await waitFor(/Your Safe is built, and empty[\s\S]*Fund it from another device/, 30000) && await page.getByRole("button", { name: "Copy the Safe's address" }).count() === 1,
+    "the first browser sees the Safe and moves on by itself, to funding it from another device");
   await click("Send it 0.001 test ETH", payer);
   check(await waitFor(/Funded/, 30000, payer) && await payer.evaluate(() => localStorage.getItem("sab.home") === null), "the payer funds it too, and keeps nothing");
   check(await waitFor(/Press the button/), "the first browser sees the ETH and moves on");
@@ -209,6 +220,19 @@ try {
   await click("Test wallet (Anvil)");
 
   // 4. two presses
+  // more than the Safe holds: the hold is held back, or key 0 would burn on an approval the Safe can't run
+  const amount = page.locator("#screen .form input").nth(1);
+  await amount.fill("1");
+  check(await waitFor(/Approving now would burn key 0[\s\S]*Fund it from another device/) && await page.locator("button.hold").isDisabled(), "sending more than the Safe holds: no hold, and a way to fund it");
+  await amount.fill("0.0001");
+  // a wallet account with no ETH for gas: the page says so before anything is signed
+  const EMPTY = "0x00000000000000000000000000000000000e0e01";
+  wallet.account = EMPTY;
+  await page.evaluate((a) => window.__e2eEmit("accountsChanged", [a]), EMPTY);
+  check(await waitFor(/has no Local Anvil[^\n]* ETH for gas[\s\S]*Holding still signs here/), "a wallet account with no ETH for gas: said before the hold, and the approval would go out as a link");
+  wallet.account = ACCOUNT;
+  await page.evaluate((a) => window.__e2eEmit("accountsChanged", [a]), ACCOUNT);
+  await waitFor(/Holding asks your passkey once\. The console signs with key 0, burns it and names key 1; your wallet/);
   const TO = "0x00000000000000000000000000000000000b0b01";
   await page.locator("#screen input.mono").fill(TO);
   check(await waitFor(/Send 0\.0001 ETH[\s\S]*…0b0b01/), "the console says what the transaction does, and the hash it worked out");

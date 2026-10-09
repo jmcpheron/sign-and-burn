@@ -19908,8 +19908,8 @@ async function buildCalls(C, { pk, signer, seatNumber, firstKey: firstKey2, seat
     functionName: "createSigner",
     args: [BigInt("0x" + pk.x), BigInt("0x" + pk.y), BigInt(C.cfg.signer.verifiers)]
   }) });
-  calls.push({ target: C.seatFactory, allowFailure: false, callData: encodeFunctionData({ abi: FACTORY_ABI, functionName: "createSeat", args: [signer, seatNumber, firstKey2] }) });
-  calls.push({ target: C.cfg.safe.factory, allowFailure: false, callData: encodeFunctionData({
+  if (!await hasCode(C, seat)) calls.push({ target: C.seatFactory, allowFailure: false, callData: encodeFunctionData({ abi: FACTORY_ABI, functionName: "createSeat", args: [signer, seatNumber, firstKey2] }) });
+  if (!await hasCode(C, await safeAddress(C, seat))) calls.push({ target: C.cfg.safe.factory, allowFailure: false, callData: encodeFunctionData({
     abi: PROXY_FACTORY_ABI,
     functionName: "createProxyWithNonce",
     args: [C.cfg.safe.singleton, safeInitializer(C, seat), BigInt(seat)]
@@ -20467,6 +20467,7 @@ async function build() {
     if (what.signer.toLowerCase() !== S.signer.toLowerCase() || what.seat.toLowerCase() !== S.home.seat.toLowerCase() || what.safe.toLowerCase() !== S.home.safe.toLowerCase())
       throw new Error("The build would make other addresses than the ones worked out at key 0. Nothing was sent.");
     if (!what.built) {
+      await needGas();
       const hash3 = await send(S.C, S.wallet, what.calls);
       S.busy = "Waiting for the block…";
       render();
@@ -20478,7 +20479,13 @@ async function build() {
     pickStep();
   });
 }
+async function needGas(atLeast = 0n) {
+  S.walletBalance = await S.C.pc.getBalance({ address: S.wallet.account }).catch(() => null);
+  if (S.walletBalance !== null && S.walletBalance <= atLeast)
+    throw new Error(`${S.wallet.name}'s account ${short(S.wallet.account)} has ${eth(S.walletBalance)} on ${S.C.chain.name}: not enough${atLeast ? " to send 0.001 test ETH and" : ""} to pay the gas. Get some from a Base Sepolia faucet, or pay from another device with a link. Nothing was sent.`);
+}
 var sendTestEth = async (to) => {
+  await needGas(parseEther("0.001"));
   const hash3 = await S.wallet.w.sendTransaction({ account: S.wallet.account, to, value: parseEther("0.001"), chain: S.C.chain });
   await receipt(S.C, hash3);
   return hash3;
@@ -20492,6 +20499,7 @@ async function fund() {
 }
 var buildLink = () => toLink(request(S.C, S.pk, S.home), location.origin + location.pathname);
 var SHARE_BUILD = { title: "Pay the gas for a shielded Safe", text: "Open this where you have a wallet on Base Sepolia, and press Pay. It pays the gas to build a shielded Safe; the wallet owns none of it." };
+var SHARE_FUND = { title: "Fund a shielded Safe", text: "Open this where you have a wallet on Base Sepolia. It offers to send the Safe 0.001 test ETH for its first presses." };
 var SHARE_APPROVAL = { title: "Send an approval for a shielded Safe", text: "Open this where you have a wallet on Base Sepolia, and press Send. It pays the gas for an approval already signed; the wallet approves nothing." };
 async function shareLink(link, what) {
   S.error = "";
@@ -20599,6 +20607,7 @@ async function payBuild() {
     const what = await resolve(S.C, P2.req);
     if (what.seat !== P2.what.seat || what.safe !== P2.what.safe) throw new Error("The addresses changed since this page worked them out. Nothing was sent.");
     if (!what.built) {
+      await needGas();
       P2.hash = await send(S.C, S.wallet, what.calls);
       S.busy = "Waiting for the block…";
       render();
@@ -20632,6 +20641,7 @@ async function payApproval() {
     P2.what = W;
     if (W.landed || W.r.refuse) return;
     if (W.why) throw new Error(`The seat would refuse this approval (${W.why}). Nothing was sent.`);
+    await needGas();
     S.busy = "Your wallet sends it. It pays gas, and approves nothing…";
     render();
     const hash3 = await send(S.C, S.wallet, approveCalls(W.a, P2.req.tx));
@@ -20671,6 +20681,7 @@ function currentTx() {
   if (t.preset === "delegate") return { to, value: "0", data: "0x", operation: 1, nonce };
   return { to, value, data: "0x", operation: 0, nonce };
 }
+var canPay = () => !!S.wallet && S.walletBalance !== 0n;
 async function press(tx) {
   S.step = "working";
   await guard("Reading the seat and the Safe from the chain…", async () => {
@@ -20684,6 +20695,7 @@ async function press(tx) {
     const begin = ask({ op: "begin", ...req });
     if (!begin.ok) throw new Error(begin.refuse);
     let a = begin.resend, signed = null;
+    if (!a && BigInt(tx.value || 0) > S.safe.balance) throw new Error(`The Safe has ${eth(S.safe.balance)}, and this sends ${eth(BigInt(tx.value))}. Fund it first. Nothing was signed.`);
     if (!a) {
       S.busy = `One tap: your passkey signs c, and its PRF makes the seeds of keys ${S.seat.n} and ${S.seat.n + 1}…`;
       render();
@@ -20699,7 +20711,7 @@ async function press(tx) {
     render();
     const why = await trySeat(S.C, a.seat, [a.safe, a.safeTxHash, a.nextKey, a.oneTime, a.curveSig], S.wallet?.account);
     if (why) throw new Error(`The seat would refuse this approval (${why}). The console keeps it, and will only ever send this one for key ${S.seat.n}.`);
-    if (!S.wallet) {
+    if (!canPay()) {
       S.shared = "";
       return;
     }
@@ -20789,24 +20801,22 @@ function screen(s) {
         ]),
         el("p", { class: "small" }, "The seat holds only key 0's fingerprint. The Safe's one owner is the seat. If nobody has deployed the SeatFactory on this chain yet, the same transaction deploys it, at the address it has on every chain.")
       );
-      if (S.wallet) out.push(el("div", { class: "actions" }, el("button", { class: "go", type: "button", disabled, onclick: build }, "Build it: one transaction")), shareBox(false, disabled));
+      if (canPay()) out.push(el("div", { class: "actions" }, el("button", { class: "go", type: "button", disabled, onclick: build }, "Build it: one transaction")), shareBox(false, disabled));
+      else if (S.wallet) out.push(el("p", { class: "note" }, `${S.wallet.name}'s account ${short(S.wallet.account)} has no ${S.C.chain.name} ETH for gas. Pay from another device, or fund that account and come back.`), shareBox(true, disabled));
       else if (S.walletsHere) out.push(connectButton(disabled), shareBox(false, disabled));
       else out.push(shareBox(true, disabled), el("div", { class: "actions" }, el("button", { class: "link", type: "button", disabled, onclick: () => connectWallet() }, "I have a wallet in this browser")));
       break;
     }
     case "fund":
-      if (!S.wallet) watch();
+      if (!canPay()) watch();
       out.push(
         el("h3", {}, "Fund it"),
-        el("p", {}, S.wallet ? "Your Safe is empty. Send it a little test ETH, from your wallet or a Base Sepolia faucet." : "Your Safe is built, and empty. Send it a little test ETH: from a Base Sepolia faucet, or from the device that paid the gas, which offers to. This page moves on once it arrives."),
+        el("p", {}, canPay() ? "Your Safe is built, and empty. Send it a little test ETH, from your wallet or a Base Sepolia faucet." : "Your Safe is built, and empty. It needs a little test ETH before its first press: from another device's wallet, or a faucet. This page moves on once it arrives."),
         rows([["Safe", addr(S.home.safe)], ["Balance", eth(S.safe.balance)]]),
-        el(
-          "div",
-          { class: "actions" },
-          S.wallet ? el("button", { class: "go", type: "button", disabled, onclick: fund }, "Send 0.001 test ETH from my wallet") : null,
-          el("a", { href: "https://docs.base.org/base-chain/tools/network-faucets", target: "_blank", rel: "noopener noreferrer" }, "Base Sepolia faucets")
-        ),
-        S.wallet ? null : connectButton(disabled)
+        canPay() ? el("div", { class: "actions" }, el("button", { class: "go", type: "button", disabled, onclick: fund }, "Send 0.001 test ETH from my wallet"), faucets()) : null,
+        S.wallet && !canPay() ? el("p", { class: "note" }, `${S.wallet.name}'s account ${short(S.wallet.account)} has no ${S.C.chain.name} ETH: it can't fund the Safe or pay gas.`) : null,
+        canPay() ? null : fundShareBox(disabled),
+        S.wallet || canPay() ? null : el("div", { class: "actions" }, el("button", { class: "link", type: "button", disabled, onclick: () => connectWallet() }, "I have a wallet in this browser"))
       );
       break;
     case "pay":
@@ -20823,6 +20833,38 @@ function screen(s) {
   if (status) out.push(status);
   if (err) out.push(err);
   return out;
+}
+var faucets = () => el("a", { href: "https://docs.base.org/base-chain/tools/network-faucets", target: "_blank", rel: "noopener noreferrer" }, "Base Sepolia faucets");
+function fundShareBox(disabled) {
+  return el(
+    "div",
+    { class: "share" },
+    el("h4", {}, "Fund it from another device"),
+    el(
+      "ol",
+      { class: "small" },
+      el("li", {}, `${navigator.share ? "Share" : "Copy"} the link to a device with a wallet on Base Sepolia: the one that paid for the build, or any other. Open it there; it sees the Safe is built and offers to send it 0.001 test ETH.`),
+      el("li", {}, "Or copy the Safe's address into a faucet, or any wallet's send screen."),
+      el("li", {}, "This page moves on once the ETH arrives.")
+    ),
+    el(
+      "div",
+      { class: "actions" },
+      el("button", { class: "go", type: "button", disabled, onclick: () => shareLink(buildLink(), SHARE_FUND) }, navigator.share ? "Share the link" : "Copy the link"),
+      el("button", { type: "button", disabled, onclick: copySafe }, "Copy the Safe's address"),
+      faucets()
+    ),
+    S.shared ? el("p", { class: "small", role: "status" }, `${S.shared} This page looks at the chain every few seconds.`) : null
+  );
+}
+async function copySafe() {
+  try {
+    await navigator.clipboard.writeText(S.home.safe);
+    S.shared = `Copied ${short(S.home.safe)}.`;
+  } catch {
+    S.error = `This browser wouldn't copy. The Safe's address: ${S.home.safe}`;
+  }
+  render();
 }
 function shareBox(first, disabled) {
   const link = buildLink();
@@ -20934,9 +20976,10 @@ function payBuildScreen(disabled) {
       P2.funded ? rows([["Funded", txLink(P2.funded)]]) : null,
       el("p", {}, "Go back to the device that made the link: its page sees the Safe and moves on.")
     );
-    const fundIt = S.wallet && P2.balance === 0n && !P2.funded;
-    if (fundIt) out.push(el("p", { class: "small" }, "The Safe is empty. It needs a little test ETH before its first press: this wallet can send it."));
-    out.push(el("div", { class: "actions" }, fundIt ? el("button", { class: "go", type: "button", disabled, onclick: payFund }, "Send it 0.001 test ETH") : null, leave("Done")));
+    const empty = P2.balance === 0n && !P2.funded;
+    if (empty) out.push(el("p", { class: "small" }, `The Safe is empty. It needs a little test ETH before its first press: ${S.wallet ? "this wallet can send it" : "a wallet here can send it"}.`));
+    if (empty && !S.wallet) out.push(connectButton(disabled), el("div", { class: "actions" }, leave("Done")));
+    else out.push(el("div", { class: "actions" }, empty ? el("button", { class: "go", type: "button", disabled, onclick: payFund }, "Send it 0.001 test ETH") : null, leave("Done")));
     return out;
   }
   out.push(el("p", { class: "small" }, "Worked out here, from the public values in the link and the chain: the link names no addresses and no calls. This page keeps nothing. Pay only for a link you expect: a wrong one builds a seat nobody can sign for, and costs you the gas."));
@@ -20984,20 +21027,23 @@ function pressScreen(s, disabled) {
     out.push(el("p", { class: "refuse" }, "The console refuses: " + r.refuse));
     return out;
   }
-  if (w && !S.wallet) {
+  if (S.wallet && !canPay()) out.push(el("p", { class: "note" }, `${S.wallet.name}'s account ${short(S.wallet.account)} has no ${S.C.chain.name} ETH for gas. ` + (w ? "Send this approval from another device, or fund that account and come back." : "Holding still signs here; then the approval goes out as a link for a wallet elsewhere. Or fund that account first.")));
+  if (w && !canPay()) {
     watch();
     out.push(
       approvalShareBox(w, true, disabled),
-      el("div", { class: "actions" }, el("button", { class: "link", type: "button", disabled, onclick: () => connectWallet() }, "I have a wallet in this browser"))
+      S.wallet ? null : el("div", { class: "actions" }, el("button", { class: "link", type: "button", disabled, onclick: () => connectWallet() }, "I have a wallet in this browser"))
     );
     return out;
   }
+  const tooMuch = !w && BigInt(tx.value || 0) > S.safe.balance;
+  if (tooMuch) out.push(el("p", { class: "note" }, `The Safe has ${eth(S.safe.balance)}, and this sends ${eth(BigInt(tx.value))}. Approving now would burn key ${S.seat.n} on an approval the Safe can't run. Send it less, or fund it first.`));
   const elsewhere = S.home.found && !mine().length && !w;
   if (elsewhere) out.push(el("p", { class: "note" }, `Another device made this seat. This browser has no record of what its keys signed. If that device signed with key ${S.seat.n} and the transaction is still pending, or was dropped, signing here would be key ${S.seat.n}'s second signature: enough to forge a third. Check there that its last approval landed, and use one device per seat.`));
   const acks = { red: r.level !== "red", elsewhere: !elsewhere };
   const hold = holdButton(w ? `Hold to send approval ${w.n} again` : `Hold to approve with key ${S.seat.n}`, () => press(tx), { red: r.level === "red" });
   const gate = () => {
-    hold.disabled = disabled || !acks.red || !acks.elsewhere;
+    hold.disabled = disabled || tooMuch || !acks.red || !acks.elsewhere;
   };
   const ack = (k, text) => el("label", { class: "small" }, el("input", { type: "checkbox", onchange: (e) => {
     acks[k] = e.target.checked;
@@ -21017,10 +21063,11 @@ function pressScreen(s, disabled) {
     } }, "Reject")
   ));
   if (w) out.push(approvalShareBox(w, false, disabled));
-  else if (S.wallet) out.push(el("p", { class: "small" }, `Holding asks your passkey once. The console signs with key ${S.seat.n}, burns it and names key ${S.seat.n + 1}; your wallet sends it all in one transaction.`));
+  else if (tooMuch) out.push(fundShareBox(disabled));
+  else if (canPay()) out.push(el("p", { class: "small" }, `Holding asks your passkey once. The console signs with key ${S.seat.n}, burns it and names key ${S.seat.n + 1}; your wallet sends it all in one transaction.`));
   else out.push(
-    el("p", { class: "small" }, `Holding asks your passkey once. The console signs with key ${S.seat.n}, burns it and names key ${S.seat.n + 1}. No wallet here: you then share the approval as a link, and a wallet on another device sends it. It pays the gas and approves nothing.`),
-    el("div", { class: "actions" }, el("button", { class: "link", type: "button", disabled, onclick: () => connectWallet() }, "I have a wallet in this browser"))
+    el("p", { class: "small" }, `Holding asks your passkey once. The console signs with key ${S.seat.n}, burns it and names key ${S.seat.n + 1}. ${S.wallet ? "No gas in that wallet" : "No wallet here"}: you then share the approval as a link, and a wallet on another device sends it. It pays the gas and approves nothing.`),
+    S.wallet ? null : el("div", { class: "actions" }, el("button", { class: "link", type: "button", disabled, onclick: () => connectWallet() }, "I have a wallet in this browser"))
   );
   return out;
 }

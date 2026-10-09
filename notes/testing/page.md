@@ -24,7 +24,7 @@ its own addresses (`tools/chain/anvil.mjs`, chain 31337), and serves the folder 
 - **A second browser** (its own context: no passkey, no site data) plays the device that pays for
   the build by link, and later sends an approval by link. The share sheet is a stand-in that keeps the link.
 
-The 65 checks, in order:
+The 68 checks, in order:
 
 1. The console boots in MicroPython; the page's fingerprint is the manifest's.
 2. Make a passkey; its signer address, worked out by the console, matches Safe's factory.
@@ -33,11 +33,14 @@ The 65 checks, in order:
    page's address followed by public values only: it names neither the seat nor the Safe.
 5. The second browser refuses the link with another chain, then opens the real one in place and shows
    the same seat and Safe. Two wallets: the page lets you choose. The wallet says no: nothing built.
+   Then a stranger deploys the SeatFactory and creates the seat alone, as anyone may: half built.
 6. Then one transaction from the second browser builds the shielded Safe (deploying the SeatFactory
-   too). On chain: the Safe's one owner is the seat, and the seat holds key 0's fingerprint. The first
-   browser moves on by itself. The second funds it and keeps no `sab.home`; the first moves on again,
+   too), making only what isn't there. On chain: the Safe's one owner is the seat, and the seat holds
+   key 0's fingerprint. The first browser moves on by itself, to funding it from another device (a
+   link, and the Safe's address to copy). The second funds it and keeps no `sab.home`; the first moves on again,
    then connects a wallet for the presses.
-7. The console's words and hash for "Send 0.0001 ETH".
+7. More than the Safe holds: the hold is held back, with a way to fund it. A wallet account with no
+   ETH for gas: said before the hold. The console's words and hash for "Send 0.0001 ETH".
 8. Two presses. Each: exactly one passkey signature; the seat's `n` moves; the Safe runs it. Between
    them the wallet switches account, and the second press's gas comes from the new one.
 9. The attack room: five attacks, each refused by the live seat.

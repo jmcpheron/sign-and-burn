@@ -110,5 +110,6 @@ once approval `n` lands.
 
 ## What the Safe needs
 
-ETH for what it sends. A press of "Send 0.0001 ETH" needs 0.0001 ETH in the Safe; the gas comes from
+ETH for what it sends. The page won't let you hold for more than the Safe has: the approval would
+land and burn the key while the Safe couldn't run it. It offers a way to fund it instead. A press of "Send 0.0001 ETH" needs 0.0001 ETH in the Safe; the gas comes from
 the wallet. "Fund it" sends 0.001 test ETH from the wallet, enough for ten presses.
