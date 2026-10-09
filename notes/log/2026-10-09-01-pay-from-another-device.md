@@ -25,6 +25,9 @@ relay that pays the gas later, but build only the link for now.
 - **"Build it"** in the passkey's own browser goes through the same `pay.resolve`, and checks the
   addresses against the ones worked out at key 0 before it sends.
 - **The passkey step** says up front that no wallet is needed on this device.
+- **"What the link holds"** tells the two public keys apart, after a read on a phone: the passkey's
+  curve public key is in the link, and its signer holds it; key 0's public key is not, only its
+  fingerprint, which is all the seat holds until key 0's one approval.
 
 The console is unchanged, so its fingerprint is too. The contracts are unchanged.
 

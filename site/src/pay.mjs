@@ -1,9 +1,9 @@
 // Who pays the gas for the build. Building a shielded Safe takes one transaction, and nothing in it is
 // approved by whoever sends it: anyone may deploy the SeatFactory, a passkey's signer, a seat and its
 // Safe. So the device that holds the passkey doesn't need a wallet. It hands out a build request: the
-// few public values the calls are made from (the passkey's public key, the seat number, key 0's
-// fingerprint), all of which go on chain anyway. A payer rebuilds the calls from them, shows what they
-// make, and sends them:
+// few public values the calls are made from (the passkey's curve public key, which its signer holds;
+// the seat number; key 0's fingerprint, a hash, never the one-time key itself), all of which go on
+// chain anyway. A payer rebuilds the calls from them, shows what they make, and sends them:
 //   - a wallet in this browser (main.mjs, "Build it")
 //   - a wallet on another device, which opens the request as a link (#pay=…)
 //   - later, perhaps, a relay that pays the gas. It would take the same request and rebuild the same

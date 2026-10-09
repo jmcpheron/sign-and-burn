@@ -20724,7 +20724,15 @@ function shareBox(first, disabled) {
       "details",
       {},
       el("summary", { class: "small" }, "What the link holds"),
-      el("p", { class: "small" }, "Public values only, all of which go on chain in the build: your passkey's public key, the seat number and key 0's fingerprint. No seeds, no addresses, no calls. The page that opens it works out the signer, the seat and the Safe from them itself, and shows them before it pays. A wrong link builds a seat nobody can sign for; this page would never see it."),
+      el("p", { class: "small" }, "Three values, all of which go on chain in the build anyway:"),
+      el(
+        "ul",
+        { class: "small" },
+        el("li", {}, el("b", {}, "Your passkey's curve public key"), " (P-256). Its signer contract holds it, so Safe can check the passkey's curve signature. That half is public from the start."),
+        el("li", {}, el("b", {}, "The seat number.")),
+        el("li", {}, el("b", {}, "Key 0's fingerprint"), ": a hash of your first one-time key, not the key. The seat, the Safe's owner, holds only this. Key 0 itself stays secret until its one approval reveals it, and by then it is spent.")
+      ),
+      el("p", { class: "small" }, "No seeds, no addresses, no calls. The page that opens it works out the signer, the seat and the Safe from these itself, and shows them before it pays. A wrong link builds a seat nobody can sign for; this page would never see it."),
       el("input", { class: "mono share-link", readonly: true, value: link, "aria-label": "The link", onfocus: (e) => e.target.select() })
     )
   );

@@ -42,8 +42,11 @@ a wallet. A phone can make the passkey and key 0, then share a link; a wallet on
 it and pays the gas.
 
 The link (`sign-and-burn/build/v1`, in the URL's fragment, which the browser doesn't send to the
-server) holds only public values that go on chain in the build anyway: the passkey's public key, the
-seat number and key 0's fingerprint. No seeds, no addresses, no calls. The page that opens it works
+server) holds only public values that go on chain in the build anyway: the passkey's curve (P-256)
+public key, which its signer contract holds; the seat number; and key 0's fingerprint. The fingerprint
+is a hash of key 0's public key, not the key: the seat, the Safe's owner, holds only that, and key 0
+stays unseen until the approval that spends it. So the link shows the curve half, which is public
+from the start anyway, and nothing of the one-time half but a hash. No seeds, no addresses, no calls. The page that opens it works
 out the signer, the seat and the Safe from those values and the chain (and the console works out the
 signer too), shows them, and only then asks its wallet to pay. A link that named calls could make a
 wallet send anything; this one can't. A tampered link builds a seat nobody can sign for: the payer
