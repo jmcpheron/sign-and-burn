@@ -22,17 +22,22 @@ its own addresses (`tools/chain/anvil.mjs`, chain 31337), and serves the folder 
   accounts, and another that refuses everything, so the page must let you choose. A browser whose
   page sets `e2e.nowallet` has none, as on a phone.
 - **A second browser** (its own context: no passkey, no site data) plays the device that pays for
-  the build by link, and later sends an approval by link. The share sheet is a stand-in that keeps the link.
+  the build by link, and later sends an approval by link. The clipboard is a stand-in that keeps
+  the copied URL or refuses the copy.
 
-The 68 checks, in order:
+The checks, in order:
 
 1. The console boots in MicroPython; the page's fingerprint is the manifest's.
 2. Make a passkey; its signer address, worked out by the console, matches Safe's factory.
 3. One tap: key 0's fingerprint, and every address before anything exists.
-4. With no wallet in the browser, at phone width, the build leads with a link. Shared, it is this
-   page's address followed by public values only: it names neither the seat nor the Safe.
-5. The second browser refuses the link with another chain, then opens the real one in place and shows
-   the same seat and Safe. Two wallets: the page lets you choose. The wallet says no: nothing built.
+4. With no wallet in the browser, at phone width, the build keeps Connect and a visible link.
+   Copied, it is this page's address followed by public values only: it names neither the seat nor the Safe.
+5. With no wallet found, Connect stays available and explains the payment link. Copy writes only
+   the URL, even when the browser has a share sheet. If the clipboard refuses, the link stays visible.
+   The second browser refuses a link with another chain. Its “Pay for a request” form refuses bad
+   text and another chain too. Pasting a valid request from another host stays here and shows
+   the same seat and Safe. A payer with no wallet gets instructions without needing the sender's
+   passkey. Two wallets: the page lets you choose. The wallet says no: nothing built.
    Then a stranger deploys the SeatFactory and creates the seat alone, as anyone may: half built.
 6. Then one transaction from the second browser builds the shielded Safe (deploying the SeatFactory
    too), making only what isn't there. On chain: the Safe's one owner is the seat, and the seat holds
@@ -60,8 +65,8 @@ The 68 checks, in order:
 15. A press with no wallet: the first browser loses its wallet. Holding asks the passkey once (key 5),
     and the approval waits to be shared. After a reload: the same link, and no new passkey signature.
     The second browser refuses a link with another next key (the seat's own refusal, no button), then
-    opens the real one. The seat accepts it, and the hash it works out shows the same check code. Its
-    wallet sends it: the seat moves to key 6, and the Safe runs it. The first browser sees approval 5
+    pastes the real one into “Pay for a request”. The seat accepts it, and the hash it works out
+    shows the same check code. Its wallet sends it: the seat moves to key 6, and the Safe runs it. The first browser sees approval 5
     land by itself, says another device sent it, and its history has it landed.
 16. The CSP refuses another host. A phone-width screen has no sideways scroll. No page errors.
 

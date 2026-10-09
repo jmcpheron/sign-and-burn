@@ -263,4 +263,7 @@ footer { max-width: 1240px; margin: 0 auto; padding: 10px 24px 40px; font-size: 
 .share h4 { margin: 0 0 6px; font-size: 1rem; }
 .share ul { margin: 0 0 6px; padding-left: 1.3em; display: grid; gap: 4px; }
 .share ol { margin: 0; padding-left: 1.3em; display: grid; gap: 4px; }
-.share-link { width: 100%; margin-top: 6px; }
+.share-link, .request-link { width: 100%; margin-top: 6px; }
+
+.payment-request { margin-bottom: 24px; }
+.payment-request summary { cursor: pointer; }

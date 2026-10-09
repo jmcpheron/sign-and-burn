@@ -72,12 +72,16 @@ async function walletRpc(method, params) {
 
 const browser = await chromium.launch({ executablePath: process.env.SAB_CHROMIUM || undefined });
 // Each browser has the two wallets, unless the page sets e2e.nowallet in its localStorage: then it
-// has none, as on a phone. The share sheet is a stand-in that keeps the link it was handed.
+// has none, as on a phone. The clipboard keeps exactly what was copied, even in a browser with a share sheet.
 async function newBrowser() {
 const ctx = await browser.newContext({ viewport: { width: 1360, height: 1000 } });
 await ctx.exposeFunction("__e2eWallet", walletRpc);
 await ctx.addInitScript(() => {
-  Object.defineProperty(Navigator.prototype, "share", { configurable: true, value: async (d) => { window.__e2eShared = d.url; } });
+  Object.defineProperty(Navigator.prototype, "share", { configurable: true, value: async () => { throw new Error("Copy link must not open a share sheet"); } });
+  Object.defineProperty(Navigator.prototype, "clipboard", { configurable: true, value: { writeText: async (text) => {
+    if (window.__e2eCopyFails) throw new Error("clipboard unavailable");
+    window.__e2eCopied = text;
+  } } });
   const listeners = {};
   const provider = {
     request: async ({ method, params }) => {
@@ -162,12 +166,19 @@ try {
   await page.evaluate(() => localStorage.setItem("e2e.nowallet", "1"));
   await page.setViewportSize({ width: 390, height: 900 });
   await page.reload();
-  check(await waitFor(/No wallet here\? Pay from another device/) && !(await page.locator("#screen").getByRole("button", { name: "Connect a wallet" }).count()),
-    "no wallet in this browser: the build leads with a link to pay from another device");
+  check(await waitFor(/No wallet here\? Pay from another device/) && (await page.locator("#screen").getByRole("button", { name: "Connect a wallet" }).count()) === 1,
+    "no wallet in this browser: Connect a wallet stays available beside the payment link");
+  await click("Connect a wallet");
+  check(await waitFor(/No wallet found in this browser[\s\S]*They review the transaction here/) && await page.locator("#screen .share-link").isVisible(),
+    "no wallet found: explain who pays and keep the prepared link visible");
+  await page.evaluate(() => { window.__e2eCopyFails = true; });
+  await click("Copy link");
+  check(await waitFor(/Select the link shown here/) && await page.locator("#screen .share-link").isVisible(), "clipboard refused: the link stays visible to copy by hand");
+  await page.evaluate(() => { window.__e2eCopyFails = false; });
   await shot("2-build-phone");
   await page.setViewportSize({ width: 1360, height: 1000 });
-  await click("Share the link");
-  const link = await page.evaluate(() => window.__e2eShared);
+  await click("Copy link");
+  const link = await page.evaluate(() => window.__e2eCopied);
   const H = await home();
   check(link === await page.locator(".share-link").inputValue() && link.startsWith(URL_ + "#pay=") && !link.includes(H.seat.slice(2).toLowerCase()) && !link.includes(H.safe.slice(2).toLowerCase()),
     "the link: this page's address, then public values only (it names neither the seat nor the Safe)");
@@ -178,10 +189,27 @@ try {
   payer.on("console", (m) => { if (/Content Security Policy|Refused to/.test(m.text())) csp.push(m.text()); });
   await payer.goto(link.replace("chain=31337", "chain=1"));
   check(await waitFor(/This link is for chain 1\./, 30000, payer), "another browser refuses a link for another chain");
-  await payer.goto(link);
+  await payer.evaluate(() => localStorage.setItem("e2e.nowallet", "1"));
+  await payer.goto(URL_);
+  await payer.locator(".payment-request summary").click();
+  await payer.locator("#pay-request-link").fill("not a link");
+  await click("Review request", payer);
+  check(await payer.locator("#pay-request-status").innerText() === "Paste a complete Sign and Burn payment link. Nothing was sent.", "pasting invalid text gives an explanation without sending");
+  await payer.locator("#pay-request-link").fill(link.replace("chain=31337", "chain=1"));
+  await click("Review request", payer);
+  check(/This link is for chain 1/.test(await payer.locator("#pay-request-status").innerText()), "pasted requests also refuse another chain");
+  await payer.locator("#pay-request-link").fill(link.replace(URL_, "https://example.invalid/"));
+  await click("Review request", payer);
+  check(payer.url().startsWith(URL_), "pasted request is reviewed here without visiting the link's host");
   check(await waitFor(/Pay the gas for a shielded Safe[\s\S]*Seat #0/, 30000, payer), "…and opens the real one in place: what it builds, worked out there");
   const shown = await payer.evaluate(() => [...document.querySelectorAll("#screen .addr span[title]")].map((e) => e.title.toLowerCase()));
   check(shown.includes(H.seat.toLowerCase()) && shown.includes(H.safe.toLowerCase()), "…the same seat and Safe the first browser worked out at key 0");
+  await click("Connect a wallet", payer);
+  check(await waitFor(/No wallet found in this browser[\s\S]*You do not need the sender's passkey/, 30000, payer),
+    "a payer with no wallet gets instructions for paying without the sender's passkey");
+  await payer.evaluate(() => localStorage.removeItem("e2e.nowallet"));
+  await payer.reload();
+  await waitFor(/Pay the gas for a shielded Safe[\s\S]*Seat #0/, 30000, payer);
   await click("Connect a wallet", payer);
   await payer.locator(".chooser").waitFor();
   const names = await payer.locator(".chooser .actions button").allInnerTexts();
@@ -344,8 +372,8 @@ try {
   await hold();
   check(await waitFor(/Approval 5 is signed\. Send it from another device/, 60000) && (await signCount()) === before + 1, "…one tap: key 5 signs, and the approval waits in the ledger");
   const code = await page.locator("#screen .verify .code").innerText();
-  await click("Share the link");
-  const alink = await page.evaluate(() => window.__e2eShared);
+  await click("Copy link");
+  const alink = await page.evaluate(() => window.__e2eCopied);
   await page.reload();
   check(await waitFor(/Approval 5 is signed/) && (await signCount()) === before + 1 && (await page.locator(".share-link").inputValue()) === alink,
     "after a reload: the same approval, the same link, and no new passkey signature");
@@ -354,7 +382,10 @@ try {
   await payer.goto(URL_ + "#" + tampered);
   check(await waitFor(/The seat would refuse this approval \(Bad/, 30000, payer) && !(await payer.getByRole("button", { name: "Send it: one transaction" }).count()),
     "the other browser: the link with another next key, and the seat would refuse it; no button");
-  await payer.goto(alink);
+  await payer.goto(URL_);
+  await payer.locator(".payment-request summary").click();
+  await payer.locator("#pay-request-link").fill(alink);
+  await click("Review request", payer);
   check(await waitFor(/Send approval 5[\s\S]*The seat accepts it/, 30000, payer) && (await payer.locator("#screen .verify .code").innerText()) === code,
     "the real link: the seat accepts it, and the hash worked out there shows the code this browser shows");
   await payer.screenshot({ path: join(SHOTS, "8-send-approval.png"), fullPage: true });
