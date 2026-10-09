@@ -211,7 +211,7 @@ try {
   // 4. two presses
   const TO = "0x00000000000000000000000000000000000b0b01";
   await page.locator("#screen input.mono").fill(TO);
-  check(await waitFor(/Send 0\.0001 ETH/), "the console says what the transaction does, and the hash it worked out");
+  check(await waitFor(/Send 0\.0001 ETH[\s\S]*…0b0b01/), "the console says what the transaction does, and the hash it worked out");
   await shot("3-review");
   for (const k of [0, 1]) {
     const before = await signCount();
@@ -313,8 +313,9 @@ try {
   await page.evaluate(() => localStorage.setItem("e2e.nowallet", "1"));
   await page.reload();
   check(await waitFor(/No wallet here: you then share the approval as a link/), "no wallet in this browser: holding signs, and then the approval goes out as a link");
+  // the screen redraws on the next frame: wait for the new recipient, or the hold button found is the old one
   await page.locator("#screen input.mono").first().fill("0x00000000000000000000000000000000000b0b02");
-  await waitFor(/Send 0\.0001 ETH/);
+  await waitFor(/Send 0\.0001 ETH[\s\S]*…0b0b02/);
   before = await signCount();
   await hold();
   check(await waitFor(/Approval 5 is signed\. Send it from another device/, 60000) && (await signCount()) === before + 1, "…one tap: key 5 signs, and the approval waits in the ledger");
