@@ -80,13 +80,36 @@ transaction, by its next key and Safe transaction hash, so the attack room works
 
 ## Who pays, and with what
 
-Any wallet in the browser that speaks EIP-6963 or EIP-1193. The page lists them and you pick. It only
+Any wallet in the browser that speaks EIP-6963 or EIP-1193, or a wallet on another device, by link
+(below). The page lists them and you pick. It only
 pays gas: nothing it signs approves anything in the Safe. A Trezor or a Ledger pays through a browser
 wallet that drives it (Rabby, MetaMask, Frame). The device shows a call to Multicall3
 (`0xcA11…CA11`); what the call approves is on the console's screen. WalletConnect isn't offered yet:
 Trezor Suite's WalletConnect doesn't cover Base Sepolia (KICKOFF.md, open decisions).
 
+## Sent from another device
+
+With no wallet in the browser, holding still asks the passkey once, and the console still signs with
+key `n` and records the approval in its ledger before the answer leaves. Then, instead of a wallet,
+the page offers the approval as a link (`sign-and-burn/approval/v1`, in the fragment). It holds key
+`n`'s one-time signature, the passkey's curve signature, key `n+1`'s fingerprint, and the Safe
+transaction's fields. No seeds, and no hash.
+
+The page that opens it doesn't take the link's word for anything. Its own console works out the Safe
+transaction hash and says what the transaction does (red pages stay red); its check code should match
+the one on the device that signed. Then it asks the seat, by simulation, whether it would take the
+approval. A link with another next key, another Safe transaction or another Safe gets the seat's own
+refusal, and no button. If the seat would take it, the wallet there sends the same Multicall3 call a
+press here would, and pays the gas.
+
+An approval isn't secret once it leaves: anyone who sees it sent can copy it (the front-run case), and
+anyone with the link can send it. Either way it does only what was signed. Until it lands, the
+signing device offers only that same approval, as the same link, with no new tap: the
+[guardrail](guardrail.md) as before. It reads the chain every few seconds and shows the press as done
+once approval `n` lands.
+
 ## What the Safe needs
 
-ETH for what it sends. A press of "Send 0.0001 ETH" needs 0.0001 ETH in the Safe; the gas comes from
+ETH for what it sends. The page won't let you hold for more than the Safe has: the approval would
+land and burn the key while the Safe couldn't run it. It offers a way to fund it instead. A press of "Send 0.0001 ETH" needs 0.0001 ETH in the Safe; the gas comes from
 the wallet. "Fund it" sends 0.001 test ETH from the wallet, enough for ten presses.

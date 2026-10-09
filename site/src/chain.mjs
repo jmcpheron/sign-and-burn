@@ -192,15 +192,16 @@ export async function seatAddress(C, signer, seatNumber, firstKey) {
 const deployFactory = (C) => ({ target: C.cfg.create2Deployer, allowFailure: false, callData: concat([deployment.salt, deployment.SeatFactory.initCode]) });
 
 /** The calls that build a shielded Safe in one transaction: the SeatFactory if nobody has deployed it
- * yet (anyone may, at the same address on every chain), the passkey's signer if it isn't there, the
- * seat, and the Safe. */
+ * yet (anyone may, at the same address on every chain), the passkey's signer, the seat and the Safe,
+ * each only if it isn't there. Anyone may create the seat, or the Safe with its initializer, on its
+ * own; making either again would revert, and the build with it, every time. */
 export async function buildCalls(C, { pk, signer, seatNumber, firstKey, seat }) {
   const calls = [];
   if (!(await hasCode(C, C.seatFactory))) calls.push(deployFactory(C));
   if (!(await hasCode(C, signer))) calls.push({ target: C.cfg.signer.factory, allowFailure: false, callData: encodeFunctionData({
     abi: SIGNER_FACTORY_ABI, functionName: "createSigner", args: [BigInt("0x" + pk.x), BigInt("0x" + pk.y), BigInt(C.cfg.signer.verifiers)] }) });
-  calls.push({ target: C.seatFactory, allowFailure: false, callData: encodeFunctionData({ abi: FACTORY_ABI, functionName: "createSeat", args: [signer, seatNumber, firstKey] }) });
-  calls.push({ target: C.cfg.safe.factory, allowFailure: false, callData: encodeFunctionData({ abi: PROXY_FACTORY_ABI, functionName: "createProxyWithNonce",
+  if (!(await hasCode(C, seat))) calls.push({ target: C.seatFactory, allowFailure: false, callData: encodeFunctionData({ abi: FACTORY_ABI, functionName: "createSeat", args: [signer, seatNumber, firstKey] }) });
+  if (!(await hasCode(C, await safeAddress(C, seat)))) calls.push({ target: C.cfg.safe.factory, allowFailure: false, callData: encodeFunctionData({ abi: PROXY_FACTORY_ABI, functionName: "createProxyWithNonce",
     args: [C.cfg.safe.singleton, safeInitializer(C, seat), BigInt(seat)] }) });
   return calls;
 }

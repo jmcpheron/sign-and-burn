@@ -27,6 +27,12 @@ second tab, a retry button: each is a way to make a second signature by accident
 The console writes each approval to its ledger **before** the answer leaves it. If the chain says the
 seat is behind what the ledger has signed, the console refuses to sign until the chain catches up.
 
+An approval sent from another device, by link ([one press](one-press.md#sent-from-another-device)),
+bends rule 3: the approval leaves at once, but it lands only when someone opens the link and pays.
+Rules 2 and 4 still hold: while it waits, the console offers only that same approval, as the same
+link. What the wait adds is time. For longer, a lost ledger (cleared site data) on the signing device
+would let key `n` sign a second message, so don't clear it while a link is out.
+
 ## What you see
 
 Say the wallet refuses to send approval 2 after the passkey signed it. The console now says: *"Key 2

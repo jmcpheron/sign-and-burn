@@ -22,9 +22,9 @@ its own addresses (`tools/chain/anvil.mjs`, chain 31337), and serves the folder 
   accounts, and another that refuses everything, so the page must let you choose. A browser whose
   page sets `e2e.nowallet` has none, as on a phone.
 - **A second browser** (its own context: no passkey, no site data) plays the device that pays for
-  the build by link. The share sheet is a stand-in that keeps the link.
+  the build by link, and later sends an approval by link. The share sheet is a stand-in that keeps the link.
 
-The 57 checks, in order:
+The 68 checks, in order:
 
 1. The console boots in MicroPython; the page's fingerprint is the manifest's.
 2. Make a passkey; its signer address, worked out by the console, matches Safe's factory.
@@ -33,11 +33,14 @@ The 57 checks, in order:
    page's address followed by public values only: it names neither the seat nor the Safe.
 5. The second browser refuses the link with another chain, then opens the real one in place and shows
    the same seat and Safe. Two wallets: the page lets you choose. The wallet says no: nothing built.
+   Then a stranger deploys the SeatFactory and creates the seat alone, as anyone may: half built.
 6. Then one transaction from the second browser builds the shielded Safe (deploying the SeatFactory
-   too). On chain: the Safe's one owner is the seat, and the seat holds key 0's fingerprint. The first
-   browser moves on by itself. The second funds it and keeps no `sab.home`; the first moves on again,
+   too), making only what isn't there. On chain: the Safe's one owner is the seat, and the seat holds
+   key 0's fingerprint. The first browser moves on by itself, to funding it from another device (a
+   link, and the Safe's address to copy). The second funds it and keeps no `sab.home`; the first moves on again,
    then connects a wallet for the presses.
-7. The console's words and hash for "Send 0.0001 ETH".
+7. More than the Safe holds: the hold is held back, with a way to fund it. A wallet account with no
+   ETH for gas: said before the hold. The console's words and hash for "Send 0.0001 ETH".
 8. Two presses. Each: exactly one passkey signature; the seat's `n` moves; the Safe runs it. Between
    them the wallet switches account, and the second press's gas comes from the new one.
 9. The attack room: five attacks, each refused by the live seat.
@@ -54,7 +57,13 @@ The 57 checks, in order:
 14. A front-run: a third account copies the approve call out of the page's transaction and sends it
     first. The page's transaction reverts; the page says approval 4 landed in another transaction and
     names it, the seat is at key 5, and the Safe hasn't run it.
-15. The CSP refuses another host. A phone-width screen has no sideways scroll. No page errors.
+15. A press with no wallet: the first browser loses its wallet. Holding asks the passkey once (key 5),
+    and the approval waits to be shared. After a reload: the same link, and no new passkey signature.
+    The second browser refuses a link with another next key (the seat's own refusal, no button), then
+    opens the real one. The seat accepts it, and the hash it works out shows the same check code. Its
+    wallet sends it: the seat moves to key 6, and the Safe runs it. The first browser sees approval 5
+    land by itself, says another device sent it, and its history has it landed.
+16. The CSP refuses another host. A phone-width screen has no sideways scroll. No page errors.
 
 Screenshots go to `site/shots/` (not committed).
 

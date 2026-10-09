@@ -101,8 +101,8 @@ loaded console holds 34 KB of heap. It has not been run on a board yet. Much of 
 **On the site:** [signandburn.app](https://signandburn.app/).
 You need a passkey with PRF (a current Safari, Chrome or Edge with Touch ID, Windows Hello, a phone or
 a security key), a browser wallet on Base Sepolia, and a little Base Sepolia ETH for gas. The wallet
-only pays gas. With no wallet on the passkey's device (a phone, say), the page shares a link, and a
-wallet on another device pays for the build; the presses still need a wallet where the passkey is. A Trezor or a Ledger works through a browser wallet that drives it, such as Rabby,
+only pays gas. With no wallet on the passkey's device (a phone, say), the page shares links instead: a
+wallet on another device pays for the build, and sends each approval after the console has signed it. A Trezor or a Ledger works through a browser wallet that drives it, such as Rabby,
 MetaMask or Frame; the page lets you pick among the wallets in your browser.
 
 **On your own computer**, with nothing on a real chain:

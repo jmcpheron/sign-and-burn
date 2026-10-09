@@ -42,8 +42,11 @@ a wallet. A phone can make the passkey and key 0, then share a link; a wallet on
 it and pays the gas.
 
 The link (`sign-and-burn/build/v1`, in the URL's fragment, which the browser doesn't send to the
-server) holds only public values that go on chain in the build anyway: the passkey's public key, the
-seat number and key 0's fingerprint. No seeds, no addresses, no calls. The page that opens it works
+server) holds only public values that go on chain in the build anyway: the passkey's curve (P-256)
+public key, which its signer contract holds; the seat number; and key 0's fingerprint. The fingerprint
+is a hash of key 0's public key, not the key: the seat, the Safe's owner, holds only that, and key 0
+stays unseen until the approval that spends it. So the link shows the curve half, which is public
+from the start anyway, and nothing of the one-time half but a hash. No seeds, no addresses, no calls. The page that opens it works
 out the signer, the seat and the Safe from those values and the chain (and the console works out the
 signer too), shows them, and only then asks its wallet to pay. A link that named calls could make a
 wallet send anything; this one can't. A tampered link builds a seat nobody can sign for: the payer
@@ -51,10 +54,19 @@ loses its gas, and the phone never sees that seat, because it looks only at the 
 out itself. Meanwhile the phone's page reads the chain every few seconds and moves on when the Safe
 is built, and again when it has ETH. The paying page offers to send that ETH too.
 
+The build makes only what isn't there yet. Anyone may create the seat, or deploy the Safe with its
+initializer, on their own; a build that made either again would revert every time, and the passkey's
+device would be stuck at "Build". The e2e has a stranger create the seat first.
+
+The steps follow the chain, not the order of clicks: no seat yet means key 0, a seat or Safe missing
+means the build, an empty Safe means funding it, then presses. ETH sent to the Safe's address before
+the build isn't lost (the address is fixed) and the page simply skips funding. With no wallet that can
+pay, the funding step offers the build link again (its page sees the Safe built and offers to fund
+it) and the Safe's address to copy.
+
 The same request could go to a relay that pays the gas: it would rebuild the same calls the same way
-(`site/src/pay.mjs`). None exists yet, and the page makes no call to one. Presses aren't covered:
-each press is still sent by a wallet in the browser that signed it, because the console's ledger
-tracks what it sent.
+(`site/src/pay.mjs`). None exists yet, and the page makes no call to one. Presses can go the same
+way, as a second kind of link: [one press](one-press.md#sent-from-another-device).
 
 ## What it would take to take the Safe
 
