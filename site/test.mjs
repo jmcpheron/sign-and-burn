@@ -1,11 +1,12 @@
 // The page's own JavaScript, without a browser: src/wots.mjs against reference/vectors/v1.json, the
 // danger case's forgery against a throwaway key, finding an approval inside a wallet's transaction,
-// and console/cfg.py against what the page reads.
+// the build link another device pays from, and console/cfg.py against what the page reads.
 //   cd site && npm ci && node test.mjs
 import { readFileSync } from "node:fs";
 import * as w from "./src/wots.mjs";
 import { encodeFunctionData, parseAbi } from "viem";
 import { MULTICALL_ABI, approveCalls, findApprove, parseCfg } from "./src/chain.mjs";
+import * as pay from "./src/pay.mjs";
 
 let fails = 0;
 const check = (what, ok) => { if (!ok) { fails++; console.log("FAIL", what); } };
@@ -46,6 +47,24 @@ for (const [what, input] of [["a plain Multicall3 call", multicall], ["a smart a
 }
 check("not an approval with another next key", findApprove(wrapped, { ...event, nextKey: "0x" + "00".repeat(32) }) === null);
 console.log("findApprove: plain and wrapped");
+
+// The build request a phone shares so another device's wallet pays the gas: it survives the trip as a
+// link, and a link of any other shape is refused with a reason, never half-read.
+const C = { id: 84532, chain: { name: "Base Sepolia" } };
+const req = pay.request(C, { x: "AB".repeat(32), y: "cd".repeat(32) }, { seatNumber: 3, firstKey: "0x" + "Ef".repeat(32) });
+const link = pay.toLink(req, "https://signandburn.app/");
+check("a build link round-trips", JSON.stringify(pay.fromLink(new URL(link).hash, C).req) === JSON.stringify(req));
+check("a build link holds no seeds and no calls", !/seed|call|0x[0-9a-f]{40}(?![0-9a-f])/i.test(link.replace(req.firstKey, "")));
+check("not a build link: the page's own anchors", pay.fromLink("#how", C) === null && pay.fromLink("", C) === null);
+const bad = (what, f) => { const q = new URLSearchParams(new URL(link).hash.slice(1)); f(q); check(`refused: ${what}`, !!pay.fromLink("#" + q, C)?.refuse); };
+bad("another tag", (q) => q.set("pay", "sign-and-burn/build/v2"));
+bad("another chain", (q) => q.set("chain", "1"));
+bad("a short public key", (q) => q.set("x", "ab".repeat(31)));
+bad("a seat number that isn't one", (q) => q.set("seat", "1e3"));
+bad("a seat number past uint32", (q) => q.set("seat", "4294967296"));
+bad("a first key of zeros", (q) => q.set("key", "0x" + "00".repeat(32)));
+bad("a first key with markup", (q) => q.set("key", "<b>" + "0".repeat(61)));
+console.log("build links: round trip, and seven refusals");
 
 const cfg = parseCfg(readFileSync(new URL("../console/cfg.py", import.meta.url), "utf8"));
 const dep = JSON.parse(readFileSync(new URL("../contracts/deployment.json", import.meta.url), "utf8"));

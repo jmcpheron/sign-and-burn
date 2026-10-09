@@ -19,17 +19,24 @@ its own addresses (`tools/chain/anvil.mjs`, chain 31337), and serves the folder 
 
 - **The passkey** is Chromium's virtual authenticator, with user verification and PRF.
 - **The wallets** are two, as EIP-6963 announces them: a test wallet backed by Anvil's unlocked
-  accounts, and another that refuses everything, so the page must let you choose.
+  accounts, and another that refuses everything, so the page must let you choose. A browser whose
+  page sets `e2e.nowallet` has none, as on a phone.
+- **A second browser** (its own context: no passkey, no site data) plays the device that pays for
+  the build by link. The share sheet is a stand-in that keeps the link.
 
-The 46 checks, in order:
+The 57 checks, in order:
 
 1. The console boots in MicroPython; the page's fingerprint is the manifest's.
 2. Make a passkey; its signer address, worked out by the console, matches Safe's factory.
 3. One tap: key 0's fingerprint, and every address before anything exists.
-4. Two wallets: the page lets you choose.
-5. One transaction builds the shielded Safe (deploying the SeatFactory too). On chain: the Safe's one
-   owner is the seat, and the seat holds key 0's fingerprint.
-6. Fund it.
+4. With no wallet in the browser, at phone width, the build leads with a link. Shared, it is this
+   page's address followed by public values only: it names neither the seat nor the Safe.
+5. The second browser refuses the link with another chain, then opens the real one in place and shows
+   the same seat and Safe. Two wallets: the page lets you choose. The wallet says no: nothing built.
+6. Then one transaction from the second browser builds the shielded Safe (deploying the SeatFactory
+   too). On chain: the Safe's one owner is the seat, and the seat holds key 0's fingerprint. The first
+   browser moves on by itself. The second funds it and keeps no `sab.home`; the first moves on again,
+   then connects a wallet for the presses.
 7. The console's words and hash for "Send 0.0001 ETH".
 8. Two presses. Each: exactly one passkey signature; the seat's `n` moves; the Safe runs it. Between
    them the wallet switches account, and the second press's gas comes from the new one.
@@ -72,6 +79,10 @@ And two in the test itself: it matched "Fund it" in the steps bar, which names e
 first used `eval` inside the page, which the page's CSP refuses.
 
 ## Next
+
+- [ ] The build from a wallet in the passkey's own browser ("Build it") is no longer driven by the
+      e2e: the link path took its place. Both go through `pay.resolve`; `build()` also checks the
+      addresses against the ones from key 0.
 
 - [ ] Run the e2e against a fork of Base Sepolia too, once in a while, for anything the bytecode copy
       misses.

@@ -50,6 +50,7 @@ changes are reviewed, and the reviews so far.
 | [2026-10-08: the first presses](log/2026-10-08-04-first-presses.md) | three keys burned on Base Sepolia, the attack room live, and a bug it found |
 | [2026-10-08: a read of the page](log/2026-10-08-05-page-review.md) | two gaps found by reading: a second device's empty ledger, and a receipt that says nothing about the approval |
 | [2026-10-08: reframing](log/2026-10-08-06-reframing.md) | what's new and what isn't, the open questions, a review process, and a threat row that said too much |
+| [2026-10-09: pay from another device](log/2026-10-09-01-pay-from-another-device.md) | a phone with no wallet shares a link, a wallet elsewhere pays for the build, and groundwork for a relay |
 
 A new log entry is named `YYYY-MM-DD-NN-topic.md`: what was done, what was found, the numbers, and the
 mistakes.

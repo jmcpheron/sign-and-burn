@@ -3,8 +3,8 @@
   "console": "4ab406c3611fa40dce02fcd1763db83ae4233a5c608847df1d8ec8f9008e785f",
   "files": {
     "LICENSE": "84d2bd6f4370ad28bb4f23f9ebf7a9f659b3ccc043120566711c2325a5858800",
-    "SHA256SUMS": "f8ea64d7c9a5cf132978b3f1b7cabc41553082867b1fd7370079022cff100d76",
-    "app.js": "cc4bddd0ba3ee39a22980837e00a6ec241d3353110c9d31d70d5fab9000b4a7d",
+    "SHA256SUMS": "6b168b7ff18be158ff135392473a8d1c6ac5b2f8b0334dd27fc846f98584a889",
+    "app.js": "53fb63435966261e85b012e2d0d5c76b923d60bc7816e492e15935791e0b98d3",
     "console/cfg.py": "c1903ccd1398363e1d5c4de04980aa43568b6f1cc9090b0913fdcd63e1a9cdcc",
     "console/core.py": "06c25a9b60a8ba1454e0b6747e7b03b2112005f4577644683fa173aa228ac179",
     "console/decode.py": "efeffa4f75f6e61f2b128266c9b857b5efa54bac248fd3840825158da9be1df9",
@@ -16,7 +16,7 @@
     "console/webauthn.py": "30a261d02fa730b488ef57ce38b6b126b6512437c147bc3a5be04b74112ec968",
     "favicon.svg": "cceeed405e1713c33ca20315d82e7a63230e75a54c276310af988f19eae3e340",
     "index.html": "352037a59d256fb84e411cf674dc518a1355aae477c3007b80ec76d1bbc306af",
-    "style.css": "aa3163705221d0f47f385345b62ab86e778bb47933b54e22a6d18a3f83d1bf9c",
+    "style.css": "6fe7746a7029f80905ba458dd200ff470d9bf0fb097352bb4850dcb5d199cd72",
     "vendor/micropython/LICENSE.txt": "0fdc6988e5b07653728624e1d404fa9f12fafeae56d3890e55fcb614bf850ebb",
     "vendor/micropython/micropython.mjs": "4d2d763127382a5b1a2c85a93355e9a20ee0c97f6f097e87b8c15ed5101169ee",
     "vendor/micropython/micropython.wasm": "2168fd5f9b3ad52811361f0f5ed5598d081c13c79c508062fb1ac68b530d569d"
