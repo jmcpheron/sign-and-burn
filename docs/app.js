@@ -7299,44 +7299,44 @@ var init_extract = __esm({
 });
 
 // node_modules/viem/_esm/utils/formatters/transactionRequest.js
-function formatTransactionRequest(request, _) {
+function formatTransactionRequest(request2, _) {
   const rpcRequest = {};
-  if (typeof request.authorizationList !== "undefined")
-    rpcRequest.authorizationList = formatAuthorizationList(request.authorizationList);
-  if (typeof request.accessList !== "undefined")
-    rpcRequest.accessList = request.accessList;
-  if (typeof request.blobVersionedHashes !== "undefined")
-    rpcRequest.blobVersionedHashes = request.blobVersionedHashes;
-  if (typeof request.blobs !== "undefined") {
-    if (typeof request.blobs[0] !== "string")
-      rpcRequest.blobs = request.blobs.map((x) => bytesToHex(x));
+  if (typeof request2.authorizationList !== "undefined")
+    rpcRequest.authorizationList = formatAuthorizationList(request2.authorizationList);
+  if (typeof request2.accessList !== "undefined")
+    rpcRequest.accessList = request2.accessList;
+  if (typeof request2.blobVersionedHashes !== "undefined")
+    rpcRequest.blobVersionedHashes = request2.blobVersionedHashes;
+  if (typeof request2.blobs !== "undefined") {
+    if (typeof request2.blobs[0] !== "string")
+      rpcRequest.blobs = request2.blobs.map((x) => bytesToHex(x));
     else
-      rpcRequest.blobs = request.blobs;
+      rpcRequest.blobs = request2.blobs;
   }
-  if (typeof request.data !== "undefined")
-    rpcRequest.data = request.data;
-  if (request.account)
-    rpcRequest.from = request.account.address;
-  if (typeof request.from !== "undefined")
-    rpcRequest.from = request.from;
-  if (typeof request.gas !== "undefined")
-    rpcRequest.gas = numberToHex(request.gas);
-  if (typeof request.gasPrice !== "undefined")
-    rpcRequest.gasPrice = numberToHex(request.gasPrice);
-  if (typeof request.maxFeePerBlobGas !== "undefined")
-    rpcRequest.maxFeePerBlobGas = numberToHex(request.maxFeePerBlobGas);
-  if (typeof request.maxFeePerGas !== "undefined")
-    rpcRequest.maxFeePerGas = numberToHex(request.maxFeePerGas);
-  if (typeof request.maxPriorityFeePerGas !== "undefined")
-    rpcRequest.maxPriorityFeePerGas = numberToHex(request.maxPriorityFeePerGas);
-  if (typeof request.nonce !== "undefined")
-    rpcRequest.nonce = numberToHex(request.nonce);
-  if (typeof request.to !== "undefined")
-    rpcRequest.to = request.to;
-  if (typeof request.type !== "undefined")
-    rpcRequest.type = rpcTransactionType[request.type];
-  if (typeof request.value !== "undefined")
-    rpcRequest.value = numberToHex(request.value);
+  if (typeof request2.data !== "undefined")
+    rpcRequest.data = request2.data;
+  if (request2.account)
+    rpcRequest.from = request2.account.address;
+  if (typeof request2.from !== "undefined")
+    rpcRequest.from = request2.from;
+  if (typeof request2.gas !== "undefined")
+    rpcRequest.gas = numberToHex(request2.gas);
+  if (typeof request2.gasPrice !== "undefined")
+    rpcRequest.gasPrice = numberToHex(request2.gasPrice);
+  if (typeof request2.maxFeePerBlobGas !== "undefined")
+    rpcRequest.maxFeePerBlobGas = numberToHex(request2.maxFeePerBlobGas);
+  if (typeof request2.maxFeePerGas !== "undefined")
+    rpcRequest.maxFeePerGas = numberToHex(request2.maxFeePerGas);
+  if (typeof request2.maxPriorityFeePerGas !== "undefined")
+    rpcRequest.maxPriorityFeePerGas = numberToHex(request2.maxPriorityFeePerGas);
+  if (typeof request2.nonce !== "undefined")
+    rpcRequest.nonce = numberToHex(request2.nonce);
+  if (typeof request2.to !== "undefined")
+    rpcRequest.to = request2.to;
+  if (typeof request2.type !== "undefined")
+    rpcRequest.type = rpcTransactionType[request2.type];
+  if (typeof request2.value !== "undefined")
+    rpcRequest.value = numberToHex(request2.value);
   return rpcRequest;
 }
 function formatAuthorizationList(authorizationList) {
@@ -9063,13 +9063,13 @@ var init_getCallError = __esm({
 
 // node_modules/viem/_esm/utils/promise/withResolvers.js
 function withResolvers() {
-  let resolve = () => void 0;
+  let resolve2 = () => void 0;
   let reject = () => void 0;
   const promise = new Promise((resolve_, reject_) => {
-    resolve = resolve_;
+    resolve2 = resolve_;
     reject = reject_;
   });
-  return { promise, resolve, reject };
+  return { promise, resolve: resolve2, reject };
 }
 var init_withResolvers = __esm({
   "node_modules/viem/_esm/utils/promise/withResolvers.js"() {
@@ -9088,8 +9088,8 @@ function createBatchScheduler({ fn, id, shouldSplitBatch, wait: wait2 = 0, sort 
       if (sort && Array.isArray(data))
         data.sort(sort);
       for (let i = 0; i < scheduler.length; i++) {
-        const { resolve } = scheduler[i];
-        resolve?.([data[i], data]);
+        const { resolve: resolve2 } = scheduler[i];
+        resolve2?.([data[i], data]);
       }
     }).catch((err) => {
       for (let i = 0; i < scheduler.length; i++) {
@@ -9105,16 +9105,16 @@ function createBatchScheduler({ fn, id, shouldSplitBatch, wait: wait2 = 0, sort 
   return {
     flush,
     async schedule(args) {
-      const { promise, resolve, reject } = withResolvers();
+      const { promise, resolve: resolve2, reject } = withResolvers();
       const split2 = shouldSplitBatch?.([...getBatchedArgs(), args]);
       if (split2)
         exec();
       const hasActiveScheduler = getScheduler().length > 0;
       if (hasActiveScheduler) {
-        setScheduler({ args, resolve, reject });
+        setScheduler({ args, resolve: resolve2, reject });
         return promise;
       }
-      setScheduler({ args, resolve, reject });
+      setScheduler({ args, resolve: resolve2, reject });
       setTimeout(exec, wait2);
       return promise;
     }
@@ -9506,7 +9506,7 @@ async function call(client, args) {
     const rpcStateOverride = serializeStateOverride(stateOverride);
     const chainFormat = client.chain?.formatters?.transactionRequest?.format;
     const format2 = chainFormat || formatTransactionRequest;
-    const request = format2({
+    const request2 = format2({
       // Pick out extra data that might exist on the chain's transaction request type.
       ...extract(rest, { format: chainFormat }),
       accessList,
@@ -9523,7 +9523,7 @@ async function call(client, args) {
       to: deploylessCall ? void 0 : to,
       value
     }, "call");
-    if (batch && shouldPerformMulticall({ request }) && !rpcBlockOverrides && blockHash === void 0) {
+    if (batch && shouldPerformMulticall({ request: request2 }) && !rpcBlockOverrides && blockHash === void 0) {
       try {
         const { deployless = false } = typeof client.batch?.multicall === "object" ? client.batch.multicall : {};
         const multicallAddress = getMulticallAddress(client, {
@@ -9532,7 +9532,7 @@ async function call(client, args) {
         });
         if (!multicallAddress || !hasStateOverrideForAddress(rpcStateOverride, multicallAddress))
           return await scheduleMulticall(client, {
-            ...request,
+            ...request2,
             blockHash,
             blockNumber,
             blockTag,
@@ -9548,7 +9548,7 @@ async function call(client, args) {
     }
     const params = (() => {
       const base = [
-        request,
+        request2,
         block
       ];
       if (rpcStateOverride && rpcBlockOverrides)
@@ -9586,8 +9586,8 @@ async function call(client, args) {
     });
   }
 }
-function shouldPerformMulticall({ request }) {
-  const { data, to, ...request_ } = request;
+function shouldPerformMulticall({ request: request2 }) {
+  const { data, to, ...request_ } = request2;
   if (!data)
     return false;
   if (data.startsWith(aggregate3Signature))
@@ -9631,10 +9631,10 @@ async function scheduleMulticall(client, args) {
       return size5 > batchSize * 2;
     },
     fn: async (requests) => {
-      const calls = requests.map((request) => ({
+      const calls = requests.map((request2) => ({
         allowFailure: true,
-        callData: request.data,
-        target: request.to
+        callData: request2.data,
+        target: request2.to
       }));
       const calldata = encodeFunctionData({
         abi: multicall3Abi,
@@ -10414,7 +10414,7 @@ async function estimateMaxPriorityFeePerGas(client, args) {
   return internal_estimateMaxPriorityFeePerGas(client, args);
 }
 async function internal_estimateMaxPriorityFeePerGas(client, args) {
-  const { block: block_, chain = client.chain, request } = args || {};
+  const { block: block_, chain = client.chain, request: request2 } = args || {};
   try {
     const maxPriorityFeePerGas = chain?.fees?.maxPriorityFeePerGas ?? chain?.fees?.defaultPriorityFee;
     if (typeof maxPriorityFeePerGas === "function") {
@@ -10422,7 +10422,7 @@ async function internal_estimateMaxPriorityFeePerGas(client, args) {
       const maxPriorityFeePerGas_ = await maxPriorityFeePerGas({
         block,
         client,
-        request
+        request: request2
       });
       if (maxPriorityFeePerGas_ === null)
         throw new Error();
@@ -10453,13 +10453,13 @@ async function estimateFeesPerGas(client, args) {
   return internal_estimateFeesPerGas(client, args);
 }
 async function internal_estimateFeesPerGas(client, args) {
-  const { block: block_, chain = client.chain, request, type = "eip1559" } = args || {};
+  const { block: block_, chain = client.chain, request: request2, type = "eip1559" } = args || {};
   const baseFeeMultiplier = await (async () => {
     if (typeof chain?.fees?.baseFeeMultiplier === "function")
       return chain.fees.baseFeeMultiplier({
         block: block_,
         client,
-        request
+        request: request2
       });
     return chain?.fees?.baseFeeMultiplier ?? 1.2;
   })();
@@ -10474,7 +10474,7 @@ async function internal_estimateFeesPerGas(client, args) {
       block: block_,
       client,
       multiply,
-      request,
+      request: request2,
       type
     });
     if (fees !== null)
@@ -10483,19 +10483,19 @@ async function internal_estimateFeesPerGas(client, args) {
   if (type === "eip1559") {
     if (typeof block.baseFeePerGas !== "bigint")
       throw new Eip1559FeesNotSupportedError();
-    const maxPriorityFeePerGas = typeof request?.maxPriorityFeePerGas === "bigint" ? request.maxPriorityFeePerGas : await internal_estimateMaxPriorityFeePerGas(client, {
+    const maxPriorityFeePerGas = typeof request2?.maxPriorityFeePerGas === "bigint" ? request2.maxPriorityFeePerGas : await internal_estimateMaxPriorityFeePerGas(client, {
       block,
       chain,
-      request
+      request: request2
     });
     const baseFeePerGas = multiply(block.baseFeePerGas);
-    const maxFeePerGas = request?.maxFeePerGas ?? baseFeePerGas + maxPriorityFeePerGas;
+    const maxFeePerGas = request2?.maxFeePerGas ?? baseFeePerGas + maxPriorityFeePerGas;
     return {
       maxFeePerGas,
       maxPriorityFeePerGas
     };
   }
-  const gasPrice = request?.gasPrice ?? multiply(await getAction(client, getGasPrice, "getGasPrice")({}));
+  const gasPrice = request2?.gasPrice ?? multiply(await getAction(client, getGasPrice, "getGasPrice")({}));
   return {
     gasPrice
   };
@@ -10756,7 +10756,7 @@ async function fillTransaction(client, parameters) {
   assertRequest(parameters);
   const chainFormat = chain?.formatters?.transactionRequest?.format;
   const format2 = chainFormat || formatTransactionRequest;
-  const request = format2({
+  const request2 = format2({
     // Pick out extra data that might exist on the chain's transaction request type.
     ...extract(rest, { format: chainFormat }),
     account: account ? parseAccount(account) : void 0,
@@ -10778,7 +10778,7 @@ async function fillTransaction(client, parameters) {
   try {
     const response = await client.request({
       method: "eth_fillTransaction",
-      params: [request]
+      params: [request2]
     });
     const format3 = chain?.formatters?.transaction?.format || formatTransaction;
     const transaction = format3(response.tx);
@@ -10833,7 +10833,7 @@ async function fillTransaction(client, parameters) {
     return {
       raw: response.raw,
       transaction: {
-        from: request.from,
+        from: request2.from,
         ...transaction
       },
       ...response.capabilities ? { capabilities: response.capabilities } : {}
@@ -10858,10 +10858,10 @@ var defaultParameters = [
 var eip1559NetworkCache = /* @__PURE__ */ new Map();
 var supportsFillTransaction = /* @__PURE__ */ new LruMap(128);
 async function prepareTransactionRequest(client, args) {
-  let request = args;
-  request.account ??= client.account;
-  request.parameters ??= defaultParameters;
-  const { account: account_, chain = client.chain, nonceManager, parameters } = request;
+  let request2 = args;
+  request2.account ??= client.account;
+  request2.parameters ??= defaultParameters;
+  const { account: account_, chain = client.chain, nonceManager, parameters } = request2;
   const prepareTransactionRequest2 = (() => {
     if (typeof chain?.prepareTransactionRequest === "function")
       return {
@@ -10879,8 +10879,8 @@ async function prepareTransactionRequest(client, args) {
   async function getChainId2() {
     if (chainId)
       return chainId;
-    if (typeof request.chainId !== "undefined")
-      return request.chainId;
+    if (typeof request2.chainId !== "undefined")
+      return request2.chainId;
     if (chain)
       return chain.id;
     const chainId_ = await getAction(client, getChainId, "getChainId")({});
@@ -10888,14 +10888,14 @@ async function prepareTransactionRequest(client, args) {
     return chainId;
   }
   let account = account_ ? parseAccount(account_) : account_;
-  let nonce = request.nonce;
+  let nonce = request2.nonce;
   if (prepareTransactionRequest2?.fn && prepareTransactionRequest2.runAt?.includes("beforeFillTransaction")) {
-    request = await prepareTransactionRequest2.fn({ ...request, chain }, {
+    request2 = await prepareTransactionRequest2.fn({ ...request2, chain }, {
       client,
       phase: "beforeFillTransaction"
     });
-    nonce ??= request.nonce;
-    const sender = request.account ?? request.from;
+    nonce ??= request2.nonce;
+    const sender = request2.account ?? request2.from;
     account = sender ? parseAccount(sender) : void 0;
   }
   if (parameters.includes("nonce") && typeof nonce === "undefined" && account && nonceManager) {
@@ -10907,44 +10907,44 @@ async function prepareTransactionRequest(client, args) {
     });
   }
   const attemptFill = (() => {
-    if ((parameters.includes("blobVersionedHashes") || parameters.includes("sidecars")) && request.kzg && request.blobs)
+    if ((parameters.includes("blobVersionedHashes") || parameters.includes("sidecars")) && request2.kzg && request2.blobs)
       return false;
-    if (parameters.length > 0 && "feePayer" in request && request.feePayer && !("feePayerSignature" in request && request.feePayerSignature))
+    if (parameters.length > 0 && "feePayer" in request2 && request2.feePayer && !("feePayerSignature" in request2 && request2.feePayerSignature))
       return true;
     if (supportsFillTransaction.get(client.uid) === false)
       return false;
     const shouldAttempt = ["fees", "gas"].some((parameter) => parameters.includes(parameter));
     if (!shouldAttempt)
       return false;
-    if (parameters.includes("chainId") && typeof request.chainId !== "number")
+    if (parameters.includes("chainId") && typeof request2.chainId !== "number")
       return true;
     if (parameters.includes("nonce") && typeof nonce !== "number")
       return true;
-    if (parameters.includes("fees") && typeof request.gasPrice !== "bigint" && (typeof request.maxFeePerGas !== "bigint" || typeof request.maxPriorityFeePerGas !== "bigint"))
+    if (parameters.includes("fees") && typeof request2.gasPrice !== "bigint" && (typeof request2.maxFeePerGas !== "bigint" || typeof request2.maxPriorityFeePerGas !== "bigint"))
       return true;
-    if (parameters.includes("gas") && typeof request.gas !== "bigint")
+    if (parameters.includes("gas") && typeof request2.gas !== "bigint")
       return true;
     return false;
   })();
-  const fillResult = attemptFill ? await getAction(client, fillTransaction, "fillTransaction")({ ...request, nonce }).then((result) => {
+  const fillResult = attemptFill ? await getAction(client, fillTransaction, "fillTransaction")({ ...request2, nonce }).then((result) => {
     const { chainId: chainId2, from: from16, gas: gas2, gasPrice, nonce: nonce2, maxFeePerBlobGas, maxFeePerGas, maxPriorityFeePerGas, type: type2, ...rest } = result.transaction;
     const feeToken = "feeToken" in rest ? rest.feeToken : void 0;
     const hasFilledFeePayerSignature = "feePayerSignature" in rest && rest.feePayerSignature !== null && typeof rest.feePayerSignature !== "undefined";
-    const shouldUseFilledFeeToken = typeof feeToken !== "undefined" && feeToken !== null && (!("feeToken" in request) || hasFilledFeePayerSignature);
+    const shouldUseFilledFeeToken = typeof feeToken !== "undefined" && feeToken !== null && (!("feeToken" in request2) || hasFilledFeePayerSignature);
     supportsFillTransaction.set(client.uid, true);
     return {
-      ...request,
+      ...request2,
       ...from16 ? { from: from16 } : {},
-      ...type2 && !request.type ? { type: type2 } : {},
+      ...type2 && !request2.type ? { type: type2 } : {},
       ...typeof chainId2 !== "undefined" ? { chainId: chainId2 } : {},
       ...typeof gas2 !== "undefined" ? { gas: gas2 } : {},
       ...typeof gasPrice !== "undefined" ? { gasPrice } : {},
       ...typeof nonce2 !== "undefined" ? { nonce: nonce2 } : {},
-      ...typeof maxFeePerBlobGas !== "undefined" && request.type !== "legacy" && request.type !== "eip2930" ? { maxFeePerBlobGas } : {},
-      ...typeof maxFeePerGas !== "undefined" && request.type !== "legacy" && request.type !== "eip2930" ? { maxFeePerGas } : {},
-      ...typeof maxPriorityFeePerGas !== "undefined" && request.type !== "legacy" && request.type !== "eip2930" ? { maxPriorityFeePerGas } : {},
+      ...typeof maxFeePerBlobGas !== "undefined" && request2.type !== "legacy" && request2.type !== "eip2930" ? { maxFeePerBlobGas } : {},
+      ...typeof maxFeePerGas !== "undefined" && request2.type !== "legacy" && request2.type !== "eip2930" ? { maxFeePerGas } : {},
+      ...typeof maxPriorityFeePerGas !== "undefined" && request2.type !== "legacy" && request2.type !== "eip2930" ? { maxPriorityFeePerGas } : {},
       ..."nonceKey" in rest && typeof rest.nonceKey !== "undefined" ? { nonceKey: rest.nonceKey } : {},
-      ..."keyAuthorization" in rest && typeof rest.keyAuthorization !== "undefined" && rest.keyAuthorization !== null && !("keyAuthorization" in request) ? { keyAuthorization: rest.keyAuthorization } : {},
+      ..."keyAuthorization" in rest && typeof rest.keyAuthorization !== "undefined" && rest.keyAuthorization !== null && !("keyAuthorization" in request2) ? { keyAuthorization: rest.keyAuthorization } : {},
       ..."feePayerSignature" in rest && typeof rest.feePayerSignature !== "undefined" && rest.feePayerSignature !== null ? { feePayerSignature: rest.feePayerSignature } : {},
       ...shouldUseFilledFeeToken ? { feeToken } : {},
       ...result.capabilities ? { _capabilities: result.capabilities } : {}
@@ -10952,7 +10952,7 @@ async function prepareTransactionRequest(client, args) {
   }).catch((e) => {
     const error = e;
     if (error.name !== "TransactionExecutionError")
-      return request;
+      return request2;
     const nonceMismatch = error.walk?.((error2) => error2 instanceof FeePayerNonceMismatchError);
     if (nonceMismatch)
       throw e;
@@ -10968,17 +10968,17 @@ async function prepareTransactionRequest(client, args) {
     });
     if (unsupported)
       supportsFillTransaction.set(client.uid, false);
-    return request;
-  }) : request;
+    return request2;
+  }) : request2;
   nonce ??= fillResult.nonce;
-  request = {
+  request2 = {
     ...fillResult,
     ...account ? { from: account?.address } : {},
     ...typeof nonce !== "undefined" ? { nonce } : {}
   };
-  const { blobs, gas, kzg, type } = request;
+  const { blobs, gas, kzg, type } = request2;
   if (prepareTransactionRequest2?.fn && prepareTransactionRequest2.runAt?.includes("beforeFillParameters")) {
-    request = await prepareTransactionRequest2.fn({ ...request, chain }, {
+    request2 = await prepareTransactionRequest2.fn({ ...request2, chain }, {
       client,
       phase: "beforeFillParameters"
     });
@@ -10991,7 +10991,7 @@ async function prepareTransactionRequest(client, args) {
     return block;
   }
   if (parameters.includes("nonce") && typeof nonce === "undefined" && account && !nonceManager)
-    request.nonce = await getAction(client, getTransactionCount, "getTransactionCount")({
+    request2.nonce = await getAction(client, getTransactionCount, "getTransactionCount")({
       address: account.address,
       blockTag: "pending"
     });
@@ -11002,7 +11002,7 @@ async function prepareTransactionRequest(client, args) {
         commitments,
         to: "hex"
       });
-      request.blobVersionedHashes = versionedHashes;
+      request2.blobVersionedHashes = versionedHashes;
     }
     if (parameters.includes("sidecars")) {
       const proofs = blobsToProofs({ blobs, commitments, kzg });
@@ -11012,14 +11012,14 @@ async function prepareTransactionRequest(client, args) {
         proofs,
         to: "hex"
       });
-      request.sidecars = sidecars;
+      request2.sidecars = sidecars;
     }
   }
   if (parameters.includes("chainId"))
-    request.chainId = await getChainId2();
+    request2.chainId = await getChainId2();
   if ((parameters.includes("fees") || parameters.includes("type")) && typeof type === "undefined") {
     try {
-      request.type = getTransactionType(request);
+      request2.type = getTransactionType(request2);
     } catch {
       let isEip1559Network = eip1559NetworkCache.get(client.uid);
       if (typeof isEip1559Network === "undefined") {
@@ -11027,54 +11027,54 @@ async function prepareTransactionRequest(client, args) {
         isEip1559Network = typeof block2?.baseFeePerGas === "bigint";
         eip1559NetworkCache.set(client.uid, isEip1559Network);
       }
-      request.type = isEip1559Network ? "eip1559" : "legacy";
+      request2.type = isEip1559Network ? "eip1559" : "legacy";
     }
   }
   if (parameters.includes("fees")) {
-    if (request.type !== "legacy" && request.type !== "eip2930") {
-      if (typeof request.maxFeePerGas === "undefined" || typeof request.maxPriorityFeePerGas === "undefined") {
+    if (request2.type !== "legacy" && request2.type !== "eip2930") {
+      if (typeof request2.maxFeePerGas === "undefined" || typeof request2.maxPriorityFeePerGas === "undefined") {
         const block2 = await getBlock2();
         const { maxFeePerGas, maxPriorityFeePerGas } = await internal_estimateFeesPerGas(client, {
           block: block2,
           chain,
-          request
+          request: request2
         });
-        if (typeof request.maxPriorityFeePerGas === "undefined" && request.maxFeePerGas && request.maxFeePerGas < maxPriorityFeePerGas)
+        if (typeof request2.maxPriorityFeePerGas === "undefined" && request2.maxFeePerGas && request2.maxFeePerGas < maxPriorityFeePerGas)
           throw new MaxFeePerGasTooLowError({
             maxPriorityFeePerGas
           });
-        request.maxPriorityFeePerGas = maxPriorityFeePerGas;
-        request.maxFeePerGas = maxFeePerGas;
+        request2.maxPriorityFeePerGas = maxPriorityFeePerGas;
+        request2.maxFeePerGas = maxFeePerGas;
       }
     } else {
-      if (typeof request.maxFeePerGas !== "undefined" || typeof request.maxPriorityFeePerGas !== "undefined")
+      if (typeof request2.maxFeePerGas !== "undefined" || typeof request2.maxPriorityFeePerGas !== "undefined")
         throw new Eip1559FeesNotSupportedError();
-      if (typeof request.gasPrice === "undefined") {
+      if (typeof request2.gasPrice === "undefined") {
         const block2 = await getBlock2();
         const { gasPrice: gasPrice_ } = await internal_estimateFeesPerGas(client, {
           block: block2,
           chain,
-          request,
+          request: request2,
           type: "legacy"
         });
-        request.gasPrice = gasPrice_;
+        request2.gasPrice = gasPrice_;
       }
     }
   }
   if (parameters.includes("gas") && typeof gas === "undefined")
-    request.gas = await getAction(client, estimateGas, "estimateGas")({
-      ...request,
+    request2.gas = await getAction(client, estimateGas, "estimateGas")({
+      ...request2,
       account,
       prepare: account?.type === "local" ? [] : ["blobVersionedHashes"]
     });
   if (prepareTransactionRequest2?.fn && prepareTransactionRequest2.runAt?.includes("afterFillParameters"))
-    request = await prepareTransactionRequest2.fn({ ...request, chain }, {
+    request2 = await prepareTransactionRequest2.fn({ ...request2, chain }, {
       client,
       phase: "afterFillParameters"
     });
-  assertRequest(request);
-  delete request.parameters;
-  return request;
+  assertRequest(request2);
+  delete request2.parameters;
+  return request2;
 }
 
 // node_modules/viem/_esm/actions/public/estimateGas.js
@@ -11113,7 +11113,7 @@ async function estimateGas(client, args) {
     assertRequest(args);
     const chainFormat = client.chain?.formatters?.transactionRequest?.format;
     const format2 = chainFormat || formatTransactionRequest;
-    const request = format2({
+    const request2 = format2({
       // Pick out extra data that might exist on the chain's transaction request type.
       ...extract(rest, { format: chainFormat }),
       account,
@@ -11133,10 +11133,10 @@ async function estimateGas(client, args) {
     return BigInt(await client.request({
       method: "eth_estimateGas",
       params: rpcStateOverride ? [
-        request,
+        request2,
         block ?? client.experimental_blockTag ?? "latest",
         rpcStateOverride
-      ] : block ? [request, block] : [request]
+      ] : block ? [request2, block] : [request2]
     }));
   } catch (err) {
     throw getEstimateGasError(err, {
@@ -11149,7 +11149,7 @@ async function estimateGas(client, args) {
 
 // node_modules/viem/_esm/actions/public/estimateContractGas.js
 async function estimateContractGas(client, parameters) {
-  const { abi: abi2, address, args, functionName, dataSuffix = typeof client.dataSuffix === "string" ? client.dataSuffix : client.dataSuffix?.value, ...request } = parameters;
+  const { abi: abi2, address, args, functionName, dataSuffix = typeof client.dataSuffix === "string" ? client.dataSuffix : client.dataSuffix?.value, ...request2 } = parameters;
   const data = encodeFunctionData({
     abi: abi2,
     args,
@@ -11159,11 +11159,11 @@ async function estimateContractGas(client, parameters) {
     const gas = await getAction(client, estimateGas, "estimateGas")({
       data: `${data}${dataSuffix ? dataSuffix.replace("0x", "") : ""}`,
       to: address,
-      ...request
+      ...request2
     });
     return gas;
   } catch (error) {
-    const account = request.account ? parseAccount(request.account) : void 0;
+    const account = request2.account ? parseAccount(request2.account) : void 0;
     throw getContractError(error, {
       abi: abi2,
       address,
@@ -11603,7 +11603,7 @@ function observe(observerId, callbacks, fn) {
 // node_modules/viem/_esm/utils/wait.js
 init_utils3();
 async function wait(time, { signal } = {}) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve2, reject) => {
     if (signal?.aborted) {
       reject(getAbortError(signal));
       return;
@@ -11611,7 +11611,7 @@ async function wait(time, { signal } = {}) {
     const cleanup = () => signal?.removeEventListener("abort", onAbort);
     const timeout = setTimeout(() => {
       cleanup();
-      resolve();
+      resolve2();
     }, time);
     const onAbort = () => {
       clearTimeout(timeout);
@@ -11626,7 +11626,7 @@ async function wait(time, { signal } = {}) {
 function poll(fn, { emitOnBegin, initialWaitTime, interval }) {
   let active = true;
   const unwatch = () => active = false;
-  const watch = async () => {
+  const watch2 = async () => {
     let data;
     if (emitOnBegin)
       data = await fn({ unpoll: unwatch });
@@ -11641,7 +11641,7 @@ function poll(fn, { emitOnBegin, initialWaitTime, interval }) {
     };
     poll2();
   };
-  watch();
+  watch2();
   return unwatch;
 }
 
@@ -11997,7 +11997,7 @@ async function sendTransaction(client, parameters) {
       }
       const chainFormat = client.chain?.formatters?.transactionRequest?.format;
       const format2 = chainFormat || formatTransactionRequest;
-      const request = format2({
+      const request2 = format2({
         // Pick out extra data that might exist on the chain's transaction request type.
         ...extract(rest, { format: chainFormat }),
         accessList,
@@ -12021,7 +12021,7 @@ async function sendTransaction(client, parameters) {
       try {
         return await client.request({
           method,
-          params: [request]
+          params: [request2]
         }, { retryCount: 0 });
       } catch (e) {
         if (isWalletNamespaceSupported === false)
@@ -12030,7 +12030,7 @@ async function sendTransaction(client, parameters) {
         if (error.name === "InvalidInputRpcError" || error.name === "InvalidParamsRpcError" || error.name === "MethodNotFoundRpcError" || error.name === "MethodNotSupportedRpcError") {
           return await client.request({
             method: "wallet_sendTransaction",
-            params: [request]
+            params: [request2]
           }, { retryCount: 0 }).then((hash3) => {
             supportsWalletNamespace.set(client.uid, true);
             return hash3;
@@ -12070,7 +12070,7 @@ async function sendTransaction(client, parameters) {
           }
         };
       })();
-      const request = await getAction(client, prepareTransactionRequest, "prepareTransactionRequest")({
+      const request2 = await getAction(client, prepareTransactionRequest, "prepareTransactionRequest")({
         account,
         accessList,
         authorizationList,
@@ -12091,13 +12091,13 @@ async function sendTransaction(client, parameters) {
         to
       });
       const serializer = chain?.serializers?.transaction;
-      const signedTransaction = await account.signTransaction(request, {
+      const signedTransaction = await account.signTransaction(request2, {
         serializer
       });
       const transactionEnvelope = (chain ?? client.chain)?.serializers?.transactionEnvelope;
       const serializedTransaction = transactionEnvelope ? await transactionEnvelope({
         serializedTransaction: signedTransaction,
-        transaction: request
+        transaction: request2
       }) : signedTransaction;
       return await getAction(client, sendRawTransaction, "sendRawTransaction")({
         serializedTransaction
@@ -12134,7 +12134,7 @@ async function writeContract(client, parameters) {
 }
 (function(writeContract2) {
   async function internal(client, actionFn, name, parameters) {
-    const { abi: abi2, account: account_ = client.account, address, args, functionName, ...request } = parameters;
+    const { abi: abi2, account: account_ = client.account, address, args, functionName, ...request2 } = parameters;
     if (typeof account_ === "undefined")
       throw new AccountNotFoundError({
         docsPath: "/docs/contract/writeContract"
@@ -12150,7 +12150,7 @@ async function writeContract(client, parameters) {
         data,
         to: address,
         account,
-        ...request
+        ...request2
       });
     } catch (error) {
       throw getContractError(error, {
@@ -12192,7 +12192,7 @@ init_withResolvers();
 // node_modules/viem/_esm/utils/promise/withRetry.js
 init_utils3();
 function withRetry(fn, { delay: delay_ = 100, retryCount = 2, shouldRetry: shouldRetry2 = () => true, signal } = {}) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve2, reject) => {
     const attemptRetry = async ({ count = 0 } = {}) => {
       if (signal?.aborted) {
         reject(getAbortError(signal));
@@ -12212,7 +12212,7 @@ function withRetry(fn, { delay: delay_ = 100, retryCount = 2, shouldRetry: shoul
       };
       try {
         const data = await fn();
-        resolve(data);
+        resolve2(data);
       } catch (err) {
         if (signal?.aborted) {
           reject(getAbortError(signal));
@@ -12363,7 +12363,7 @@ async function sendCalls(client, parameters) {
           results.push({ reason, status: "rejected" });
         }
         if (experimental_fallbackDelay > 0)
-          await new Promise((resolve) => setTimeout(resolve, experimental_fallbackDelay));
+          await new Promise((resolve2) => setTimeout(resolve2, experimental_fallbackDelay));
       }
       if (results.every((r) => r.status === "rejected"))
         throw results[0].reason;
@@ -12466,9 +12466,9 @@ async function waitForCallsStatus(client, parameters) {
     throwOnFailure = false
   } = parameters;
   const observerId = stringify(["waitForCallsStatus", client.uid, id]);
-  const { promise, resolve, reject } = withResolvers();
+  const { promise, resolve: resolve2, reject } = withResolvers();
   let timer;
-  const unobserve = observe(observerId, { resolve, reject }, (emit2) => {
+  const unobserve = observe(observerId, { resolve: resolve2, reject }, (emit2) => {
     const unpoll = poll(async () => {
       const done = (fn) => {
         clearTimeout(timer);
@@ -12538,7 +12538,7 @@ function createClient(parameters) {
   const pollingInterval = parameters.pollingInterval ?? defaultPollingInterval;
   const cacheTime = parameters.cacheTime ?? pollingInterval;
   const account = parameters.account ? parseAccount(parameters.account) : void 0;
-  const { config, request, value } = parameters.transport({
+  const { config, request: request2, value } = parameters.transport({
     account,
     chain,
     pollingInterval
@@ -12554,7 +12554,7 @@ function createClient(parameters) {
     key,
     name,
     pollingInterval,
-    request,
+    request: request2,
     tokens,
     transport,
     type,
@@ -12850,13 +12850,13 @@ async function isImageUri(uri) {
     }
     if (!Object.hasOwn(globalThis, "Image"))
       return false;
-    return new Promise((resolve) => {
+    return new Promise((resolve2) => {
       const img = new Image();
       img.onload = () => {
-        resolve(true);
+        resolve2(true);
       };
       img.onerror = () => {
-        resolve(false);
+        resolve2(false);
       };
       img.src = uri;
     });
@@ -13217,7 +13217,7 @@ async function createAccessList(client, args) {
     const block = blockNumberHex || blockTag;
     const chainFormat = client.chain?.formatters?.transactionRequest?.format;
     const format2 = chainFormat || formatTransactionRequest;
-    const request = format2({
+    const request2 = format2({
       // Pick out extra data that might exist on the chain's transaction request type.
       ...extract(rest, { format: chainFormat }),
       account,
@@ -13233,7 +13233,7 @@ async function createAccessList(client, args) {
     }, "createAccessList");
     const response = await client.request({
       method: "eth_createAccessList",
-      params: [request, block]
+      params: [request2, block]
     });
     if (response.error)
       throw new BaseError2(response.error, { details: response.error });
@@ -13629,7 +13629,7 @@ function withDedupe(fn, { enabled = true, id }) {
 
 // node_modules/viem/_esm/utils/buildRequest.js
 init_stringify();
-function buildRequest(request, options = {}) {
+function buildRequest(request2, options = {}) {
   return async (args, overrideOptions = {}) => {
     const { dedupe = false, methods, retryDelay = 150, retryCount = 3, signal, uid: uid2 } = {
       ...options,
@@ -13649,7 +13649,7 @@ function buildRequest(request, options = {}) {
     const requestId = dedupe ? hashString(`${uid2}.${stringify(args)}`) : void 0;
     return withDedupe(() => withRetry(async () => {
       try {
-        return await request(args, signal ? { signal } : void 0);
+        return await request2(args, signal ? { signal } : void 0);
       } catch (err_) {
         if (signal?.aborted)
           throw getAbortError(signal);
@@ -13825,7 +13825,7 @@ init_utils3();
 // node_modules/viem/_esm/utils/promise/withTimeout.js
 init_utils3();
 function withTimeout(fn, { errorInstance = new Error("timed out"), timeout, signal }) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve2, reject) => {
     ;
     (async () => {
       let timeoutId;
@@ -13840,7 +13840,7 @@ function withTimeout(fn, { errorInstance = new Error("timed out"), timeout, sign
             }
           }, timeout);
         }
-        resolve(await fn({ signal: controller?.signal || null }));
+        resolve2(await fn({ signal: controller?.signal || null }));
       } catch (err) {
         if (controller?.signal.aborted && isAbortError(err)) {
           reject(errorInstance);
@@ -13904,8 +13904,8 @@ function getHttpRpcClient(url_, options = {}) {
             method: method || "POST",
             signal: signal_ || (timeout > 0 ? signal : null)
           };
-          const request = new Request(url, init);
-          const args = await onRequest?.(request, init) ?? { ...init, url };
+          const request2 = new Request(url, init);
+          const args = await onRequest?.(request2, init) ?? { ...init, url };
           const response2 = await fetchFn(args.url ?? url, args);
           return response2;
         }, {
@@ -16312,14 +16312,14 @@ async function simulateBlocks(client, parameters) {
         const call2 = call_;
         const account = call2.account ? parseAccount(call2.account) : void 0;
         const data = call2.abi ? encodeFunctionData(call2) : call2.data;
-        const request = {
+        const request2 = {
           ...call2,
           account,
           data: call2.dataSuffix ? concat([data || "0x", call2.dataSuffix]) : data,
           from: call2.from ?? account?.address
         };
-        assertRequest(request);
-        return formatTransactionRequest(request);
+        assertRequest(request2);
+        return formatTransactionRequest(request2);
       });
       const stateOverrides = block2.stateOverrides ? serializeStateOverride(block2.stateOverrides) : void 0;
       blockStateCalls.push({
@@ -17464,13 +17464,13 @@ async function waitForTransactionReceipt(client, parameters) {
   let retrying = false;
   let _unobserve;
   let _unwatch;
-  const { promise, resolve, reject } = withResolvers();
+  const { promise, resolve: resolve2, reject } = withResolvers();
   const timer = timeout ? setTimeout(() => {
     _unwatch?.();
     _unobserve?.();
     reject(new WaitForTransactionReceiptTimeoutError({ hash: hash3 }));
   }, timeout) : void 0;
-  _unobserve = observe(observerId, { onReplaced, resolve, reject }, async (emit2) => {
+  _unobserve = observe(observerId, { onReplaced, resolve: resolve2, reject }, async (emit2) => {
     receipt2 = await getAction(client, getTransactionReceipt, "getTransactionReceipt")({ hash: hash3 }).catch(() => void 0);
     if (receipt2 && confirmations <= 1) {
       clearTimeout(timer);
@@ -18313,7 +18313,7 @@ async function sendTransactionSync(client, parameters) {
       }
       const chainFormat = client.chain?.formatters?.transactionRequest?.format;
       const format2 = chainFormat || formatTransactionRequest;
-      const request = format2({
+      const request2 = format2({
         // Pick out extra data that might exist on the chain's transaction request type.
         ...extract(rest, { format: chainFormat }),
         accessList,
@@ -18338,7 +18338,7 @@ async function sendTransactionSync(client, parameters) {
         try {
           return await client.request({
             method,
-            params: [request]
+            params: [request2]
           }, { retryCount: 0 });
         } catch (e) {
           if (isWalletNamespaceSupported === false)
@@ -18347,7 +18347,7 @@ async function sendTransactionSync(client, parameters) {
           if (error.name === "InvalidInputRpcError" || error.name === "InvalidParamsRpcError" || error.name === "MethodNotFoundRpcError" || error.name === "MethodNotSupportedRpcError") {
             return await client.request({
               method: "wallet_sendTransaction",
-              params: [request]
+              params: [request2]
             }, { retryCount: 0 }).then((hash4) => {
               supportsWalletNamespace2.set(client.uid, true);
               return hash4;
@@ -18397,7 +18397,7 @@ async function sendTransactionSync(client, parameters) {
           }
         };
       })();
-      const request = await getAction(client, prepareTransactionRequest, "prepareTransactionRequest")({
+      const request2 = await getAction(client, prepareTransactionRequest, "prepareTransactionRequest")({
         account,
         accessList,
         authorizationList,
@@ -18418,13 +18418,13 @@ async function sendTransactionSync(client, parameters) {
         to
       });
       const serializer = chain?.serializers?.transaction;
-      const signedTransaction = await account.signTransaction(request, {
+      const signedTransaction = await account.signTransaction(request2, {
         serializer
       });
       const transactionEnvelope = (chain ?? client.chain)?.serializers?.transactionEnvelope;
       const serializedTransaction = transactionEnvelope ? await transactionEnvelope({
         serializedTransaction: signedTransaction,
-        transaction: request
+        transaction: request2
       }) : signedTransaction;
       return await getAction(client, sendRawTransactionSync, "sendRawTransactionSync")({
         serializedTransaction,
@@ -18793,11 +18793,11 @@ async function addChain(client, { chain }) {
 // node_modules/viem/_esm/actions/wallet/deployContract.js
 init_encodeDeployData();
 function deployContract(walletClient, parameters) {
-  const { abi: abi2, args, bytecode, ...request } = parameters;
+  const { abi: abi2, args, bytecode, ...request2 } = parameters;
   const calldata = encodeDeployData({ abi: abi2, args, bytecode });
   return sendTransaction(walletClient, {
-    ...request,
-    ...request.authorizationList ? { to: null } : {},
+    ...request2,
+    ...request2.authorizationList ? { to: null } : {},
     data: calldata
   });
 }
@@ -19102,20 +19102,20 @@ function createWalletClient(parameters) {
 }
 
 // node_modules/viem/_esm/clients/transports/createTransport.js
-function createTransport({ key, methods, name, request, retryCount = 3, retryDelay = 150, timeout, type }, value) {
+function createTransport({ key, methods, name, request: request2, retryCount = 3, retryDelay = 150, timeout, type }, value) {
   const uid2 = uid();
   return {
     config: {
       key,
       methods,
       name,
-      request,
+      request: request2,
       retryCount,
       retryDelay,
       timeout,
       type
     },
-    request: buildRequest(request, { methods, retryCount, retryDelay, uid: uid2 }),
+    request: buildRequest(request2, { methods, retryCount, retryDelay, uid: uid2 }),
     value
   };
 }
@@ -19940,6 +19940,43 @@ async function trySeat(C, seat, args, from16) {
   }
 }
 
+// src/pay.mjs
+var TAG = "sign-and-burn/build/v1";
+var HEX32 = /^[0-9a-f]{64}$/;
+var request = (C, pk, home) => ({
+  tag: TAG,
+  chain: C.id,
+  x: pk.x.toLowerCase(),
+  y: pk.y.toLowerCase(),
+  seatNumber: home.seatNumber,
+  firstKey: home.firstKey.toLowerCase()
+});
+function toLink(req, base) {
+  const q = new URLSearchParams({ pay: req.tag, chain: String(req.chain), x: req.x, y: req.y, seat: String(req.seatNumber), key: req.firstKey });
+  return `${base}#${q}`;
+}
+function fromLink(hash3, C) {
+  const q = new URLSearchParams(String(hash3 || "").replace(/^#/, ""));
+  if (!q.has("pay")) return null;
+  if (q.get("pay") !== TAG) return { refuse: `This link asks for "${q.get("pay").slice(0, 40)}", which this page doesn't know. It knows ${TAG}.` };
+  const chain = Number(q.get("chain")), x = (q.get("x") || "").toLowerCase(), y = (q.get("y") || "").toLowerCase();
+  const seat = q.get("seat") || "", key = (q.get("key") || "").toLowerCase();
+  if (chain !== C.id) return { refuse: `This link is for chain ${String(q.get("chain")).slice(0, 12)}. This page builds on ${C.chain.name} (${C.id}) only.` };
+  if (!HEX32.test(x) || !HEX32.test(y)) return { refuse: "This link's passkey public key isn't two 32-byte numbers. Ask for the link again." };
+  if (!/^(0|[1-9]\d{0,9})$/.test(seat) || Number(seat) > 4294967295) return { refuse: "This link's seat number isn't a number. Ask for the link again." };
+  if (!/^0x[0-9a-f]{64}$/.test(key) || /^0x0{64}$/.test(key)) return { refuse: "This link's first key isn't a 32-byte fingerprint. Ask for the link again." };
+  return { req: { tag: TAG, chain, x, y, seatNumber: Number(seat), firstKey: key } };
+}
+async function resolve(C, req) {
+  const pk = { x: req.x, y: req.y };
+  const signer = getAddress(await signerAddress(C, pk));
+  const seat = getAddress(await seatAddress(C, signer, req.seatNumber, req.firstKey));
+  const safe = getAddress(await safeAddress(C, seat));
+  const built = await hasCode(C, seat) && await hasCode(C, safe);
+  const calls = built ? [] : await buildCalls(C, { pk, signer, seatNumber: req.seatNumber, firstKey: req.firstKey, seat });
+  return { signer, seat, safe, built, calls };
+}
+
 // src/wots.mjs
 var STEPS = 15;
 var CHAINS = 67;
@@ -20171,6 +20208,10 @@ async function boot2() {
   S.pk = stored();
   if (S.pk && S.pk.rpId !== location.hostname) S.pk = null;
   await reconnectWallet();
+  window.addEventListener("hashchange", () => {
+    if (fromLink(location.hash, S.C)) openPayLink();
+  });
+  if (await openPayLink()) return;
   await settle();
 }
 async function settle() {
@@ -20272,6 +20313,7 @@ var walletId = (info) => info.rdns || info.uuid;
 async function connectWallet(choose = false) {
   await guard("Looking for wallets in this browser…", async () => {
     const found = await findWallets();
+    S.walletsHere = found.length;
     if (!found.length) throw new Error("No wallet in this browser. Any wallet that can switch to Base Sepolia works; it only pays gas. " + HARDWARE);
     if (found.length > 1 || choose && S.wallet) {
       S.choosing = found;
@@ -20320,13 +20362,15 @@ function follow(provider) {
   });
 }
 async function reconnectWallet() {
+  const found = await findWallets();
+  S.walletsHere = found.length;
   let id = null;
   try {
     id = localStorage.getItem("sab.wallet");
   } catch {
   }
   if (!id) return;
-  const w = (await findWallets()).find((x) => walletId(x.info) === id || x.info.uuid === id);
+  const w = found.find((x) => walletId(x.info) === id || x.info.uuid === id);
   const got = w && await useWallet(S.C, w.provider, { quiet: true }).catch(() => null);
   if (got) await useChosen(w, got);
 }
@@ -20349,32 +20393,139 @@ function chooser() {
     el("p", { class: "small" }, HARDWARE)
   );
 }
-var connectButton = (disabled, label = "Connect a wallet") => el(
+var connectButton = (disabled, label = "Connect a wallet", go = true) => el(
   "div",
   {},
-  el("div", { class: "actions" }, el("button", { class: "go", type: "button", disabled, onclick: () => connectWallet() }, label)),
-  el("p", { class: "small" }, HARDWARE)
+  el("div", { class: "actions" }, el("button", { class: go ? "go" : "", type: "button", disabled, onclick: () => connectWallet() }, label)),
+  S.walletsHere ? el("p", { class: "small" }, HARDWARE) : null
 );
 async function build() {
   await guard("Your wallet sends one transaction: signer, seat and Safe…", async () => {
-    const calls = await buildCalls(S.C, { pk: S.pk, signer: S.signer, seatNumber: S.home.seatNumber, firstKey: S.home.firstKey, seat: S.home.seat });
-    const hash3 = await send(S.C, S.wallet, calls);
-    S.busy = "Waiting for the block…";
-    render();
-    await receipt(S.C, hash3);
-    S.home.built = hash3;
-    saveHome(S.home);
+    const what = await resolve(S.C, request(S.C, S.pk, S.home));
+    if (what.signer.toLowerCase() !== S.signer.toLowerCase() || what.seat.toLowerCase() !== S.home.seat.toLowerCase() || what.safe.toLowerCase() !== S.home.safe.toLowerCase())
+      throw new Error("The build would make other addresses than the ones worked out at key 0. Nothing was sent.");
+    if (!what.built) {
+      const hash3 = await send(S.C, S.wallet, what.calls);
+      S.busy = "Waiting for the block…";
+      render();
+      await receipt(S.C, hash3);
+      S.home.built = hash3;
+      saveHome(S.home);
+    }
     await refresh();
     pickStep();
   });
 }
+var sendTestEth = async (to) => {
+  const hash3 = await S.wallet.w.sendTransaction({ account: S.wallet.account, to, value: parseEther("0.001"), chain: S.C.chain });
+  await receipt(S.C, hash3);
+  return hash3;
+};
 async function fund() {
   await guard("Your wallet sends 0.001 test ETH to the Safe…", async () => {
-    const hash3 = await S.wallet.w.sendTransaction({ account: S.wallet.account, to: S.home.safe, value: parseEther("0.001"), chain: S.C.chain });
-    await receipt(S.C, hash3);
+    await sendTestEth(S.home.safe);
     await refresh();
     pickStep();
   });
+}
+var buildLink = () => toLink(request(S.C, S.pk, S.home), location.origin + location.pathname);
+async function shareLink() {
+  const link = buildLink();
+  S.error = "";
+  try {
+    if (navigator.share) {
+      await navigator.share({ title: "Pay the gas for a shielded Safe", text: "Open this where you have a wallet on Base Sepolia, and press Pay. It pays the gas to build a shielded Safe; the wallet owns none of it.", url: link });
+      S.shared = "Shared.";
+    } else {
+      await navigator.clipboard.writeText(link);
+      S.shared = "Copied.";
+    }
+  } catch (e) {
+    if (e?.name === "AbortError") return;
+    S.error = "This browser wouldn't share or copy the link. It's under “What the link holds”: copy it from there.";
+  }
+  watch();
+  render();
+}
+async function checkBuilt() {
+  await guard("Looking for your Safe on chain…", async () => {
+    await refresh();
+    pickStep();
+    if (S.step === "build") S.shared = "Not on chain yet.";
+  });
+}
+var watching = 0;
+function watch() {
+  if (watching) return;
+  watching = setInterval(async () => {
+    if (!S.home || !["build", "fund"].includes(S.step)) {
+      clearInterval(watching);
+      watching = 0;
+      return;
+    }
+    if (S.busy) return;
+    const was = S.step;
+    try {
+      await refresh();
+    } catch {
+      return;
+    }
+    if (S.busy || S.step !== was) return;
+    pickStep();
+    if (S.step !== was) render();
+  }, S.C.id === 31337 ? 1e3 : 6e3);
+}
+async function openPayLink() {
+  const got = fromLink(location.hash, S.C);
+  if (!got) return false;
+  S.step = "pay";
+  S.pay = got;
+  S.error = "";
+  S.choosing = null;
+  render();
+  if (got.req) {
+    try {
+      const what = await resolve(S.C, got.req);
+      const signer = ask({ op: "signer", x: got.req.x, y: got.req.y }).signer;
+      if (what.signer.toLowerCase() !== signer) throw new Error(`the signer factory names ${what.signer} for this passkey, the console ${signer}`);
+      if (what.built) got.balance = await S.C.pc.getBalance({ address: what.safe });
+      if (S.pay === got) got.what = what;
+    } catch (e) {
+      S.error = plain(e);
+    }
+  }
+  render();
+  return true;
+}
+async function payBuild() {
+  const P2 = S.pay;
+  await guard("Your wallet sends one transaction: signer, seat and Safe…", async () => {
+    const what = await resolve(S.C, P2.req);
+    if (what.seat !== P2.what.seat || what.safe !== P2.what.safe) throw new Error("The addresses changed since this page worked them out. Nothing was sent.");
+    if (!what.built) {
+      P2.hash = await send(S.C, S.wallet, what.calls);
+      S.busy = "Waiting for the block…";
+      render();
+      await receipt(S.C, P2.hash);
+    }
+    P2.what = await resolve(S.C, P2.req);
+    if (!P2.what.built) throw new Error("The transaction went through, but the Safe isn't on chain. Nothing was built.");
+    P2.balance = await S.C.pc.getBalance({ address: P2.what.safe });
+  });
+}
+async function payFund() {
+  const P2 = S.pay;
+  await guard("Your wallet sends 0.001 test ETH to the Safe…", async () => {
+    P2.funded = await sendTestEth(P2.what.safe);
+    P2.balance = await S.C.pc.getBalance({ address: P2.what.safe });
+  });
+}
+function leavePay() {
+  history.replaceState(null, "", location.pathname + location.search);
+  S.pay = null;
+  S.step = "boot";
+  S.error = "";
+  settle();
 }
 function currentTx() {
   const t = S.tx, to = isAddress(t.to) ? t.to : "0x000000000000000000000000000000000000dEaD";
@@ -20460,7 +20611,7 @@ function render() {
 }
 function screen(s) {
   const out = [];
-  if (S.step !== "boot") out.push(stepsBar());
+  if (S.step !== "boot" && S.step !== "pay") out.push(stepsBar());
   if (S.choosing) out.push(chooser());
   if (S.warn) out.push(el("p", { class: "note" }, S.warn));
   const status = S.busy ? el("p", { class: "status" }, el("span", { class: "spin" }), S.busy) : null;
@@ -20478,6 +20629,7 @@ function screen(s) {
         el("h3", {}, "Make a passkey"),
         el("p", {}, "Your passkey is the console's only key. It signs with its curve key, and its PRF extension makes the seeds of your one-time keys. Its private key and its PRF secret never leave it; the seeds pass through this page for one request."),
         el("p", { class: "small" }, "It is made for this site only. Touch ID, Windows Hello, a phone or a security key. It needs PRF: most current ones have it."),
+        el("p", { class: "small" }, "No wallet on this device? You don't need one here. Building your Safe costs one transaction's gas, and a wallet on another device can pay it: this page will give you a link to open there."),
         el(
           "div",
           { class: "actions" },
@@ -20496,24 +20648,28 @@ function screen(s) {
       break;
     case "build": {
       const H = S.home;
+      if (!S.wallet) watch();
       out.push(
         el("h3", {}, "Build your shielded Safe"),
-        el("p", {}, "One wallet transaction makes three things. The wallet pays the gas and owns none of them."),
+        el("p", {}, "One transaction makes three things. Whoever sends it pays the gas and owns none of them: a wallet here, or one on another device."),
         rows([
           ["Passkey signer", addr(S.signer)],
           [`Seat #${H.seatNumber}`, addr(H.seat)],
           ["Key 0", el("span", { class: "mono" }, short(H.firstKey || "", 10, 8))],
           ["Safe, 1 of 1", addr(H.safe)]
         ]),
-        el("p", { class: "small" }, "The seat holds only key 0's fingerprint. The Safe's one owner is the seat. If nobody has deployed the SeatFactory on this chain yet, the same transaction deploys it, at the address it has on every chain."),
-        S.wallet ? el("div", { class: "actions" }, el("button", { class: "go", type: "button", disabled, onclick: build }, "Build it: one transaction")) : connectButton(disabled)
+        el("p", { class: "small" }, "The seat holds only key 0's fingerprint. The Safe's one owner is the seat. If nobody has deployed the SeatFactory on this chain yet, the same transaction deploys it, at the address it has on every chain.")
       );
+      if (S.wallet) out.push(el("div", { class: "actions" }, el("button", { class: "go", type: "button", disabled, onclick: build }, "Build it: one transaction")), shareBox(false, disabled));
+      else if (S.walletsHere) out.push(connectButton(disabled), shareBox(false, disabled));
+      else out.push(shareBox(true, disabled), el("div", { class: "actions" }, el("button", { class: "link", type: "button", disabled, onclick: () => connectWallet() }, "I have a wallet in this browser")));
       break;
     }
     case "fund":
+      if (!S.wallet) watch();
       out.push(
         el("h3", {}, "Fund it"),
-        el("p", {}, "Your Safe is empty. Send it a little test ETH, from your wallet or a Base Sepolia faucet."),
+        el("p", {}, S.wallet ? "Your Safe is empty. Send it a little test ETH, from your wallet or a Base Sepolia faucet." : "Your Safe is built, and empty. Send it a little test ETH: from a Base Sepolia faucet, or from the device that paid the gas, which offers to. This page moves on once it arrives."),
         rows([["Safe", addr(S.home.safe)], ["Balance", eth(S.safe.balance)]]),
         el(
           "div",
@@ -20523,6 +20679,9 @@ function screen(s) {
         ),
         S.wallet ? null : connectButton(disabled)
       );
+      break;
+    case "pay":
+      out.push(...payScreen(disabled));
       break;
     case "ready":
     case "working":
@@ -20534,6 +20693,71 @@ function screen(s) {
   }
   if (status) out.push(status);
   if (err) out.push(err);
+  return out;
+}
+function shareBox(first, disabled) {
+  const link = buildLink();
+  return el(
+    "div",
+    { class: "share" },
+    el("h4", {}, first ? "No wallet here? Pay from another device" : "Or pay from another device"),
+    el(
+      "ol",
+      { class: "small" },
+      el(
+        "li",
+        {},
+        navigator.share ? "Share this link to a device with a wallet on Base Sepolia, and a little test ETH for gas: " : "Copy this link to a device with a wallet on Base Sepolia, and a little test ETH for gas: ",
+        "a computer with a browser wallet (Rabby, MetaMask or Frame, or a Trezor or a Ledger through one), or a phone wallet's own browser."
+      ),
+      el("li", {}, "Open it there and press Pay. That device needs no passkey; yours stays here."),
+      el("li", {}, "Come back to this page. It moves on by itself once the Safe is on chain.")
+    ),
+    el(
+      "div",
+      { class: "actions" },
+      el("button", { class: first ? "go" : "", type: "button", disabled, onclick: shareLink }, navigator.share ? "Share the link" : "Copy the link"),
+      S.shared ? el("button", { type: "button", disabled, onclick: checkBuilt }, "Check again") : null
+    ),
+    S.shared ? el("p", { class: "small", role: "status" }, `${S.shared} This page looks at the chain every few seconds.`) : null,
+    el(
+      "details",
+      {},
+      el("summary", { class: "small" }, "What the link holds"),
+      el("p", { class: "small" }, "Public values only, all of which go on chain in the build: your passkey's public key, the seat number and key 0's fingerprint. No seeds, no addresses, no calls. The page that opens it works out the signer, the seat and the Safe from them itself, and shows them before it pays. A wrong link builds a seat nobody can sign for; this page would never see it."),
+      el("input", { class: "mono share-link", readonly: true, value: link, "aria-label": "The link", onfocus: (e) => e.target.select() })
+    )
+  );
+}
+function payScreen(disabled) {
+  const P2 = S.pay, W = P2.what;
+  const out = [el("h3", {}, "Pay the gas for a shielded Safe")];
+  const leave = (label) => el("button", { class: W?.built ? "go" : "link", type: "button", disabled, onclick: leavePay }, label);
+  if (P2.refuse) {
+    out.push(el("p", { class: "refuse" }, P2.refuse), el("div", { class: "actions" }, leave("Go to the page")));
+    return out;
+  }
+  out.push(el("p", {}, "A link from another device: it made a passkey and key 0 there, and asks a wallet here to pay for the build. Your wallet sends one transaction, sends no ETH, and owns none of what it makes."));
+  if (!W) {
+    out.push(S.error ? el("div", { class: "actions" }, leave("Go to the page")) : el("p", { class: "muted" }, "Working out what the link builds, from the chain…"));
+    return out;
+  }
+  out.push(rows([["Passkey signer", addr(W.signer)], [`Seat #${P2.req.seatNumber}`, addr(W.seat)], ["Key 0", el("span", { class: "mono" }, short(P2.req.firstKey, 10, 8))], ["Safe, 1 of 1", addr(W.safe)]]));
+  if (W.built) {
+    out.push(
+      el("p", { class: "note" }, P2.hash ? "Built. The Safe's one owner is the seat, and only the passkey on the other device can sign for it." : "This Safe is built already. There's nothing to pay for."),
+      P2.hash ? rows([["Transaction", txLink(P2.hash)]]) : null,
+      P2.funded ? rows([["Funded", txLink(P2.funded)]]) : null,
+      el("p", {}, "Go back to the device that made the link: its page sees the Safe and moves on.")
+    );
+    const fundIt = S.wallet && P2.balance === 0n && !P2.funded;
+    if (fundIt) out.push(el("p", { class: "small" }, "The Safe is empty. It needs a little test ETH before its first press: this wallet can send it."));
+    out.push(el("div", { class: "actions" }, fundIt ? el("button", { class: "go", type: "button", disabled, onclick: payFund }, "Send it 0.001 test ETH") : null, leave("Done")));
+    return out;
+  }
+  out.push(el("p", { class: "small" }, "Worked out here, from the public values in the link and the chain: the link names no addresses and no calls. This page keeps nothing. Pay only for a link you expect: a wrong one builds a seat nobody can sign for, and costs you the gas."));
+  if (S.wallet) out.push(el("div", { class: "actions" }, el("button", { class: "go", type: "button", disabled, onclick: payBuild }, "Pay: one transaction"), leave("Cancel")));
+  else out.push(connectButton(disabled), el("div", { class: "actions" }, leave("Cancel")));
   return out;
 }
 function pressScreen(s, disabled) {

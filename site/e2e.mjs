@@ -2,7 +2,9 @@
 // The whole page in Chromium, against the local chain (tools/chain/anvil.mjs: Base Sepolia's Safe,
 // passkey signer and Multicall3 at their own addresses, chain 31337). A virtual authenticator with
 // PRF plays the passkey; a stand-in wallet (Anvil's first account) pays the gas. It checks, on chain:
-//   make a passkey → key 0 → build the shielded Safe (deploying the SeatFactory too) → fund it →
+//   make a passkey → key 0 → with no wallet in that browser, share a link → another browser with a
+//   wallet and no passkey opens it, refuses a tampered one, pays for the build (deploying the
+//   SeatFactory too) and funds it, and the first browser moves on by itself → connect a wallet →
 //   two presses, each burning a key and running the Safe transaction → every attack refused →
 //   the console's refusals and red page → the guardrail: a wallet that says no, then the same
 //   approval sent again with no new signature → the danger case → a browser with no ledger finds
@@ -68,9 +70,13 @@ async function walletRpc(method, params) {
 }
 
 const browser = await chromium.launch({ executablePath: process.env.SAB_CHROMIUM || undefined });
+// Each browser has the two wallets, unless the page sets e2e.nowallet in its localStorage: then it
+// has none, as on a phone. The share sheet is a stand-in that keeps the link it was handed.
+async function newBrowser() {
 const ctx = await browser.newContext({ viewport: { width: 1360, height: 1000 } });
 await ctx.exposeFunction("__e2eWallet", walletRpc);
 await ctx.addInitScript(() => {
+  Object.defineProperty(Navigator.prototype, "share", { configurable: true, value: async (d) => { window.__e2eShared = d.url; } });
   const listeners = {};
   const provider = {
     request: async ({ method, params }) => {
@@ -87,10 +93,14 @@ await ctx.addInitScript(() => {
   const info = Object.freeze({ uuid: crypto.randomUUID(), name: "Test wallet (Anvil)", rdns: "app.signandburn.e2e", icon });
   const otherInfo = Object.freeze({ uuid: crypto.randomUUID(), name: "Another wallet", rdns: "app.signandburn.other", icon });
   window.addEventListener("eip6963:requestProvider", () => {
+    if (localStorage.getItem("e2e.nowallet")) return;
     window.dispatchEvent(new CustomEvent("eip6963:announceProvider", { detail: Object.freeze({ info: otherInfo, provider: other }) }));
     window.dispatchEvent(new CustomEvent("eip6963:announceProvider", { detail: Object.freeze({ info, provider }) }));
   });
 });
+return ctx;
+}
+const ctx = await newBrowser();
 const page = await ctx.newPage();
 const csp = [], errors = [];
 page.on("console", (m) => { if (/Content Security Policy|Refused to/.test(m.text())) csp.push(m.text()); });
@@ -105,11 +115,11 @@ const signCount = async () => (await cdp.send("WebAuthn.getCredentials", { authe
 // what the screen says, without its steps bar (which names every step)
 const said = () => [...document.querySelectorAll("#screen > :not(.steps-bar)")].map((e) => e.innerText).join("\n");
 const screen = () => page.evaluate(said);
-const waitFor = (re, timeout = 30000) => page.waitForFunction((s) => new RegExp(s).test([...document.querySelectorAll("#screen > :not(.steps-bar)")]
+const waitFor = (re, timeout = 30000, on = page) => on.waitForFunction((s) => new RegExp(s).test([...document.querySelectorAll("#screen > :not(.steps-bar)")]
   .map((e) => e.innerText).join("\n")), re.source, { timeout })
-  .then(() => true, async () => { console.log("  screen said:", (await screen()).slice(0, 600)); return false; });
+  .then(() => true, async () => { console.log("  screen said:", (await on.evaluate(said)).slice(0, 600)); return false; });
 const shot = (name) => page.screenshot({ path: join(SHOTS, `${name}.png`), fullPage: true });
-const click = (name) => page.getByRole("button", { name }).first().click();
+const click = (name, on = page) => on.getByRole("button", { name }).first().click();
 async function hold(ms = 2400) {
   const btn = page.locator("button.hold");
   await btn.scrollIntoViewIfNeeded();
@@ -146,21 +156,57 @@ try {
   check(await waitFor(/Build your shielded Safe/), "one tap: the PRF gives seed 0, the console gives key 0's fingerprint, and the addresses are known before anything exists");
   await shot("2-build");
 
-  // 3. the shielded Safe, in one transaction: SeatFactory (first time on this chain), signer, seat, Safe
-  await click("Connect a wallet");
-  await page.locator(".chooser").waitFor();
-  const names = await page.locator(".chooser .actions button").allInnerTexts();
-  check(names.includes("Test wallet (Anvil)") && names.includes("Another wallet"), "two wallets in the browser: the page lets you choose");
-  await click("Test wallet (Anvil)");
-  await page.getByRole("button", { name: "Build it: one transaction" }).waitFor();
-  await click("Build it: one transaction");
-  check(await waitFor(/Fund it/, 60000), "one wallet transaction builds the shielded Safe");
+  // 3. the shielded Safe, in one transaction: SeatFactory (first time on this chain), signer, seat, Safe.
+  // This browser has no wallet, as on a phone; another browser, with a wallet and no passkey, pays.
+  await page.evaluate(() => localStorage.setItem("e2e.nowallet", "1"));
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.reload();
+  check(await waitFor(/No wallet here\? Pay from another device/) && !(await page.locator("#screen").getByRole("button", { name: "Connect a wallet" }).count()),
+    "no wallet in this browser: the build leads with a link to pay from another device");
+  await shot("2-build-phone");
+  await page.setViewportSize({ width: 1360, height: 1000 });
+  await click("Share the link");
+  const link = await page.evaluate(() => window.__e2eShared);
   const H = await home();
+  check(link === await page.locator(".share-link").inputValue() && link.startsWith(URL_ + "#pay=") && !link.includes(H.seat.slice(2).toLowerCase()) && !link.includes(H.safe.slice(2).toLowerCase()),
+    "the link: this page's address, then public values only (it names neither the seat nor the Safe)");
+
+  const ctx2 = await newBrowser();
+  const payer = await ctx2.newPage();
+  payer.on("pageerror", (e) => errors.push("payer: " + e.message));
+  payer.on("console", (m) => { if (/Content Security Policy|Refused to/.test(m.text())) csp.push(m.text()); });
+  await payer.goto(link.replace("chain=31337", "chain=1"));
+  check(await waitFor(/This link is for chain 1\./, 30000, payer), "another browser refuses a link for another chain");
+  await payer.goto(link);
+  check(await waitFor(/Pay the gas for a shielded Safe[\s\S]*Seat #0/, 30000, payer), "…and opens the real one in place: what it builds, worked out there");
+  const shown = await payer.evaluate(() => [...document.querySelectorAll("#screen .addr span[title]")].map((e) => e.title.toLowerCase()));
+  check(shown.includes(H.seat.toLowerCase()) && shown.includes(H.safe.toLowerCase()), "…the same seat and Safe the first browser worked out at key 0");
+  await click("Connect a wallet", payer);
+  await payer.locator(".chooser").waitFor();
+  const names = await payer.locator(".chooser .actions button").allInnerTexts();
+  check(names.includes("Test wallet (Anvil)") && names.includes("Another wallet"), "two wallets in the browser: the page lets you choose");
+  await click("Test wallet (Anvil)", payer);
+  await payer.getByRole("button", { name: "Pay: one transaction" }).waitFor();
+  await payer.screenshot({ path: join(SHOTS, "2-pay.png"), fullPage: true });
+  wallet.refuseNext = true;
+  await click("Pay: one transaction", payer);
+  check(await waitFor(/wallet said no/, 30000, payer) && !(await pc.getCode({ address: H.safe })), "the payer's wallet says no: nothing is built");
+  await click("Pay: one transaction", payer);
+  check(await waitFor(/Built\./, 60000, payer), "then one wallet transaction from the other browser builds the shielded Safe");
   const owners = await pc.readContract({ address: H.safe, abi: SAFE_ABI, functionName: "getOwners" });
   check(owners.length === 1 && owners[0].toLowerCase() === H.seat.toLowerCase(), "on chain: a Safe whose one owner is the seat");
   check((await pc.readContract({ address: H.seat, abi: SEAT_ABI, functionName: "current" })) === H.firstKey, "on chain: the seat holds key 0's fingerprint and nothing else");
-  await click("Send 0.001 test ETH from my wallet");
-  check(await waitFor(/Press the button/), "funded");
+  check(await waitFor(/Your Safe is built, and empty/, 30000), "the first browser sees the Safe and moves on by itself");
+  await click("Send it 0.001 test ETH", payer);
+  check(await waitFor(/Funded/, 30000, payer) && await payer.evaluate(() => localStorage.getItem("sab.home") === null), "the payer funds it too, and keeps nothing");
+  check(await waitFor(/Press the button/), "the first browser sees the ETH and moves on");
+  await ctx2.close();
+
+  // a wallet in the first browser after all, to send the presses
+  await page.evaluate(() => localStorage.removeItem("e2e.nowallet"));
+  await click("Connect a wallet to send");
+  await page.locator(".chooser").waitFor();
+  await click("Test wallet (Anvil)");
 
   // 4. two presses
   const TO = "0x00000000000000000000000000000000000b0b01";

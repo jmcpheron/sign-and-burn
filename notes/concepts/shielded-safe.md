@@ -34,6 +34,28 @@ before it is used.
 The wallet that pays the gas has a curve key too, and it signs every transaction it sends. It holds
 only gas money and owns nothing in the Safe ([one press](one-press.md)).
 
+## Who pays for the build
+
+The build is one transaction, and nothing in it is approved by whoever sends it: anyone may deploy
+the SeatFactory, a passkey's signer, a seat and its Safe. So the device with the passkey doesn't need
+a wallet. A phone can make the passkey and key 0, then share a link; a wallet on another device opens
+it and pays the gas.
+
+The link (`sign-and-burn/build/v1`, in the URL's fragment, which the browser doesn't send to the
+server) holds only public values that go on chain in the build anyway: the passkey's public key, the
+seat number and key 0's fingerprint. No seeds, no addresses, no calls. The page that opens it works
+out the signer, the seat and the Safe from those values and the chain (and the console works out the
+signer too), shows them, and only then asks its wallet to pay. A link that named calls could make a
+wallet send anything; this one can't. A tampered link builds a seat nobody can sign for: the payer
+loses its gas, and the phone never sees that seat, because it looks only at the addresses it worked
+out itself. Meanwhile the phone's page reads the chain every few seconds and moves on when the Safe
+is built, and again when it has ETH. The paying page offers to send that ETH too.
+
+The same request could go to a relay that pays the gas: it would rebuild the same calls the same way
+(`site/src/pay.mjs`). None exists yet, and the page makes no call to one. Presses aren't covered:
+each press is still sent by a wallet in the browser that signed it, because the console's ledger
+tracks what it sent.
+
 ## What it would take to take the Safe
 
 A signature by the current key, over a message that names the attacker's own next key. That takes
