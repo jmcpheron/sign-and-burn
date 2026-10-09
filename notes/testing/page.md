@@ -37,7 +37,7 @@ The checks, in order:
    The second browser refuses a link with another chain. Its “Pay for a request” form refuses bad
    text and another chain too. Pasting a valid request from another host stays here and shows
    the same seat and Safe. A payer with no wallet gets instructions without needing the sender's
-   passkey. Two wallets: the page lets you choose. The wallet says no: nothing built.
+   passkey. An authorized wallet connects without asking for account permission again. Two wallets: the page lets you choose. The wallet says no: nothing built.
    Then a stranger deploys the SeatFactory and creates the seat alone, as anyone may: half built.
 6. Then one transaction from the second browser builds the shielded Safe (deploying the SeatFactory
    too), making only what isn't there. On chain: the Safe's one owner is the seat, and the seat holds
@@ -66,7 +66,9 @@ The checks, in order:
     and the approval waits to be shared. After a reload: the same link, and no new passkey signature.
     The second browser refuses a link with another next key (the seat's own refusal, no button), then
     pastes the real one into “Pay for a request”. The seat accepts it, and the hash it works out
-    shows the same check code. Its wallet sends it: the seat moves to key 6, and the Safe runs it. The first browser sees approval 5
+    shows the same check code. A pending account permission request (-32002) names the wallet and
+    explains how to finish or cancel the request. Retrying connects without another passkey
+    signature. Its wallet sends it: the seat moves to key 6, and the Safe runs it. The first browser sees approval 5
     land by itself, says another device sent it, and its history has it landed.
 16. The CSP refuses another host. A phone-width screen has no sideways scroll. No page errors.
 

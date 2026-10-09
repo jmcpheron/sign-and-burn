@@ -27,6 +27,10 @@ with a visible field for copying by hand. A payer can open it or paste it into â
 on this page, review what it builds, then connect a wallet to pay. The same handoff works for
 funding and signed approvals. Pasting reads the request here; it does not visit the pasted host.
 
+Wallet connection reads accounts already granted to the site before asking for permission again.
+If the wallet reports a pending request, the page asks the visitor to finish or cancel it in the
+wallet, then retry. A payer retries with the same signed approval; no passkey tap is needed.
+
 The CSP: `default-src 'none'`; scripts and styles from the folder only, plus `'wasm-unsafe-eval'` for
 MicroPython; `connect-src` the folder and the RPC in `console/cfg.py`. GitHub Pages can't send
 headers, and the page has no worker, so a `<meta>` tag carries the policy; the page refuses to run

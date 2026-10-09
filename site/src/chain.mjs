@@ -74,7 +74,9 @@ export function findWallets() {
 /** quiet: only a wallet already connected to this page and already on this chain, with no prompt. */
 export async function useWallet(C, provider, { quiet = false } = {}) {
   const w = createWalletClient({ chain: C.chain, transport: custom(provider) });
-  const [account] = quiet ? await w.getAddresses() : await w.requestAddresses();
+  let [account] = await w.getAddresses();
+  if (!quiet && !account) [account] = await w.requestAddresses();
+  if (!quiet && !account) throw new Error("The wallet returned no account. Unlock it and connect an account, then try again.");
   if (quiet && (!account || (await w.getChainId()) !== C.id)) return null;
   if ((await w.getChainId()) !== C.id) {
     try {

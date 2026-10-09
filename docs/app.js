@@ -19789,7 +19789,9 @@ function findWallets() {
 }
 async function useWallet(C, provider, { quiet = false } = {}) {
   const w = createWalletClient({ chain: C.chain, transport: custom(provider) });
-  const [account] = quiet ? await w.getAddresses() : await w.requestAddresses();
+  let [account] = await w.getAddresses();
+  if (!quiet && !account) [account] = await w.requestAddresses();
+  if (!quiet && !account) throw new Error("The wallet returned no account. Unlock it and connect an account, then try again.");
   if (quiet && (!account || await w.getChainId() !== C.id)) return null;
   if (await w.getChainId() !== C.id) {
     try {
@@ -20392,7 +20394,13 @@ async function chooseWallet(w) {
   await guard(`Asking ${w.info.name} for an account on ${S.C.chain.name}…`, () => useChosen(w));
 }
 async function useChosen(w, got = null) {
-  got ||= await useWallet(S.C, w.provider);
+  try {
+    got ||= await useWallet(S.C, w.provider);
+  } catch (e) {
+    if (e?.code === -32002 || e?.walk?.((cause) => cause.code === -32002))
+      throw new Error(`${w.info.name || "Your wallet"} already has a request waiting. Open the wallet and finish or cancel that request, then press Connect a wallet again. Nothing was sent by this connection attempt.`);
+    throw e;
+  }
   S.wallet = { ...got, name: w.info.name, provider: w.provider };
   try {
     localStorage.setItem("sab.wallet", walletId(w.info));

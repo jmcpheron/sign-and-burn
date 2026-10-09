@@ -49,11 +49,17 @@ const URL_ = `http://localhost:${server.address().port}/`;
 // another wallet that refuses everything, so the page has to let the visitor choose. A third account
 // plays someone watching the mempool.
 const ACCOUNT = "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266", SECOND = "0x70997970c51812dc3a010c7d01b50e0d17dc79c8", THIRD = "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc";
-const wallet = { refuseNext: false, frontRun: false, frontRunHash: "", sent: 0, account: ACCOUNT };
+const wallet = { refuseNext: false, frontRun: false, frontRunHash: "", sent: 0, account: ACCOUNT, authorized: true, pendingConnect: false, accountRequests: 0 };
 const rpc = async (method, params) => (await (await fetch(chain.url, { method: "POST", headers: { "content-type": "application/json" },
   body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) })).json());
 async function walletRpc(method, params) {
-  if (method === "eth_requestAccounts" || method === "eth_accounts") return { result: [wallet.account] };
+  if (method === "eth_accounts") return { result: wallet.authorized ? [wallet.account] : [] };
+  if (method === "eth_requestAccounts") {
+    wallet.accountRequests++;
+    if (wallet.pendingConnect) return { error: { code: -32002, message: "Request of type eth_requestAccounts already pending." } };
+    wallet.authorized = true;
+    return { result: [wallet.account] };
+  }
   if (method === "wallet_switchEthereumChain" || method === "wallet_addEthereumChain") return { result: null };
   if (method === "eth_sendTransaction" && wallet.refuseNext) { wallet.refuseNext = false; return { error: { code: 4001, message: "User rejected the request." } }; }
   if (method === "eth_sendTransaction" && wallet.frontRun) {
@@ -216,6 +222,7 @@ try {
   check(names.includes("Test wallet (Anvil)") && names.includes("Another wallet"), "two wallets in the browser: the page lets you choose");
   await click("Test wallet (Anvil)", payer);
   await payer.getByRole("button", { name: "Pay: one transaction" }).waitFor();
+  check(wallet.accountRequests === 0, "an authorized wallet connects without another account permission request");
   await payer.screenshot({ path: join(SHOTS, "2-pay.png"), fullPage: true });
   wallet.refuseNext = true;
   await click("Pay: one transaction", payer);
@@ -382,12 +389,25 @@ try {
   await payer.goto(URL_ + "#" + tampered);
   check(await waitFor(/The seat would refuse this approval \(Bad/, 30000, payer) && !(await payer.getByRole("button", { name: "Send it: one transaction" }).count()),
     "the other browser: the link with another next key, and the seat would refuse it; no button");
+  wallet.authorized = false; wallet.pendingConnect = true;
   await payer.goto(URL_);
   await payer.locator(".payment-request summary").click();
   await payer.locator("#pay-request-link").fill(alink);
   await click("Review request", payer);
   check(await waitFor(/Send approval 5[\s\S]*The seat accepts it/, 30000, payer) && (await payer.locator("#screen .verify .code").innerText()) === code,
     "the real link: the seat accepts it, and the hash worked out there shows the code this browser shows");
+  const sentBeforeConnect = wallet.sent;
+  await click("Connect a wallet", payer);
+  await payer.locator(".chooser").waitFor();
+  await click("Test wallet (Anvil)", payer);
+  check(await waitFor(/already has a request waiting[\s\S]*finish or cancel that request/, 30000, payer) && wallet.sent === sentBeforeConnect,
+    "a pending wallet request on an approval link explains recovery and sends nothing");
+  wallet.pendingConnect = false;
+  await click("Connect a wallet", payer);
+  await payer.locator(".chooser").waitFor();
+  await click("Test wallet (Anvil)", payer);
+  await payer.getByRole("button", { name: "Send it: one transaction" }).waitFor();
+  check((await signCount()) === before + 1, "retrying the payer connection uses the same approval with no new passkey signature");
   await payer.screenshot({ path: join(SHOTS, "8-send-approval.png"), fullPage: true });
   const safeNonce = Number(await pc.readContract({ address: H.safe, abi: SAFE_ABI, functionName: "nonce" }));
   await click("Send it: one transaction", payer);

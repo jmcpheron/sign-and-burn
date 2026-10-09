@@ -233,7 +233,13 @@ async function chooseWallet(w) {
 }
 
 async function useChosen(w, got = null) {
-  got ||= await ch.useWallet(S.C, w.provider);
+  try {
+    got ||= await ch.useWallet(S.C, w.provider);
+  } catch (e) {
+    if (e?.code === -32002 || e?.walk?.((cause) => cause.code === -32002))
+      throw new Error(`${w.info.name || "Your wallet"} already has a request waiting. Open the wallet and finish or cancel that request, then press Connect a wallet again. Nothing was sent by this connection attempt.`);
+    throw e;
+  }
   S.wallet = { ...got, name: w.info.name, provider: w.provider };
   try { localStorage.setItem("sab.wallet", walletId(w.info)); } catch {}
   if (!S.tx.to) S.tx.to = S.wallet.account;
