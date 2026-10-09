@@ -55,9 +55,8 @@ out itself. Meanwhile the phone's page reads the chain every few seconds and mov
 is built, and again when it has ETH. The paying page offers to send that ETH too.
 
 The same request could go to a relay that pays the gas: it would rebuild the same calls the same way
-(`site/src/pay.mjs`). None exists yet, and the page makes no call to one. Presses aren't covered:
-each press is still sent by a wallet in the browser that signed it, because the console's ledger
-tracks what it sent.
+(`site/src/pay.mjs`). None exists yet, and the page makes no call to one. Presses can go the same
+way, as a second kind of link: [one press](one-press.md#sent-from-another-device).
 
 ## What it would take to take the Safe
 

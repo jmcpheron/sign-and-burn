@@ -8,7 +8,8 @@
 //   two presses, each burning a key and running the Safe transaction → every attack refused →
 //   the console's refusals and red page → the guardrail: a wallet that says no, then the same
 //   approval sent again with no new signature → the danger case → a browser with no ledger finds
-//   the seat and is warned → a front-run approval lands in someone else's transaction → the CSP
+//   the seat and is warned → a front-run approval lands in someone else's transaction → a press
+//   with no wallet goes out as a link, and the other browser sends it → the CSP
 //   refuses other hosts → a reload keeps the ledger. Before all that, the explainers in "How it works".
 //   cd site && npm ci && node e2e.mjs        (Chromium: SAB_CHROMIUM=/path/to/chrome if playwright-core has none)
 import { spawnSync } from "node:child_process";
@@ -200,11 +201,10 @@ try {
   await click("Send it 0.001 test ETH", payer);
   check(await waitFor(/Funded/, 30000, payer) && await payer.evaluate(() => localStorage.getItem("sab.home") === null), "the payer funds it too, and keeps nothing");
   check(await waitFor(/Press the button/), "the first browser sees the ETH and moves on");
-  await ctx2.close();
 
   // a wallet in the first browser after all, to send the presses
   await page.evaluate(() => localStorage.removeItem("e2e.nowallet"));
-  await click("Connect a wallet to send");
+  await click("I have a wallet in this browser");
   await page.locator(".chooser").waitFor();
   await click("Test wallet (Anvil)");
 
@@ -307,6 +307,41 @@ try {
   const theirs = `${wallet.frontRunHash.slice(0, 10)}…${wallet.frontRunHash.slice(-6)}`;
   check((await page.locator("#history").innerText()).includes(theirs) && (await page.locator("#screen").innerText()).includes(theirs),
     "the screen and the history name their transaction, the one the approval is in");
+
+  // 9b. a press with no wallet here: the console signs and records approval 5, and it goes out as a
+  // link. Until it lands, this browser shares only that approval. A wallet in the other browser sends it.
+  await page.evaluate(() => localStorage.setItem("e2e.nowallet", "1"));
+  await page.reload();
+  check(await waitFor(/No wallet here: you then share the approval as a link/), "no wallet in this browser: holding signs, and then the approval goes out as a link");
+  await page.locator("#screen input.mono").first().fill("0x00000000000000000000000000000000000b0b02");
+  await waitFor(/Send 0\.0001 ETH/);
+  before = await signCount();
+  await hold();
+  check(await waitFor(/Approval 5 is signed\. Send it from another device/, 60000) && (await signCount()) === before + 1, "…one tap: key 5 signs, and the approval waits in the ledger");
+  const code = await page.locator("#screen .verify .code").innerText();
+  await click("Share the link");
+  const alink = await page.evaluate(() => window.__e2eShared);
+  await page.reload();
+  check(await waitFor(/Approval 5 is signed/) && (await signCount()) === before + 1 && (await page.locator(".share-link").inputValue()) === alink,
+    "after a reload: the same approval, the same link, and no new passkey signature");
+  const tampered = new URLSearchParams(new URL(alink).hash.slice(1));
+  tampered.set("next", "0x" + "ab".repeat(32));
+  await payer.goto(URL_ + "#" + tampered);
+  check(await waitFor(/The seat would refuse this approval \(Bad/, 30000, payer) && !(await payer.getByRole("button", { name: "Send it: one transaction" }).count()),
+    "the other browser: the link with another next key, and the seat would refuse it; no button");
+  await payer.goto(alink);
+  check(await waitFor(/Send approval 5[\s\S]*The seat accepts it/, 30000, payer) && (await payer.locator("#screen .verify .code").innerText()) === code,
+    "the real link: the seat accepts it, and the hash worked out there shows the code this browser shows");
+  await payer.screenshot({ path: join(SHOTS, "8-send-approval.png"), fullPage: true });
+  const safeNonce = Number(await pc.readContract({ address: H.safe, abi: SAFE_ABI, functionName: "nonce" }));
+  await click("Send it: one transaction", payer);
+  check(await waitFor(/Sent\. Approval 5 landed[\s\S]*The Safe ran the transaction/, 60000, payer), "the other browser's wallet sends it, and the Safe runs it");
+  check(Number(await pc.readContract({ address: H.seat, abi: SEAT_ABI, functionName: "n" })) === 6 &&
+    Number(await pc.readContract({ address: H.safe, abi: SAFE_ABI, functionName: "nonce" })) === safeNonce + 1, "on chain: the seat is at key 6, and the Safe ran it");
+  check(await waitFor(/Key 5: signed, sent, burned[\s\S]*A wallet on another device sent approval 5/, 30000), "this browser sees approval 5 land by itself, and says who sent it");
+  check(/#5[\s\S]*landed/.test(await page.locator("#history").innerText()), "history: approval 5 landed, with the other browser's transaction");
+  await ctx2.close();
+  await page.evaluate(() => localStorage.removeItem("e2e.nowallet"));
 
   // 10. the page reaches only this folder and the RPC
   const reach = await page.evaluate(() => fetch("https://example.com/").then(() => "reached", () => "blocked"));

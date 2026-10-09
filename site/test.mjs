@@ -1,6 +1,6 @@
 // The page's own JavaScript, without a browser: src/wots.mjs against reference/vectors/v1.json, the
 // danger case's forgery against a throwaway key, finding an approval inside a wallet's transaction,
-// the build link another device pays from, and console/cfg.py against what the page reads.
+// the links another device pays from (a build, an approval), and console/cfg.py against what the page reads.
 //   cd site && npm ci && node test.mjs
 import { readFileSync } from "node:fs";
 import * as w from "./src/wots.mjs";
@@ -65,6 +65,22 @@ bad("a seat number past uint32", (q) => q.set("seat", "4294967296"));
 bad("a first key of zeros", (q) => q.set("key", "0x" + "00".repeat(32)));
 bad("a first key with markup", (q) => q.set("key", "<b>" + "0".repeat(61)));
 console.log("build links: round trip, and seven refusals");
+
+// An approval the console signed, as a link: every signature byte survives, and it holds no hash.
+const tx = { to: "0x" + "0b".repeat(20), value: "30000000000000", data: "0x", operation: 0, nonce: "7" };
+const alink = pay.approvalLink(C, 5, a, tx, "https://signandburn.app/");
+const back = pay.fromLink(new URL(alink).hash, C).req;
+check("an approval link round-trips", back && back.n === 5 && back.seat === a.seat && back.safe === a.safe && back.nextKey === a.nextKey &&
+  JSON.stringify(back.oneTime) === JSON.stringify(a.oneTime) && back.curveSig === a.curveSig && JSON.stringify(back.tx) === JSON.stringify(tx));
+check("an approval link holds no Safe transaction hash", !alink.includes(a.safeTxHash.slice(2)));
+const badA = (what, f) => { const q = new URLSearchParams(new URL(alink).hash.slice(1)); f(q); check(`refused: ${what}`, !!pay.fromLink("#" + q, C)?.refuse); };
+badA("a one-time signature one value short", (q) => q.set("ot", q.get("ot").slice(0, -43)));
+badA("a signature that isn't base64url", (q) => q.set("sig", "<script>"));
+badA("a recipient that isn't an address", (q) => q.set("to", "0x1234"));
+badA("data that isn't hex bytes", (q) => q.set("data", "0xabc"));
+badA("an operation that is neither", (q) => q.set("op", "2"));
+badA("a value that isn't a number", (q) => q.set("value", "-1"));
+console.log(`approval links: round trip (${alink.length} characters), and six refusals`);
 
 const cfg = parseCfg(readFileSync(new URL("../console/cfg.py", import.meta.url), "utf8"));
 const dep = JSON.parse(readFileSync(new URL("../contracts/deployment.json", import.meta.url), "utf8"));

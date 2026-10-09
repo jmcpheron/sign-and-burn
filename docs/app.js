@@ -19235,6 +19235,8 @@ init_getAddress();
 init_isAddress();
 init_concat();
 init_pad();
+init_toBytes();
+init_toHex();
 init_keccak256();
 init_toFunctionSelector();
 init_formatEther();
@@ -19942,7 +19944,20 @@ async function trySeat(C, seat, args, from16) {
 
 // src/pay.mjs
 var TAG = "sign-and-burn/build/v1";
+var APPROVAL_TAG = "sign-and-burn/approval/v1";
 var HEX32 = /^[0-9a-f]{64}$/;
+var ADDR = /^0x[0-9a-f]{40}$/;
+var UINT = /^(0|[1-9]\d{0,77})$/;
+var ONE_TIME = 67 * 32;
+var b64 = (hex3) => btoa(String.fromCharCode(...hexToBytes(hex3))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+function unb64(s) {
+  if (!/^[A-Za-z0-9_-]*$/.test(s || "")) return null;
+  try {
+    return bytesToHex(Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)), (c) => c.charCodeAt(0)));
+  } catch {
+    return null;
+  }
+}
 var request = (C, pk, home) => ({
   tag: TAG,
   chain: C.id,
@@ -19955,13 +19970,60 @@ function toLink(req, base) {
   const q = new URLSearchParams({ pay: req.tag, chain: String(req.chain), x: req.x, y: req.y, seat: String(req.seatNumber), key: req.firstKey });
   return `${base}#${q}`;
 }
+function approvalLink(C, n, a, tx, base) {
+  const q = new URLSearchParams({
+    pay: APPROVAL_TAG,
+    chain: String(C.id),
+    seat: a.seat.toLowerCase(),
+    safe: a.safe.toLowerCase(),
+    n: String(n),
+    to: tx.to.toLowerCase(),
+    value: String(tx.value),
+    data: (tx.data || "0x").toLowerCase(),
+    op: String(tx.operation),
+    nonce: String(tx.nonce),
+    next: a.nextKey.toLowerCase(),
+    ot: b64("0x" + a.oneTime.map((v) => v.slice(2)).join("")),
+    sig: b64(a.curveSig)
+  });
+  return `${base}#${q}`;
+}
 function fromLink(hash3, C) {
   const q = new URLSearchParams(String(hash3 || "").replace(/^#/, ""));
   if (!q.has("pay")) return null;
-  if (q.get("pay") !== TAG) return { refuse: `This link asks for "${q.get("pay").slice(0, 40)}", which this page doesn't know. It knows ${TAG}.` };
-  const chain = Number(q.get("chain")), x = (q.get("x") || "").toLowerCase(), y = (q.get("y") || "").toLowerCase();
+  const tag = q.get("pay");
+  if (tag !== TAG && tag !== APPROVAL_TAG) return { refuse: `This link asks for "${tag.slice(0, 40)}", which this page doesn't know. It knows ${TAG} and ${APPROVAL_TAG}.` };
+  const chain = Number(q.get("chain"));
+  if (chain !== C.id) return { refuse: `This link is for chain ${String(q.get("chain")).slice(0, 12)}. This page works on ${C.chain.name} (${C.id}) only.` };
+  return tag === TAG ? buildFrom(q, chain) : approvalFrom(q, chain);
+}
+function approvalFrom(q, chain) {
+  const get = (k) => (q.get(k) || "").toLowerCase();
+  const again = " Ask for the link again.";
+  if (!ADDR.test(get("seat")) || !ADDR.test(get("safe")) || !ADDR.test(get("to"))) return { refuse: "This link's seat, Safe or recipient isn't an address." + again };
+  if (!/^(0|[1-9]\d{0,18})$/.test(get("n")) || !UINT.test(get("value")) || !UINT.test(get("nonce"))) return { refuse: "This link's key number, value or nonce isn't a number." + again };
+  if (!/^0x([0-9a-f]{2}){0,8192}$/.test(get("data"))) return { refuse: "This link's call data isn't hex bytes." + again };
+  if (get("op") !== "0" && get("op") !== "1") return { refuse: "This link's operation is neither a call nor a delegatecall." + again };
+  if (!/^0x[0-9a-f]{64}$/.test(get("next"))) return { refuse: "This link's next key isn't a 32-byte fingerprint." + again };
+  const ot = unb64(q.get("ot")), sig = unb64(q.get("sig"));
+  if (!ot || ot.length !== 2 + 2 * ONE_TIME) return { refuse: "This link's one-time signature isn't 67 values of 32 bytes." + again };
+  if (!sig || sig.length < 4 || sig.length > 2 + 2 * 4096) return { refuse: "This link's passkey signature isn't there, or is far too long." + again };
+  const oneTime = Array.from({ length: 67 }, (_, j) => "0x" + ot.slice(2 + 64 * j, 66 + 64 * j));
+  return { req: {
+    tag: APPROVAL_TAG,
+    chain,
+    seat: get("seat"),
+    safe: get("safe"),
+    n: Number(get("n")),
+    nextKey: get("next"),
+    oneTime,
+    curveSig: sig,
+    tx: { to: get("to"), value: get("value"), data: get("data"), operation: Number(get("op")), nonce: get("nonce") }
+  } };
+}
+function buildFrom(q, chain) {
+  const x = (q.get("x") || "").toLowerCase(), y = (q.get("y") || "").toLowerCase();
   const seat = q.get("seat") || "", key = (q.get("key") || "").toLowerCase();
-  if (chain !== C.id) return { refuse: `This link is for chain ${String(q.get("chain")).slice(0, 12)}. This page builds on ${C.chain.name} (${C.id}) only.` };
   if (!HEX32.test(x) || !HEX32.test(y)) return { refuse: "This link's passkey public key isn't two 32-byte numbers. Ask for the link again." };
   if (!/^(0|[1-9]\d{0,9})$/.test(seat) || Number(seat) > 4294967295) return { refuse: "This link's seat number isn't a number. Ask for the link again." };
   if (!/^0x[0-9a-f]{64}$/.test(key) || /^0x0{64}$/.test(key)) return { refuse: "This link's first key isn't a 32-byte fingerprint. Ask for the link again." };
@@ -20429,12 +20491,13 @@ async function fund() {
   });
 }
 var buildLink = () => toLink(request(S.C, S.pk, S.home), location.origin + location.pathname);
-async function shareLink() {
-  const link = buildLink();
+var SHARE_BUILD = { title: "Pay the gas for a shielded Safe", text: "Open this where you have a wallet on Base Sepolia, and press Pay. It pays the gas to build a shielded Safe; the wallet owns none of it." };
+var SHARE_APPROVAL = { title: "Send an approval for a shielded Safe", text: "Open this where you have a wallet on Base Sepolia, and press Send. It pays the gas for an approval already signed; the wallet approves nothing." };
+async function shareLink(link, what) {
   S.error = "";
   try {
     if (navigator.share) {
-      await navigator.share({ title: "Pay the gas for a shielded Safe", text: "Open this where you have a wallet on Base Sepolia, and press Pay. It pays the gas to build a shielded Safe; the wallet owns none of it.", url: link });
+      await navigator.share({ ...what, url: link });
       S.shared = "Shared.";
     } else {
       await navigator.clipboard.writeText(link);
@@ -20454,16 +20517,39 @@ async function checkBuilt() {
     if (S.step === "build") S.shared = "Not on chain yet.";
   });
 }
+async function checkLanded() {
+  const w = waiting()[0];
+  await guard("Looking for the approval on chain…", async () => {
+    if (w && await seatN() > w.n) return landedElsewhere(w);
+    S.shared = "Not on chain yet.";
+  });
+}
+var seatN = async () => Number(await S.C.pc.readContract({ address: S.home.seat, abi: SEAT_ABI, functionName: "n" }));
+async function landedElsewhere(w) {
+  const landed = await approvalOnChain(S.C, S.home.seat, w.n).catch(() => null);
+  if (landed?.txHash) ask({ op: "sent", chainId: S.C.id, seat: S.home.seat, n: w.n, txHash: landed.txHash });
+  await refresh();
+  S.last = { n: w.n, a: w.approval, hash: landed?.txHash, elsewhere: true, ran: S.safe.nonce > Number(w.tx.nonce), m: w.m, summary: w.summary };
+  S.step = "done";
+  S.shared = "";
+  render();
+}
 var watching = 0;
 function watch() {
   if (watching) return;
   watching = setInterval(async () => {
-    if (!S.home || !["build", "fund"].includes(S.step)) {
+    const w = S.step === "ready" && S.home?.seat ? S.waitFor : null;
+    if (!S.home || !(["build", "fund"].includes(S.step) || w)) {
       clearInterval(watching);
       watching = 0;
       return;
     }
     if (S.busy) return;
+    if (w) {
+      const n = await seatN().catch(() => w.n);
+      if (n > w.n && !S.busy && S.step === "ready") await landedElsewhere(w);
+      return;
+    }
     const was = S.step;
     try {
       await refresh();
@@ -20472,7 +20558,10 @@ function watch() {
     }
     if (S.busy || S.step !== was) return;
     pickStep();
-    if (S.step !== was) render();
+    if (S.step !== was) {
+      S.shared = "";
+      render();
+    }
   }, S.C.id === 31337 ? 1e3 : 6e3);
 }
 async function openPayLink() {
@@ -20483,7 +20572,14 @@ async function openPayLink() {
   S.error = "";
   S.choosing = null;
   render();
-  if (got.req) {
+  if (got.req?.tag === APPROVAL_TAG) {
+    try {
+      const what = await resolveApproval(got.req);
+      if (S.pay === got) got.what = what;
+    } catch (e) {
+      S.error = plain(e);
+    }
+  } else if (got.req) {
     try {
       const what = await resolve(S.C, got.req);
       const signer = ask({ op: "signer", x: got.req.x, y: got.req.y }).signer;
@@ -20518,6 +20614,35 @@ async function payFund() {
   await guard("Your wallet sends 0.001 test ETH to the Safe…", async () => {
     P2.funded = await sendTestEth(P2.what.safe);
     P2.balance = await S.C.pc.getBalance({ address: P2.what.safe });
+  });
+}
+async function resolveApproval(req) {
+  const [seat, safe] = await Promise.all([readSeat(S.C, req.seat), readSafe(S.C, req.safe)]);
+  const r = ask({ op: "review", chainId: S.C.id, safe: req.safe, tx: req.tx });
+  if (!r.ok) throw new Error(r.refuse);
+  const a = { seat: req.seat, safe: req.safe, safeTxHash: r.safeTxHash, nextKey: req.nextKey, oneTime: req.oneTime, curveSig: req.curveSig };
+  const landed = seat.n > req.n ? await approvalOnChain(S.C, req.seat, req.n) : null;
+  const why = landed || r.refuse ? null : await trySeat(S.C, req.seat, [a.safe, a.safeTxHash, a.nextKey, a.oneTime, a.curveSig], S.wallet?.account);
+  return { seat, safe, r, a, landed, why, owner: !!safe.exists && safe.owners.some((o) => o.toLowerCase() === req.seat) };
+}
+async function payApproval() {
+  const P2 = S.pay;
+  await guard("Asking the seat, without sending anything…", async () => {
+    const W = await resolveApproval(P2.req);
+    P2.what = W;
+    if (W.landed || W.r.refuse) return;
+    if (W.why) throw new Error(`The seat would refuse this approval (${W.why}). Nothing was sent.`);
+    S.busy = "Your wallet sends it. It pays gas, and approves nothing…";
+    render();
+    const hash3 = await send(S.C, S.wallet, approveCalls(W.a, P2.req.tx));
+    S.busy = "Waiting for the block…";
+    render();
+    await receipt(S.C, hash3);
+    const landed = await approvalOnChain(S.C, P2.req.seat, P2.req.n);
+    if (!landed) throw new Error(`The transaction went through (${short(hash3, 10, 6)}), but approval ${P2.req.n} didn't land: the seat is still at key ${P2.req.n}.`);
+    P2.hash = landed.txHash || hash3;
+    P2.ran = (await readSafe(S.C, P2.req.safe)).nonce > W.safe.nonce;
+    P2.what = { ...W, landed };
   });
 }
 function leavePay() {
@@ -20572,8 +20697,12 @@ async function press(tx) {
     }
     S.busy = "Asking the seat, without sending anything…";
     render();
-    const why = await trySeat(S.C, a.seat, [a.safe, a.safeTxHash, a.nextKey, a.oneTime, a.curveSig], S.wallet.account);
+    const why = await trySeat(S.C, a.seat, [a.safe, a.safeTxHash, a.nextKey, a.oneTime, a.curveSig], S.wallet?.account);
     if (why) throw new Error(`The seat would refuse this approval (${why}). The console keeps it, and will only ever send this one for key ${S.seat.n}.`);
+    if (!S.wallet) {
+      S.shared = "";
+      return;
+    }
     S.busy = "Your wallet sends it. It pays gas, and approves nothing…";
     render();
     const nonceBefore = S.safe.nonce;
@@ -20594,7 +20723,7 @@ async function press(tx) {
     S.last = { n, a, hash: landed.txHash || hash3, theirs, ran: S.safe.nonce > nonceBefore, m: signed?.m, summary: begin.review.summary };
     S.step = "done";
   });
-  if (S.error) S.step = "ready";
+  if (S.error || S.step === "working") S.step = "ready";
   render();
 }
 var STEPS2 = [["nokey", "Passkey"], ["firstkey", "First key"], ["build", "Shielded Safe"], ["fund", "Fund it"], ["ready", "Press"]];
@@ -20681,7 +20810,7 @@ function screen(s) {
       );
       break;
     case "pay":
-      out.push(...payScreen(disabled));
+      out.push(...payScreen(s, disabled));
       break;
     case "ready":
     case "working":
@@ -20716,7 +20845,7 @@ function shareBox(first, disabled) {
     el(
       "div",
       { class: "actions" },
-      el("button", { class: first ? "go" : "", type: "button", disabled, onclick: shareLink }, navigator.share ? "Share the link" : "Copy the link"),
+      el("button", { class: first ? "go" : "", type: "button", disabled, onclick: () => shareLink(buildLink(), SHARE_BUILD) }, navigator.share ? "Share the link" : "Copy the link"),
       S.shared ? el("button", { type: "button", disabled, onclick: checkBuilt }, "Check again") : null
     ),
     S.shared ? el("p", { class: "small", role: "status" }, `${S.shared} This page looks at the chain every few seconds.`) : null,
@@ -20737,14 +20866,61 @@ function shareBox(first, disabled) {
     )
   );
 }
-function payScreen(disabled) {
+function payScreen(s, disabled) {
+  const P2 = S.pay;
+  if (P2.refuse) return [
+    el("h3", {}, "Pay the gas"),
+    el("p", { class: "refuse" }, P2.refuse),
+    el("div", { class: "actions" }, el("button", { class: "link", type: "button", disabled, onclick: leavePay }, "Go to the page"))
+  ];
+  return P2.req.tag === APPROVAL_TAG ? payApprovalScreen(s, disabled) : payBuildScreen(disabled);
+}
+function payApprovalScreen(s, disabled) {
+  const P2 = S.pay, W = P2.what, n = P2.req.n;
+  const out = [el("h3", {}, `Send approval ${n} for a shielded Safe`)];
+  const leave = (label, go = false) => el("button", { class: go ? "go" : "link", type: "button", disabled, onclick: leavePay }, label);
+  out.push(el("p", {}, `A link from another device: its passkey and console signed this approval there, with one-time key ${n}. A wallet here sends it. It pays the gas and approves nothing: anyone may send an approval, and it can do only what was signed.`));
+  if (!W) {
+    out.push(S.error ? el("div", { class: "actions" }, leave("Go to the page")) : el("p", { class: "muted" }, "Checking the approval against the chain…"));
+    return out;
+  }
+  out.push(rows([["Safe", addr(P2.req.safe)], ["Seat", addr(P2.req.seat)], ["Key", `${n}: the seat is at key ${W.seat.n}`]]));
+  if (W.r.level === "red") s.className = "screen red";
+  out.push(...reviewParts(W.r, P2.req.safe, P2.req.tx, "Safe transaction hash, worked out here. The device that signed shows the same code."));
+  if (W.landed) {
+    out.push(
+      el("p", { class: "note" }, P2.hash ? `Sent. Approval ${n} landed, and key ${n} is burned. ${P2.ran ? "The Safe ran the transaction." : "The Safe couldn't run it yet (has it the ETH?); its vote is kept, and anyone can run it later."}` : `Approval ${n} has landed already. There's nothing to pay for.`),
+      W.landed.txHash ? rows([["Transaction", txLink(W.landed.txHash)]]) : null,
+      el("p", {}, "Go back to the device that signed it: its page sees the approval and moves on."),
+      el("div", { class: "actions" }, leave("Done", true))
+    );
+    return out;
+  }
+  if (W.r.refuse) {
+    out.push(el("p", { class: "refuse" }, "This page's console refuses: " + W.r.refuse), el("div", { class: "actions" }, leave("Go to the page")));
+    return out;
+  }
+  if (!W.owner) {
+    out.push(el("p", { class: "refuse" }, "The seat isn't an owner of this Safe. Nothing to send."), el("div", { class: "actions" }, leave("Go to the page")));
+    return out;
+  }
+  if (W.why) {
+    out.push(
+      el("p", { class: "refuse" }, `The seat would refuse this approval (${W.why}). ` + (W.seat.n < n ? `It is at key ${W.seat.n}: an earlier approval hasn't landed yet.` : "The link isn't the approval the console signed.")),
+      el("div", { class: "actions" }, leave("Go to the page"))
+    );
+    return out;
+  }
+  if (Number(P2.req.tx.nonce) !== W.safe.nonce) out.push(el("p", { class: "note" }, `The Safe is at nonce ${W.safe.nonce}, and this transaction is for nonce ${P2.req.tx.nonce}. The approval would land, but the Safe couldn't run it now.`));
+  out.push(el("p", { class: "small" }, "The seat accepts it: asked just now, by simulation. Your wallet will show a call to Multicall3 that approves and runs this, and sends no ETH of its own."));
+  if (S.wallet) out.push(el("div", { class: "actions" }, el("button", { class: "go", type: "button", disabled, onclick: payApproval }, "Send it: one transaction"), leave("Cancel")));
+  else out.push(connectButton(disabled), el("div", { class: "actions" }, leave("Cancel")));
+  return out;
+}
+function payBuildScreen(disabled) {
   const P2 = S.pay, W = P2.what;
   const out = [el("h3", {}, "Pay the gas for a shielded Safe")];
   const leave = (label) => el("button", { class: W?.built ? "go" : "link", type: "button", disabled, onclick: leavePay }, label);
-  if (P2.refuse) {
-    out.push(el("p", { class: "refuse" }, P2.refuse), el("div", { class: "actions" }, leave("Go to the page")));
-    return out;
-  }
   out.push(el("p", {}, "A link from another device: it made a passkey and key 0 there, and asks a wallet here to pay for the build. Your wallet sends one transaction, sends no ETH, and owns none of what it makes."));
   if (!W) {
     out.push(S.error ? el("div", { class: "actions" }, leave("Go to the page")) : el("p", { class: "muted" }, "Working out what the link builds, from the chain…"));
@@ -20770,7 +20946,7 @@ function payScreen(disabled) {
 }
 function pressScreen(s, disabled) {
   const out = [el("h3", {}, "Press the button")];
-  const w = waiting()[0];
+  const w = S.waitFor = waiting()[0] || null;
   const form = el(
     "div",
     { class: "form" },
@@ -20803,44 +20979,17 @@ function pressScreen(s, disabled) {
   }
   if (r.level === "red") s.className = "screen red";
   if (w) out.push(el("p", { class: "note" }, `Key ${w.n} already signed this approval. One signature per key, ever: the console will only send this same one again. No tap needed.`));
-  out.push(el("div", { class: "review" }, ...r.items.map((it) => el(
-    "div",
-    { class: `item ${it.level}` },
-    el("div", { class: "t" }, it.title),
-    el("div", { class: "w" }, it.what),
-    it.to ? el("div", {}, el("span", { class: "small" }, (it.label || "to") + " "), addr(it.to)) : null,
-    it.text ? el("p", { class: "small" }, it.text) : null
-  ))));
-  out.push(el("details", {}, el("summary", { class: "small" }, "Every field the console hashed"), el("table", { class: "fields" }, el(
-    "tbody",
-    {},
-    ...[
-      ["chain", `${S.C.id} (${S.C.chain.name})`],
-      ["Safe", S.home.safe],
-      ["to", tx.to],
-      ["value", `${tx.value} wei`],
-      ["data", tx.data || "0x"],
-      ["operation", tx.operation ? "1 (delegatecall)" : "0 (call)"],
-      ["safeTxGas, baseGas, gasPrice", "0, 0, 0"],
-      ["gasToken, refundReceiver", "none"],
-      ["nonce", tx.nonce]
-    ].map(([k, v]) => el("tr", {}, el("td", {}, k), el("td", {}, String(v))))
-  ))));
-  const vc = el("canvas", { width: 8, height: 8, "aria-hidden": "true" });
-  drawBlockie(vc, r.safeTxHash);
-  out.push(el("div", { class: "verify" }, vc, el(
-    "div",
-    {},
-    el("div", { class: "small" }, "Safe transaction hash, worked out by the console"),
-    el("div", { class: "code" }, r.verify),
-    el("div", { class: "mono small" }, r.safeTxHash)
-  )));
+  out.push(...reviewParts(r, S.home.safe, tx, "Safe transaction hash, worked out by the console"));
   if (r.refuse) {
     out.push(el("p", { class: "refuse" }, "The console refuses: " + r.refuse));
     return out;
   }
-  if (!S.wallet) {
-    out.push(connectButton(disabled, "Connect a wallet to send"));
+  if (w && !S.wallet) {
+    watch();
+    out.push(
+      approvalShareBox(w, true, disabled),
+      el("div", { class: "actions" }, el("button", { class: "link", type: "button", disabled, onclick: () => connectWallet() }, "I have a wallet in this browser"))
+    );
     return out;
   }
   const elsewhere = S.home.found && !mine().length && !w;
@@ -20867,8 +21016,87 @@ function pressScreen(s, disabled) {
       redraw();
     } }, "Reject")
   ));
-  out.push(el("p", { class: "small" }, `Holding asks your passkey once. The console signs with key ${S.seat.n}, burns it and names key ${S.seat.n + 1}; your wallet sends it all in one transaction.`));
+  if (w) out.push(approvalShareBox(w, false, disabled));
+  else if (S.wallet) out.push(el("p", { class: "small" }, `Holding asks your passkey once. The console signs with key ${S.seat.n}, burns it and names key ${S.seat.n + 1}; your wallet sends it all in one transaction.`));
+  else out.push(
+    el("p", { class: "small" }, `Holding asks your passkey once. The console signs with key ${S.seat.n}, burns it and names key ${S.seat.n + 1}. No wallet here: you then share the approval as a link, and a wallet on another device sends it. It pays the gas and approves nothing.`),
+    el("div", { class: "actions" }, el("button", { class: "link", type: "button", disabled, onclick: () => connectWallet() }, "I have a wallet in this browser"))
+  );
   return out;
+}
+function reviewParts(r, safe, tx, label) {
+  const vc = el("canvas", { width: 8, height: 8, "aria-hidden": "true" });
+  drawBlockie(vc, r.safeTxHash);
+  return [
+    el("div", { class: "review" }, ...r.items.map((it) => el(
+      "div",
+      { class: `item ${it.level}` },
+      el("div", { class: "t" }, it.title),
+      el("div", { class: "w" }, it.what),
+      it.to ? el("div", {}, el("span", { class: "small" }, (it.label || "to") + " "), addr(it.to)) : null,
+      it.text ? el("p", { class: "small" }, it.text) : null
+    ))),
+    el("details", {}, el("summary", { class: "small" }, "Every field the console hashed"), el("table", { class: "fields" }, el(
+      "tbody",
+      {},
+      ...[
+        ["chain", `${S.C.id} (${S.C.chain.name})`],
+        ["Safe", safe],
+        ["to", tx.to],
+        ["value", `${tx.value} wei`],
+        ["data", tx.data || "0x"],
+        ["operation", tx.operation ? "1 (delegatecall)" : "0 (call)"],
+        ["safeTxGas, baseGas, gasPrice", "0, 0, 0"],
+        ["gasToken, refundReceiver", "none"],
+        ["nonce", tx.nonce]
+      ].map(([k, v]) => el("tr", {}, el("td", {}, k), el("td", {}, String(v))))
+    ))),
+    el("div", { class: "verify" }, vc, el(
+      "div",
+      {},
+      el("div", { class: "small" }, label),
+      el("div", { class: "code" }, r.verify),
+      el("div", { class: "mono small" }, r.safeTxHash)
+    ))
+  ];
+}
+function approvalShareBox(w, first, disabled) {
+  const link = approvalLink(S.C, w.n, w.approval, w.tx, location.origin + location.pathname);
+  return el(
+    "div",
+    { class: "share" },
+    el("h4", {}, first ? `Approval ${w.n} is signed. Send it from another device` : "Or send it from another device"),
+    el(
+      "ol",
+      { class: "small" },
+      el("li", {}, `${navigator.share ? "Share" : "Copy"} this link to a device with a wallet on Base Sepolia and a little test ETH for gas: a computer with a browser wallet, or a phone wallet's own browser.`),
+      el("li", {}, `Open it there. That page works out the Safe transaction hash itself (its code should read ${w.verify}), asks the seat, and sends it. Its wallet pays the gas and approves nothing.`),
+      el("li", {}, `Come back to this page. It moves on by itself once approval ${w.n} lands.`)
+    ),
+    el(
+      "div",
+      { class: "actions" },
+      el("button", { class: first ? "go" : "", type: "button", disabled, onclick: () => shareLink(link, SHARE_APPROVAL) }, navigator.share ? "Share the link" : "Copy the link"),
+      S.shared ? el("button", { type: "button", disabled, onclick: checkLanded }, "Check again") : null
+    ),
+    S.shared ? el("p", { class: "small", role: "status" }, `${S.shared} This page looks at the chain every few seconds.`) : null,
+    el(
+      "details",
+      {},
+      el("summary", { class: "small" }, "What the link holds"),
+      el("p", { class: "small" }, `Approval ${w.n}, exactly as the console signed it:`),
+      el(
+        "ul",
+        { class: "small" },
+        el("li", {}, el("b", {}, `Key ${w.n}'s one-time signature.`), ` It reveals key ${w.n}, which is spent: it signed this once and will never sign again.`),
+        el("li", {}, el("b", {}, "Your passkey's curve signature"), " over the approval."),
+        el("li", {}, el("b", {}, `Key ${w.n + 1}'s fingerprint`), `: a hash, not the key. Key ${w.n + 1} stays secret until its own approval.`),
+        el("li", {}, el("b", {}, "The Safe transaction's fields"), ": what it calls, the value, the data, the nonce.")
+      ),
+      el("p", { class: "small" }, `No seeds and no hash: the page that opens it works out the Safe transaction hash itself, and the seat checks both signatures. Treat the link as public once shared: anyone with it can send this approval, and it can do only what you approved. Until it lands, this console shares or sends only this same approval for key ${w.n}.`),
+      el("input", { class: "mono share-link", readonly: true, value: link, "aria-label": "The link", onfocus: (e) => e.target.select() })
+    )
+  );
 }
 var redrawing = 0;
 function redraw() {
@@ -20890,10 +21118,11 @@ function redraw() {
 function doneScreen() {
   const L = S.last;
   const out = [el("h3", {}, `Key ${L.n}: signed, sent, burned`)];
+  if (L.elsewhere) out.push(el("p", { class: "note" }, `A wallet on another device sent approval ${L.n}, from the link. It paid the gas; key ${L.n}'s signature is the one this console made.`));
   if (L.theirs) out.push(el("p", { class: "note" }, `Your transaction reverted: approval ${L.n} had already landed in another transaction. Someone copied it from the mempool and sent it first. It can only do exactly what you signed, and key ${L.n} is burned either way.`));
   out.push(
     el("p", {}, `${L.summary}. ${L.ran ? "The Safe ran it." : L.theirs ? "That transaction only approved; the Safe hasn't run it. Its vote is kept: anyone can run it." : "The approval landed, but the Safe couldn't run it yet (has it the ETH?). Its vote is kept: anyone can run it later."}`),
-    rows([[L.theirs ? "Their transaction" : "Transaction", txLink(L.hash)], ["Key now", el("span", { class: "mono" }, `${L.n + 1}: ${short(S.seat?.current || "", 10, 8)}`)]])
+    rows([L.hash && [L.theirs ? "Their transaction" : "Transaction", txLink(L.hash)], ["Key now", el("span", { class: "mono" }, `${L.n + 1}: ${short(S.seat?.current || "", 10, 8)}`)]])
   );
   if (L.m) {
     out.push(el("p", { class: "small" }, `What key ${L.n} revealed: one value on each of its 67 chains. Below each, the secret steps nobody saw; above, steps anyone can now compute. Nobody can step down a chain, and key ${L.n} will never sign again.`));

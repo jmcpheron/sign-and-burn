@@ -22,9 +22,9 @@ its own addresses (`tools/chain/anvil.mjs`, chain 31337), and serves the folder 
   accounts, and another that refuses everything, so the page must let you choose. A browser whose
   page sets `e2e.nowallet` has none, as on a phone.
 - **A second browser** (its own context: no passkey, no site data) plays the device that pays for
-  the build by link. The share sheet is a stand-in that keeps the link.
+  the build by link, and later sends an approval by link. The share sheet is a stand-in that keeps the link.
 
-The 57 checks, in order:
+The 65 checks, in order:
 
 1. The console boots in MicroPython; the page's fingerprint is the manifest's.
 2. Make a passkey; its signer address, worked out by the console, matches Safe's factory.
@@ -54,7 +54,13 @@ The 57 checks, in order:
 14. A front-run: a third account copies the approve call out of the page's transaction and sends it
     first. The page's transaction reverts; the page says approval 4 landed in another transaction and
     names it, the seat is at key 5, and the Safe hasn't run it.
-15. The CSP refuses another host. A phone-width screen has no sideways scroll. No page errors.
+15. A press with no wallet: the first browser loses its wallet. Holding asks the passkey once (key 5),
+    and the approval waits to be shared. After a reload: the same link, and no new passkey signature.
+    The second browser refuses a link with another next key (the seat's own refusal, no button), then
+    opens the real one. The seat accepts it, and the hash it works out shows the same check code. Its
+    wallet sends it: the seat moves to key 6, and the Safe runs it. The first browser sees approval 5
+    land by itself, says another device sent it, and its history has it landed.
+16. The CSP refuses another host. A phone-width screen has no sideways scroll. No page errors.
 
 Screenshots go to `site/shots/` (not committed).
 
