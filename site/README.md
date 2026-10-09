@@ -22,6 +22,11 @@ npm run e2e       # the whole flow in Chromium against the local chain (needs an
 | `build.mjs` | writes the folder, its Content-Security-Policy, `SHA256SUMS` and `BUILD.json` |
 | `e2e.mjs` | Chromium, a virtual passkey with PRF, a test wallet (Anvil's first account), the local chain |
 
+The build step keeps “Connect a wallet” beside a payment link. “Copy link” copies only the URL,
+with a visible field for copying by hand. A payer can open it or paste it into “Pay for a request”
+on this page, review what it builds, then connect a wallet to pay. The same handoff works for
+funding and signed approvals. Pasting reads the request here; it does not visit the pasted host.
+
 The CSP: `default-src 'none'`; scripts and styles from the folder only, plus `'wasm-unsafe-eval'` for
 MicroPython; `connect-src` the folder and the RPC in `console/cfg.py`. GitHub Pages can't send
 headers, and the page has no worker, so a `<meta>` tag carries the policy; the page refuses to run

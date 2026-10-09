@@ -20269,6 +20269,8 @@ async function boot2() {
   if (!ledgerKept()) S.warn = "This browser won't keep the console's ledger (private browsing?). The guardrail then lasts only while this tab is open.";
   S.pk = stored();
   if (S.pk && S.pk.rpId !== location.hostname) S.pk = null;
+  $("#pay-request").addEventListener("submit", reviewRequest);
+  $("#review-request").disabled = false;
   await reconnectWallet();
   window.addEventListener("hashchange", () => {
     if (fromLink(location.hash, S.C)) openPayLink();
@@ -20376,7 +20378,8 @@ async function connectWallet(choose = false) {
   await guard("Looking for wallets in this browser…", async () => {
     const found = await findWallets();
     S.walletsHere = found.length;
-    if (!found.length) throw new Error("No wallet in this browser. Any wallet that can switch to Base Sepolia works; it only pays gas. " + HARDWARE);
+    if (!found.length && S.step === "pay") throw new Error("No wallet found in this browser. Open this payment link in a browser with a wallet on Base Sepolia and test ETH for gas. You do not need the sender's passkey. Nothing was sent.");
+    if (!found.length) throw new Error("No wallet found in this browser. You can still continue: copy the payment link and send it to someone with a wallet on Base Sepolia. They review the transaction here and pay the gas. Your passkey stays here.");
     if (found.length > 1 || choose && S.wallet) {
       S.choosing = found;
       return;
@@ -20498,25 +20501,45 @@ async function fund() {
   });
 }
 var buildLink = () => toLink(request(S.C, S.pk, S.home), location.origin + location.pathname);
-var SHARE_BUILD = { title: "Pay the gas for a shielded Safe", text: "Open this where you have a wallet on Base Sepolia, and press Pay. It pays the gas to build a shielded Safe; the wallet owns none of it." };
-var SHARE_FUND = { title: "Fund a shielded Safe", text: "Open this where you have a wallet on Base Sepolia. It offers to send the Safe 0.001 test ETH for its first presses." };
-var SHARE_APPROVAL = { title: "Send an approval for a shielded Safe", text: "Open this where you have a wallet on Base Sepolia, and press Send. It pays the gas for an approval already signed; the wallet approves nothing." };
-async function shareLink(link, what) {
+async function copyLink(link) {
   S.error = "";
+  S.shared = "";
   try {
-    if (navigator.share) {
-      await navigator.share({ ...what, url: link });
-      S.shared = "Shared.";
-    } else {
-      await navigator.clipboard.writeText(link);
-      S.shared = "Copied.";
-    }
-  } catch (e) {
-    if (e?.name === "AbortError") return;
-    S.error = "This browser wouldn't share or copy the link. It's under “What the link holds”: copy it from there.";
+    await navigator.clipboard.writeText(link);
+    S.shared = "Link copied. Send it to whoever will pay.";
+  } catch {
+    S.error = "This browser wouldn't copy the link. Select the link shown here and copy it yourself.";
   }
   watch();
   render();
+}
+var linkField = (link) => el("input", {
+  class: "mono share-link",
+  readonly: true,
+  value: link,
+  "aria-label": "The link",
+  onfocus: (e) => e.target.select()
+});
+async function reviewRequest(e) {
+  e.preventDefault();
+  if (!S.C || S.busy) return;
+  const status = $("#pay-request-status");
+  try {
+    const url = new URL($("#pay-request-link").value.trim());
+    if (!["https:", "http:"].includes(url.protocol)) throw new Error();
+    const got = fromLink(url.hash, S.C);
+    if (!got) throw new Error();
+    if (got.refuse) {
+      status.textContent = got.refuse;
+      return;
+    }
+    status.textContent = "";
+    history.replaceState(null, "", location.pathname + location.search + url.hash);
+    await guard("Reviewing the payment request…", openPayLink);
+    $("#screen").scrollIntoView({ block: "start" });
+  } catch {
+    status.textContent = "Paste a complete Sign and Burn payment link. Nothing was sent.";
+  }
 }
 async function checkBuilt() {
   await guard("Looking for your Safe on chain…", async () => {
@@ -20744,6 +20767,7 @@ function stepsBar() {
   return el("ol", { class: "steps-bar", "aria-label": "Steps" }, ...STEPS2.map(([, name], i) => el("li", { class: i < at ? "done" : i === at ? "now" : "" }, `${i + 1} · ${name}`)));
 }
 function render() {
+  $("#review-request").disabled = !S.C || !!S.busy;
   const s = $("#screen");
   s.className = "screen";
   s.replaceChildren(...screen(s));
@@ -20782,7 +20806,7 @@ function screen(s) {
     case "firstkey":
       out.push(
         el("h3", {}, "Your first one-time key"),
-        el("p", {}, "One more tap. Your passkey's PRF turns a label into a 32-byte seed, the console turns the seed into key 0, and keeps only its fingerprint: the one thing that goes on chain."),
+        el("p", {}, "This tap prepares your first key. It sends no transaction and costs no gas. Your passkey's PRF turns a label into a 32-byte seed, the console turns the seed into key 0, and keeps only its fingerprint: the one thing that goes on chain."),
         rows([["Passkey signer", addr(S.signer)], ["Its address", el("span", { class: "small" }, "worked out by the console, and checked against Safe's signer factory")]]),
         el("div", { class: "actions" }, el("button", { class: "go", type: "button", disabled, onclick: firstKey }, "Tap to make key 0"))
       );
@@ -20792,7 +20816,7 @@ function screen(s) {
       if (!S.wallet) watch();
       out.push(
         el("h3", {}, "Build your shielded Safe"),
-        el("p", {}, "One transaction makes three things. Whoever sends it pays the gas and owns none of them: a wallet here, or one on another device."),
+        el("p", {}, "Your passkey and first key are ready. Your Safe still needs to be built. This page has prepared a transaction to deploy your passkey signer, seat and Safe. Connect a wallet to pay the gas, or give the payment link to someone else."),
         rows([
           ["Passkey signer", addr(S.signer)],
           [`Seat #${H.seatNumber}`, addr(H.seat)],
@@ -20804,7 +20828,7 @@ function screen(s) {
       if (canPay()) out.push(el("div", { class: "actions" }, el("button", { class: "go", type: "button", disabled, onclick: build }, "Build it: one transaction")), shareBox(false, disabled));
       else if (S.wallet) out.push(el("p", { class: "note" }, `${S.wallet.name}'s account ${short(S.wallet.account)} has no ${S.C.chain.name} ETH for gas. Pay from another device, or fund that account and come back.`), shareBox(true, disabled));
       else if (S.walletsHere) out.push(connectButton(disabled), shareBox(false, disabled));
-      else out.push(shareBox(true, disabled), el("div", { class: "actions" }, el("button", { class: "link", type: "button", disabled, onclick: () => connectWallet() }, "I have a wallet in this browser")));
+      else out.push(connectButton(disabled, "Connect a wallet", false), shareBox(true, disabled));
       break;
     }
     case "fund":
@@ -20843,14 +20867,15 @@ function fundShareBox(disabled) {
     el(
       "ol",
       { class: "small" },
-      el("li", {}, `${navigator.share ? "Share" : "Copy"} the link to a device with a wallet on Base Sepolia: the one that paid for the build, or any other. Open it there; it sees the Safe is built and offers to send it 0.001 test ETH.`),
+      el("li", {}, `Copy the link to a device with a wallet on Base Sepolia: the one that paid for the build, or any other. Open it there; it sees the Safe is built and offers to send it 0.001 test ETH.`),
       el("li", {}, "Or copy the Safe's address into a faucet, or any wallet's send screen."),
       el("li", {}, "This page moves on once the ETH arrives.")
     ),
+    linkField(buildLink()),
     el(
       "div",
       { class: "actions" },
-      el("button", { class: "go", type: "button", disabled, onclick: () => shareLink(buildLink(), SHARE_FUND) }, navigator.share ? "Share the link" : "Copy the link"),
+      el("button", { class: "go", type: "button", disabled, onclick: () => copyLink(buildLink()) }, "Copy link"),
       el("button", { type: "button", disabled, onclick: copySafe }, "Copy the Safe's address"),
       faucets()
     ),
@@ -20875,19 +20900,15 @@ function shareBox(first, disabled) {
     el(
       "ol",
       { class: "small" },
-      el(
-        "li",
-        {},
-        navigator.share ? "Share this link to a device with a wallet on Base Sepolia, and a little test ETH for gas: " : "Copy this link to a device with a wallet on Base Sepolia, and a little test ETH for gas: ",
-        "a computer with a browser wallet (Rabby, MetaMask or Frame, or a Trezor or a Ledger through one), or a phone wallet's own browser."
-      ),
-      el("li", {}, "Open it there and press Pay. That device needs no passkey; yours stays here."),
+      el("li", {}, "Copy this payment link and send it to whoever will pay. They need a wallet on Base Sepolia with test ETH for gas."),
+      el("li", {}, "They open the link, or paste it into “Pay for a request” on this site. They review what will be built, connect a wallet and press Pay. They pay the gas and own none of it. They do not need your passkey."),
       el("li", {}, "Come back to this page. It moves on by itself once the Safe is on chain.")
     ),
+    linkField(link),
     el(
       "div",
       { class: "actions" },
-      el("button", { class: first ? "go" : "", type: "button", disabled, onclick: () => shareLink(buildLink(), SHARE_BUILD) }, navigator.share ? "Share the link" : "Copy the link"),
+      el("button", { class: first ? "go" : "", type: "button", disabled, onclick: () => copyLink(buildLink()) }, "Copy link"),
       S.shared ? el("button", { type: "button", disabled, onclick: checkBuilt }, "Check again") : null
     ),
     S.shared ? el("p", { class: "small", role: "status" }, `${S.shared} This page looks at the chain every few seconds.`) : null,
@@ -20903,8 +20924,7 @@ function shareBox(first, disabled) {
         el("li", {}, el("b", {}, "The seat number.")),
         el("li", {}, el("b", {}, "Key 0's fingerprint"), ": a hash of your first one-time key, not the key. The seat, the Safe's owner, holds only this. Key 0 itself stays secret until its one approval reveals it, and by then it is spent.")
       ),
-      el("p", { class: "small" }, "No seeds, no addresses, no calls. The page that opens it works out the signer, the seat and the Safe from these itself, and shows them before it pays. A wrong link builds a seat nobody can sign for; this page would never see it."),
-      el("input", { class: "mono share-link", readonly: true, value: link, "aria-label": "The link", onfocus: (e) => e.target.select() })
+      el("p", { class: "small" }, "No seeds, no addresses, no calls. The page that opens it works out the signer, the seat and the Safe from these itself, and shows them before it pays. A wrong link builds a seat nobody can sign for; this page would never see it.")
     )
   );
 }
@@ -21116,14 +21136,15 @@ function approvalShareBox(w, first, disabled) {
     el(
       "ol",
       { class: "small" },
-      el("li", {}, `${navigator.share ? "Share" : "Copy"} this link to a device with a wallet on Base Sepolia and a little test ETH for gas: a computer with a browser wallet, or a phone wallet's own browser.`),
-      el("li", {}, `Open it there. That page works out the Safe transaction hash itself (its code should read ${w.verify}), asks the seat, and sends it. Its wallet pays the gas and approves nothing.`),
+      el("li", {}, `Copy this link to a device with a wallet on Base Sepolia and a little test ETH for gas: a computer with a browser wallet, or a phone wallet's own browser.`),
+      el("li", {}, `Open it there, or paste it into “Pay for a request” on this site. That page works out the Safe transaction hash itself (its code should read ${w.verify}), asks the seat, and sends it. Its wallet pays the gas and approves nothing.`),
       el("li", {}, `Come back to this page. It moves on by itself once approval ${w.n} lands.`)
     ),
+    linkField(link),
     el(
       "div",
       { class: "actions" },
-      el("button", { class: first ? "go" : "", type: "button", disabled, onclick: () => shareLink(link, SHARE_APPROVAL) }, navigator.share ? "Share the link" : "Copy the link"),
+      el("button", { class: first ? "go" : "", type: "button", disabled, onclick: () => copyLink(link) }, "Copy link"),
       S.shared ? el("button", { type: "button", disabled, onclick: checkLanded }, "Check again") : null
     ),
     S.shared ? el("p", { class: "small", role: "status" }, `${S.shared} This page looks at the chain every few seconds.`) : null,
@@ -21140,8 +21161,7 @@ function approvalShareBox(w, first, disabled) {
         el("li", {}, el("b", {}, `Key ${w.n + 1}'s fingerprint`), `: a hash, not the key. Key ${w.n + 1} stays secret until its own approval.`),
         el("li", {}, el("b", {}, "The Safe transaction's fields"), ": what it calls, the value, the data, the nonce.")
       ),
-      el("p", { class: "small" }, `No seeds and no hash: the page that opens it works out the Safe transaction hash itself, and the seat checks both signatures. Treat the link as public once shared: anyone with it can send this approval, and it can do only what you approved. Until it lands, this console shares or sends only this same approval for key ${w.n}.`),
-      el("input", { class: "mono share-link", readonly: true, value: link, "aria-label": "The link", onfocus: (e) => e.target.select() })
+      el("p", { class: "small" }, `No seeds and no hash: the page that opens it works out the Safe transaction hash itself, and the seat checks both signatures. Treat the link as public once shared: anyone with it can send this approval, and it can do only what you approved. Until it lands, this console shares or sends only this same approval for key ${w.n}.`)
     )
   );
 }

@@ -40,6 +40,18 @@
     </ol>
   </section>
 
+  <details class="card payment-request">
+    <summary>Pay for a request</summary>
+    <p>Someone sent you a payment link? Paste it here to review the transaction, then connect a wallet
+      on Base Sepolia to pay. You do not need their passkey. Pasting sends nothing.</p>
+    <form id="pay-request">
+      <label for="pay-request-link">Payment link</label>
+      <input id="pay-request-link" class="mono request-link" type="text" required autocomplete="off" spellcheck="false" placeholder="Paste the complete link">
+      <div class="actions"><button id="review-request" type="submit" disabled>Review request</button></div>
+      <p id="pay-request-status" class="small" role="status"></p>
+    </form>
+  </details>
+
   <section class="grid">
     <div class="console" aria-label="The console">
       <div class="console-head">
