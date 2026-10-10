@@ -7,7 +7,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import * as w from "./src/wots.mjs";
-import { decodeFunctionData, encodeAbiParameters, encodeFunctionData, parseAbi, parseAbiParameters } from "viem";
+import { getAddress as getAddressOf, decodeFunctionData, encodeAbiParameters, encodeFunctionData, parseAbi, parseAbiParameters } from "viem";
 import * as qr from "./src/qr.mjs";
 import * as names from "./src/names.mjs";
 import { MULTICALL_ABI, SAFE_ABI, approveCalls, execData, findApprove, ownerTx, parseCfg } from "./src/chain.mjs";
@@ -181,6 +181,41 @@ badB("a zero-width space", book({ [A1]: "Sa\u200bfe" }));
 badB("a name that isn't text", book({ [A1]: 42 }));
 badB("one bad entry among good ones", book({ [A2]: "Shared Safe", "0xzz": "x" }));
 console.log("address books: read, and twelve refusals");
+
+// Safe{Wallet}: the JSON its transaction service gives, and an owner's off-chain signature carried into
+// execTransaction beside the seat's vote, in owner order. Anvil's well-known test key, never a real one.
+{
+  const { privateKeyToAccount } = await import("viem/accounts");
+  const ch = await import("./src/chain.mjs");
+  const owner = privateKeyToAccount("0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d");
+  const hash = "0x" + "5a".repeat(32);
+  const sig712 = await owner.sign({ hash });
+  const sigEth = await owner.signMessage({ message: { raw: hash } });
+  const ethSign = sigEth.slice(0, -2) + (parseInt(sigEth.slice(-2), 16) + 4).toString(16);
+  check("signerOf: an EIP-712 signature (v 27/28)", (await ch.signerOf(hash, sig712)) === owner.address);
+  check("signerOf: an eth_sign signature (v 31/32)", (await ch.signerOf(hash, ethSign)) === owner.address);
+  check("signerOf: another hash names someone else", (await ch.signerOf("0x" + "5b".repeat(32), sig712)) !== owner.address);
+  check("signerOf: a pre-approved or contract signature isn't one", (await ch.signerOf(hash, "0x" + "00".repeat(64) + "01")) === null);
+  const mixed = sigs(execData(tx, [hi], [{ owner: lo, signature: sig712 }, { owner: hi, signature: sig712 }]));
+  check("execTransaction: a signature beside a vote, in owner order; a voter needs no signature", mixed.toLowerCase() === (sig712 + vote(hi)).toLowerCase());
+  const safe = "0x" + "44".repeat(20);
+  const one = { safe: getAddressOf(safe), to: "0x036CbD53842c5426634e7929541eC2318f3dCF7e", value: "0", data: "0xa9059cbb" + "00".repeat(64), operation: 0, safeTxGas: 0, baseGas: 0,
+    gasPrice: "0", gasToken: "0x0000000000000000000000000000000000000000", refundReceiver: "0x0000000000000000000000000000000000000000", nonce: 6,
+    safeTxHash: hash, isExecuted: false, confirmations: [{ owner: owner.address, signature: sig712, signatureType: "EOA" }, { owner: "nobody", signature: "0x12" }] };
+  const read = pay.fromSafeWallet(JSON.stringify({ count: 1, results: [one] }), safe);
+  check("Safe{Wallet}'s JSON reads: the fields, the hash, and only well-formed signatures", read.length === 1 && read[0].tx.nonce === "6" && read[0].safeTxHash === hash &&
+    read[0].sigs.length === 1 && read[0].sigs[0].owner === owner.address.toLowerCase());
+  const badS = (what, o) => { let threw = false; try { pay.fromSafeWallet(typeof o === "string" ? o : JSON.stringify({ results: [{ ...one, ...o }] }), safe); } catch { threw = true; } check(`refused: ${what}`, threw); };
+  badS("not JSON", "{results:");
+  badS("another Safe", { safe: "0x" + "45".repeat(20) });
+  badS("a gas refund", { gasPrice: "1" });
+  badS("a refund receiver", { refundReceiver: "0x" + "11".repeat(20) });
+  badS("a recipient that isn't an address", { to: "0x12" });
+  badS("an operation that is neither", { operation: 2 });
+  badS("no hash", { safeTxHash: "" });
+  badS("only transactions that have run", { isExecuted: true });
+  console.log("Safe{Wallet}: two kinds of signature, the order, and eight refusals");
+}
 
 const cfg = parseCfg(readFileSync(new URL("../console/cfg.py", import.meta.url), "utf8"));
 const dep = JSON.parse(readFileSync(new URL("../contracts/deployment.json", import.meta.url), "utf8"));

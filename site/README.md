@@ -81,6 +81,17 @@ decimals for its own display, and the console reviews it as a token it doesn't k
 and says so. A token send is a Safe transaction calling the token's `transfer`, so its owners approve
 it like any other. The page holds the hold back when the Safe has less of the token than it sends.
 
+**From Safe{Wallet}.** A transaction proposed in Safe{Wallet} (app.safe.global) lives on Safe's
+transaction service, with its owners' off-chain signatures; nothing is on chain until it runs. The page
+doesn't fetch from that service: its policy reaches the RPC only (AGENTS.md). "A transaction from
+Safe{Wallet}" links to the service's list of this Safe's waiting transactions; you copy what it shows
+and paste it. `pay.fromSafeWallet` checks each field's shape and refuses gas refunds. The page takes
+the one at the Safe's nonce. The console works out its hash from the fields, and the page refuses it
+unless that is the hash Safe{Wallet} gave. Each signature (EIP-712, or eth_sign) must recover to the
+owner it names (`chain.signerOf`), an owner of this Safe; any other is left out, and the page says so.
+The signatures count as votes ("signed in Safe{Wallet}"). A seat's press, or a wallet's "Run it",
+carries them into `execTransaction` beside the on-chain votes, in owner order (`chain.execData`).
+
 **Getting around.** The main addresses (the Safe, the wallet, owners, Safes, the address book)
 have a copy icon: one press copies the whole address. The header shows the Safe in one box: its
 blockie, your name for it, the start and end of its address (copy icon; the explorer on a press), and

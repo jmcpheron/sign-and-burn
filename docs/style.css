@@ -369,3 +369,5 @@ button.icon.done { color: var(--ok); }
 .safe-box > .picker { margin-left: auto; flex: none; }
 .safe-box > .picker > summary { min-width: 40px; min-height: 40px; }
 .safe-money { width: 100%; }
+#sw-paste { width: 100%; margin-top: 6px; }
+.sw-link { display: inline-block; margin: 4px 0; overflow-wrap: anywhere; }

@@ -9,10 +9,11 @@ import { eth, short } from "./ui.mjs";
 
 /** seat and safe as just read from the chain. wallet: one that can pay the gas, or null, and the
  * approval waits in the ledger, to go out as a link. others: owners whose votes the Safe already
- * holds for this transaction, so the Safe can run it in the same transaction. say(text): what is
+ * holds for this transaction, and sigs the owners' own signatures of it (Safe{Wallet}'s), so the Safe
+ * can run it in the same transaction. say(text): what is
  * happening now.
  * -> { n, a, signed, review } and, once sent, { hash, theirs }. Throws, in plain words, on a refusal. */
-export async function approve({ C, pk, seat, safe, tx, wallet, others = [], say }) {
+export async function approve({ C, pk, seat, safe, tx, wallet, others = [], sigs = [], say }) {
   const n = seat.n;
   const req = { chainId: C.id, seat: { address: seat.address, curveSigner: seat.curveSigner, seatNumber: seat.seatNumber, n, current: seat.current },
     safe: safe.address, tx };
@@ -38,7 +39,7 @@ export async function approve({ C, pk, seat, safe, tx, wallet, others = [], say 
   // after the passkey's).
   if (!wallet) return out;
   say("Your wallet sends it. It pays gas, and approves nothing…");
-  const hash = await ch.send(C, wallet, ch.approveCalls(a, tx, others));
+  const hash = await ch.send(C, wallet, ch.approveCalls(a, tx, others, sigs));
   consoleCore.ask({ op: "sent", chainId: C.id, seat: a.seat, n, txHash: hash });
   say("Waiting for the block…");
   const r = await ch.receipt(C, hash);

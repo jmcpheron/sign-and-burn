@@ -53,6 +53,9 @@ function keepSafe(a) {
   try { localStorage.setItem("sab.safes", JSON.stringify(all)); } catch {}
 }
 const same = (a, b) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
+/** A fold-out that stays open across redraws, say after a refusal, with what was typed in it. */
+const opened = new Set();
+const keepOpen = (key) => ({ open: opened.has(key), ontoggle: (e) => { if (e.target.open) opened.add(key); else opened.delete(key); } });
 
 // ----------------------------------------------------------------------------- tokens
 // The tokens the console knows (cfg.py, pinned: it reads their amounts), and ones you added here by
@@ -77,9 +80,13 @@ async function addToken() {
     await refresh();
   });
 }
+/** The transaction kept for this Safe while it waits for votes. Owners' signatures imported from
+ * Safe{Wallet} ride with it (sigs), and stay with it while it is the same transaction. */
+const sameTx = (a, b) => !!a && !!b && ["to", "value", "data", "operation", "nonce"].every((k) => String(a[k] ?? "").toLowerCase() === String(b[k] ?? "").toLowerCase());
+const txOnly = ({ sigs, ...tx }) => tx;
 function keepProposal(tx) {
-  const all = read("sab.proposal");
-  if (tx) all[proposalKey()] = tx; else delete all[proposalKey()];
+  const all = read("sab.proposal"), was = all[proposalKey()];
+  if (tx) all[proposalKey()] = { ...txOnly(tx), sigs: tx.sigs || (sameTx(was, tx) ? was.sigs : undefined) }; else delete all[proposalKey()];
   try { localStorage.setItem("sab.proposal", JSON.stringify(all)); } catch {}
 }
 const ledger = () => consoleCore.ask({ op: "ledger" }).entries || [];
@@ -194,11 +201,15 @@ async function refresh() {
   let kept = read("sab.proposal")[proposalKey()] || null;
   if (S.draft && Number(S.draft.nonce) !== safe.nonce) S.draft = null;
   if (kept && Number(kept.nonce) < safe.nonce) { keepProposal(null); kept = null; }
-  S.current = S.waiting ? { tx: S.waiting.tx, locked: true } : kept ? { tx: kept, kept: true } : S.draft ? { tx: S.draft } : null;
+  S.current = S.waiting ? { tx: S.waiting.tx, locked: true } : kept ? { tx: txOnly(kept), kept: true } : S.draft ? { tx: S.draft } : null;
   S.review = S.current ? consoleCore.ask({ op: "review", chainId: S.C.id, safe: safe.address, tx: S.current.tx }) : null;
   S.votes = S.review?.ok ? await ch.votesFor(S.C, safe.address, safe.owners, S.review.safeTxHash) : [];
+  // Signatures from Safe{Wallet} (checked when imported) count while their owner is still an owner and
+  // hasn't voted on chain as well.
+  S.sigs = (kept && S.current && sameTx(kept, S.current.tx) ? kept.sigs || [] : [])
+    .filter((x) => safe.owners.some((o) => same(o, x.owner)) && !S.votes.some((v) => same(v, x.owner)));
   const was = S.seen;
-  S.seen = JSON.stringify([safe.address, seat.n, safe.nonce, String(safe.balance), safe.owners, safe.threshold, S.votes, S.waiting?.n, S.walletBalance === null ? "" : String(S.walletBalance)]);
+  S.seen = JSON.stringify([safe.address, seat.n, safe.nonce, String(safe.balance), safe.owners, safe.threshold, S.votes, S.sigs.length, S.waiting?.n, S.walletBalance === null ? "" : String(S.walletBalance)]);
   return was !== S.seen;
 }
 
@@ -300,6 +311,36 @@ function discard() {
   refresh().finally(render);
 }
 
+// ----------------------------------------------------------------------------- from Safe{Wallet}
+/** A transaction proposed in Safe{Wallet}, pasted from Safe's transaction service (pay.fromSafeWallet).
+ * The console works out its hash from the fields; it must be the hash Safe{Wallet} gave. Each
+ * signature must recover to the owner it names, and that owner must be one of this Safe's. */
+async function importSafeWallet() {
+  await guard("Checking the transaction from Safe{Wallet}…", async () => {
+    await refresh();
+    if (S.current && !(S.current.tx === S.draft)) throw new Error("Finish or reject the transaction on the card first: the Safe runs one at a time.");
+    const all = pay.fromSafeWallet(S.swPaste || "", S.safe.address);
+    const got = all.find((x) => Number(x.tx.nonce) === S.safe.nonce);
+    if (!got) throw new Error(`Nothing in that is for the Safe's next transaction, nonce ${S.safe.nonce} (it has ${all.map((x) => x.tx.nonce).join(", ")}). ` +
+      "The Safe runs them in order: the one at its nonce first.");
+    const r = consoleCore.ask({ op: "review", chainId: S.C.id, safe: S.safe.address, tx: got.tx });
+    if (!r.ok) throw new Error(r.refuse);
+    if (r.safeTxHash.toLowerCase() !== got.safeTxHash) throw new Error(`The console works out ${short(r.safeTxHash, 10, 6)} from these fields, and Safe{Wallet} says ` +
+      `${short(got.safeTxHash, 10, 6)}: they aren't the same transaction. Nothing was imported.`);
+    const sigs = [], dropped = [];
+    for (const x of got.sigs) {
+      const who = await ch.signerOf(r.safeTxHash, x.signature);
+      if (who && same(who, x.owner) && isOwner(x.owner)) sigs.push({ owner: getAddress(x.owner), signature: x.signature });
+      else dropped.push(x.owner);
+    }
+    S.draft = null; S.acks = {}; S.swPaste = "";
+    keepProposal({ ...got.tx, sigs });
+    await refresh();
+    S.flash = `Imported Safe{Wallet}'s transaction at nonce ${got.tx.nonce}, with ${sigs.length} signature${sigs.length === 1 ? "" : "s"} that check out` +
+      (dropped.length ? `, and ${dropped.length} left out: ${dropped.map((a) => short(a)).join(", ")} (not a signature of this transaction by an owner of this Safe).` : ".");
+  });
+}
+
 // ----------------------------------------------------------------------------- votes
 /** The seat votes: one press. Its approval carries the votes the Safe already holds, so the Safe
  * runs the transaction in the same block if that makes enough. */
@@ -311,7 +352,7 @@ async function voteSeat(tx) {
     if (Number(tx.nonce) >= S.safe.nonce) keepProposal(tx);
     const others = S.votes.filter((v) => v.toLowerCase() !== S.seat.address.toLowerCase());
     // No wallet here that can pay: the approval waits in the ledger, and the card offers it as a link.
-    const got = await approve({ C: S.C, pk: S.pk, seat: S.seat, safe: S.safe, tx, wallet: canPay() ? S.wallet : null, others, say });
+    const got = await approve({ C: S.C, pk: S.pk, seat: S.seat, safe: S.safe, tx, wallet: canPay() ? S.wallet : null, others, sigs: S.sigs, say });
     S.draft = null; S.acks = {};
     await refresh();
     if (!got.hash) { S.flash = `Key ${got.n} signed it. Now send it from a device with a wallet: copy the link below.`; return; }
@@ -332,7 +373,7 @@ async function voteWallet(tx, run) {
     if (!isOwner(S.wallet?.account)) throw new Error("This wallet's account isn't an owner of the Safe. Nothing was sent.");
     await needGas();
     keepProposal(tx);
-    const data = run ? ch.execData(tx, [...S.votes, S.wallet.account]) : ch.approveHashData(S.review.safeTxHash);
+    const data = run ? ch.execData(tx, [...S.votes, S.wallet.account], S.sigs) : ch.approveHashData(S.review.safeTxHash);
     const hash = await ch.sendToSafe(S.C, S.wallet, S.safe.address, data);
     say("Waiting for the block…");
     const r = await ch.receipt(S.C, hash);
@@ -349,7 +390,7 @@ async function run(tx) {
   await guard("Your wallet runs it. It pays gas, and approves nothing…", async () => {
     await refresh();
     await needGas();
-    const hash = await ch.sendToSafe(S.C, S.wallet, S.safe.address, ch.execData(tx, S.votes));
+    const hash = await ch.sendToSafe(S.C, S.wallet, S.safe.address, ch.execData(tx, S.votes, S.sigs));
     say("Waiting for the block…");
     const r = await ch.receipt(S.C, hash);
     if (r.status !== "success") throw new Error(`The transaction reverted (${short(hash, 10, 6)}). Nothing changed.`);
@@ -558,7 +599,7 @@ function bookCard() {
         const f = e.target.files?.[0];
         if (f) importNames(f.size > 200000 ? "" : await f.text());
       } }))),
-    el("details", {}, el("summary", { class: "small" }, "Or paste it"),
+    el("details", keepOpen("book-paste"), el("summary", { class: "small" }, "Or paste it"),
       el("textarea", { id: "book-paste", class: "mono", rows: "4", spellcheck: "false", oninput: (e) => { S.bookPaste = e.target.value; } }, S.bookPaste || ""),
       el("div", { class: "actions" }, el("button", { type: "button", onclick: () => importNames(S.bookPaste || "") }, "Import"))),
     el("p", { class: "small" }, "Importing adds names, and replaces yours for the same addresses. A file is checked whole: one bad entry, and nothing is imported.")];
@@ -624,12 +665,21 @@ function sendCard() {
         onclick: () => { S.send.amount = formatUnits((bal * BigInt(pct)) / 100n, t ? t.decimals : 18); render(); } }, name))),
     el("div", { class: "actions" }, el("button", { class: "go", type: "button", disabled, onclick: draftSend }, "Review")),
     S.current ? el("p", { class: "small" }, "One transaction at a time: finish or reject the one above first.") : null,
-    el("details", {}, el("summary", { class: "small" }, "Add a token"),
+    el("details", keepOpen("add-token"), el("summary", { class: "small" }, "Add a token"),
       el("div", { class: "actions" },
         el("input", { id: "add-token", class: "mono", value: S.addToken || "", placeholder: "The token's address, 0x…", spellcheck: "false", autocomplete: "off", "aria-label": "The token's address", oninput: (e) => { S.addToken = e.target.value; } }),
         el("button", { type: "button", disabled: !!S.busy, onclick: addToken }, "Add it")),
       el("p", { class: "small" }, `The console knows ${ch.pinnedTokens(S.C).map((x) => x.symbol).join(", ") || "no tokens"} on this chain. Any other ERC-20 works too; ` +
-        "the console reviews it as a token it doesn't know, with the amount in raw units."))];
+        "the console reviews it as a token it doesn't know, with the amount in raw units.")),
+    el("details", keepOpen("safe-wallet"), el("summary", { class: "small" }, "A transaction from Safe{Wallet}"),
+      el("p", { class: "small" }, "Safe{Wallet} keeps a transaction it proposes, and its owners' signatures, on Safe's server, not on chain. This page reaches only the chain, " +
+        "so bring it here: open this link, copy everything it shows, and paste it below."),
+      S.C.id === 84532 ? el("a", { class: "mono small sw-link", href: pay.safeWalletUrl(S.safe.address), target: "_blank", rel: "noopener noreferrer" }, "Safe's transaction service: this Safe's waiting transactions")
+        : el("p", { class: "small" }, "(On a test chain of your own, Safe's service has nothing: paste the same JSON by hand.)"),
+      el("textarea", { id: "sw-paste", class: "mono", rows: "4", spellcheck: "false", placeholder: '{"count": 1, "results": [ … ] }', oninput: (e) => { S.swPaste = e.target.value; } }, S.swPaste || ""),
+      el("div", { class: "actions" }, el("button", { type: "button", disabled: !!S.busy, onclick: importSafeWallet }, "Import it")),
+      el("p", { class: "small" }, "The console works out the hash from the fields, and it must match Safe{Wallet}'s. Each signature must be an owner's, of this transaction. " +
+        "Then your seat's press adds its vote, and runs it with theirs if that makes enough."))];
 }
 
 /** The transaction the owners are voting on: what the console says it does, who has voted, and what
@@ -646,11 +696,12 @@ function approvalCard() {
   if (r.refuse) { out.push(el("p", { class: "refuse" }, "The console refuses: " + r.refuse), rejectButton()); return out; }
   const overtaken = Number(tx.nonce) < S.safe.nonce;
   const seatVoted = S.votes.some((v) => v.toLowerCase() === S.seat.address.toLowerCase());
-  const t = S.safe.threshold, count = S.votes.length;
+  const t = S.safe.threshold, count = S.votes.length + S.sigs.length;
+  const signed = (a) => S.sigs.some((x) => same(x.owner, a));
   out.push(el("h3", {}, overtaken ? "Overtaken" : `Votes: ${count} of ${t}`),
     el("ul", { class: "votes" }, ...S.owners.map((o) => {
-      const voted = S.votes.some((v) => v.toLowerCase() === o.address.toLowerCase());
-      const said = voted ? "approved" : o.yours && w ? `key ${w.n} signed it; not on chain yet` : "not yet";
+      const voted = S.votes.some((v) => v.toLowerCase() === o.address.toLowerCase()) || signed(o.address);
+      const said = signed(o.address) ? "signed in Safe{Wallet}" : voted ? "approved" : o.yours && w ? `key ${w.n} signed it; not on chain yet` : "not yet";
       return el("li", { class: voted ? "yes" : "" }, el("span", { class: "mark", "aria-hidden": "true" }, voted ? "✓" : "○"), addr(o.address), el("span", { class: "small" }, ` ${kindOf(o)[1]} · ${said}`));
     })));
   if (overtaken) {
@@ -681,7 +732,7 @@ function approvalCard() {
     if (canPay() || !w) buttons.push(gated(holdButton(label, () => voteSeat(tx), { red }), [...needRed, ...(elsewhere && !w ? ["elsewhere"] : [])]));
     if (S.wallet && !canPay()) buttons.push(el("span", { class: "small" }, `${S.wallet.name}'s account has no ETH for gas.`));
   }
-  const mineToo = S.wallet && isOwner(S.wallet.account) && !S.votes.some((v) => v.toLowerCase() === S.wallet.account.toLowerCase());
+  const mineToo = S.wallet && isOwner(S.wallet.account) && !S.votes.some((v) => v.toLowerCase() === S.wallet.account.toLowerCase()) && !signed(S.wallet.account);
   if (mineToo && !overtaken && !w && count < t) {
     const runs = count + 1 >= t;
     buttons.push(gated(el("button", { type: "button", onclick: () => voteWallet(tx, runs) }, runs ? "Run it with my wallet" : "Approve with my wallet"), needRed));
@@ -696,7 +747,7 @@ function approvalCard() {
   // Other owners: those who are neither this seat nor the wallet here, and haven't voted. Asking them
   // is a choice when this device's own votes would be enough.
   const mine_ = (S.seatOwns && !seatVoted && !wElse ? 1 : 0) + (mineToo && !w ? 1 : 0);
-  const askable = S.owners.some((o) => !o.yours && !same(o.address, S.wallet?.account) && !S.votes.some((v) => same(v, o.address)));
+  const askable = S.owners.some((o) => !o.yours && !same(o.address, S.wallet?.account) && !S.votes.some((v) => same(v, o.address)) && !signed(o.address));
   if (w) out.push(approvalShare(w, overtaken));
   if (!overtaken && count < t && askable) {
     const link = pay.proposalLink(S.C, S.safe.address, tx, location.origin + location.pathname);
