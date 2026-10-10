@@ -3,6 +3,12 @@
 Explainers, test plans and a log, in plain words. The design itself is [KICKOFF.md](../KICKOFF.md);
 each folder's README says how its code works.
 
+## Walkthrough
+
+[Onboarding and three transactions](onboarding-walkthrough.md): screenshots of a phone-sized
+signing browser and a separate gas payer, paired with diagrams of the passkey methods, key
+counters and where seeds and signatures are exposed. Captured locally with disposable test accounts, not on a real phone.
+
 ## Open questions
 
 [research.md](research.md): what may be new, what isn't, and the seven questions that decide
@@ -53,7 +59,9 @@ changes are reviewed, and the reviews so far.
 | [2026-10-09: pay from another device](log/2026-10-09-01-pay-from-another-device.md) | a phone with no wallet shares a link, a wallet elsewhere pays for the build, and groundwork for a relay |
 | [2026-10-09: send an approval from another device](log/2026-10-09-02-approval-from-another-device.md) | a press with no wallet: the signed approval goes out as a link, and the guardrail's rule 3 bends |
 | [2026-10-09: the onboarding's order](log/2026-10-09-03-onboarding-order.md) | a half-built Safe that stuck every build, funding with no wallet, a key burned for nothing, wallets with no gas |
-| [2026-10-10: prior art, and the review plan](log/2026-10-10-01-prior-art.md) | wedgie-pq and Riva Labs, the nearest designs; the review asks about the standing vote; paying on Base mainnet |
+| [2026-10-09: onboarding walkthrough](log/2026-10-09-06-onboarding-walkthrough.md) | local screenshots, a separate gas payer, three transfers and disclosure timing |
+| [2026-10-09: diagrams beside screenshots](log/2026-10-09-07-onboarding-infographics.md) | passkey methods, key counters and public values beside each screen |
+| [2026-10-09: pictorial diagrams](log/2026-10-09-08-pictorial-infographics.md) | illustrated phones, seed capsules, signed approvals, wallets and chain blocks |
 
 A new log entry is named `YYYY-MM-DD-NN-topic.md`: what was done, what was found, the numbers, and the
 mistakes.
