@@ -20988,6 +20988,13 @@ async function seatsOf(C2, signer) {
   if (!await hasCode(C2, C2.seatFactory)) return [];
   return C2.pc.readContract({ address: C2.seatFactory, abi: FACTORY_ABI, functionName: "seatsOf", args: [signer] });
 }
+async function seatCounts(C2, seats) {
+  const read2 = (address, functionName) => C2.pc.readContract({ address, abi: SEAT_ABI, functionName });
+  return Promise.all(seats.map(async (address) => {
+    const [n, seatNumber] = await Promise.all([read2(address, "n"), read2(address, "seatNumber")]);
+    return { address, n: Number(n), seatNumber: Number(seatNumber) };
+  }));
+}
 async function readSeat(C2, address) {
   const read2 = (functionName) => C2.pc.readContract({ address, abi: SEAT_ABI, functionName });
   const [n, current, curveSigner, seatNumber, pubSeed2] = await Promise.all(["n", "current", "curveSigner", "seatNumber", "pubSeed"].map(read2));
@@ -22033,8 +22040,8 @@ async function find() {
   if (onChain !== signer) throw new Error(`the signer factory names ${onChain} for this passkey, the console ${signer}`);
   let h2 = home();
   if (!h2?.seat || !await hasCode(S.C, h2.seat)) {
-    const seats = await seatsOf(S.C, signer);
-    h2 = seats.length ? { seat: seats[seats.length - 1], safe: await safeAddress(S.C, seats[seats.length - 1]), found: true } : null;
+    const used = (await seatCounts(S.C, (await seatsOf(S.C, signer)).slice(-8))).filter((s) => s.n > 0).pop();
+    h2 = used ? { seat: used.address, safe: await safeAddress(S.C, used.address), found: true } : null;
   }
   S.home = h2;
   if (!h2) return;
@@ -22801,12 +22808,10 @@ async function settle() {
     }
     S2.home = homes()[homeKey()] || null;
     if (!S2.home || !await hasCode(S2.C, S2.home.seat || zeroAddress)) {
-      const seats = await seatsOf(S2.C, S2.signer);
       if (S2.home?.firstKey && S2.home.seatNumber === void 0) S2.home = null;
-      if (!S2.home?.firstKey && seats.length) {
-        const seat = seats[seats.length - 1];
-        const st = await readSeat(S2.C, seat);
-        saveHome({ seat, seatNumber: st.seatNumber, safe: await safeAddress(S2.C, seat), found: true });
+      if (!S2.home?.firstKey) {
+        const used = (await recentSeats()).filter((s) => s.n > 0).pop();
+        if (used) saveHome({ seat: used.address, seatNumber: used.seatNumber, safe: await safeAddress(S2.C, used.address), found: true });
       }
     }
     await refresh2();
@@ -22859,17 +22864,24 @@ async function makePasskey(existing) {
     await settle();
   });
 }
-var RECENT = 8;
-var recentSeats = async () => seatCounts(S.C, (await seatsOf(S.C, S.signer)).slice(-RECENT));
 async function firstKey() {
   await guard2("One tap: your passkey's PRF makes the seed of key 0. The console keeps only its fingerprint…", async () => {
-    const seatNumber = (await seatsOf(S2.C, S2.signer)).length;
-    const k = ask({ op: "keys", chainId: S2.C.id, curveSigner: S2.signer, seatNumber, n: 0 });
-    const t = await tap(S2.pk, "0x" + [...crypto.getRandomValues(new Uint8Array(32))].map((b) => b.toString(16).padStart(2, "0")).join(""), [k.salts[0]]);
-    const f = ask({ op: "first", chainId: S2.C.id, curveSigner: S2.signer, seatNumber, seed: t.seeds[0] });
-    if (!f.ok) throw new Error(f.refuse);
-    const seat = await seatAddress(S2.C, S2.signer, seatNumber, f.firstKey);
-    saveHome({ seat, seatNumber, firstKey: f.firstKey, safe: await safeAddress(S2.C, seat) });
+    const seats = await seatsOf(S2.C, S2.signer);
+    const seatNumber = seats.length;
+    const unused = (await seatCounts(S2.C, seats.slice(-RECENT))).filter((s) => s.n === 0 && s.seatNumber !== seatNumber).pop();
+    const nums = unused ? [seatNumber, unused.seatNumber] : [seatNumber];
+    const salts = nums.map((num2) => ask({ op: "keys", chainId: S2.C.id, curveSigner: S2.signer, seatNumber: num2, n: 0 }).salts[0]);
+    const t = await tap(S2.pk, "0x" + [...crypto.getRandomValues(new Uint8Array(32))].map((b) => b.toString(16).padStart(2, "0")).join(""), salts);
+    const firsts = nums.map((num2, i) => ask({ op: "first", chainId: S2.C.id, curveSigner: S2.signer, seatNumber: num2, seed: t.seeds[i] }));
+    for (const f of firsts) if (!f.ok) throw new Error(f.refuse);
+    const listed = new Set(seats.map((a) => a.toLowerCase()));
+    const found = unused && await seatAddress(S2.C, S2.signer, unused.seatNumber, firsts[1].firstKey);
+    if (found && listed.has(found.toLowerCase())) {
+      saveHome({ seat: found, seatNumber: unused.seatNumber, firstKey: firsts[1].firstKey, safe: await safeAddress(S2.C, found), found: true });
+    } else {
+      const seat = await seatAddress(S2.C, S2.signer, seatNumber, firsts[0].firstKey);
+      saveHome({ seat, seatNumber, firstKey: firsts[0].firstKey, safe: await safeAddress(S2.C, seat) });
+    }
     await refresh2();
     pickStep();
   });
@@ -23841,7 +23853,7 @@ function drawOnceDemo(k = 2) {
   );
   if (refocus) box.querySelector(`.choices button[aria-pressed="true"]`).focus();
 }
-var S2, log2, HOME, homes, homeKey, ledger2, mine2, waiting, HARDWARE, walletId2, followed, connectButton, sendTestEth, buildLink, linkField, seatN, watching, canPay2, STEPS2, faucets, redrawing, WHY, ATTACKS, rand32, PIC;
+var S2, log2, HOME, homes, homeKey, ledger2, mine2, waiting, RECENT, recentSeats, HARDWARE, walletId2, followed, connectButton, sendTestEth, buildLink, linkField, seatN, watching, canPay2, STEPS2, faucets, redrawing, WHY, ATTACKS, rand32, PIC;
 var init_main = __esm({
   "src/main.mjs"() {
     init_esm();
@@ -23874,6 +23886,8 @@ var init_main = __esm({
     ledger2 = () => ask({ op: "ledger" }).entries || [];
     mine2 = () => ledger2().filter((e) => S2.home && e.chainId === S2.C.id && e.seat === S2.home.seat.toLowerCase());
     waiting = () => mine2().filter((e) => e.status !== "landed");
+    RECENT = 8;
+    recentSeats = async () => seatCounts(S2.C, (await seatsOf(S2.C, S2.signer)).slice(-RECENT));
     HARDWARE = "A Trezor or a Ledger pays the gas through a browser wallet that drives it, such as Rabby, MetaMask or Frame: connect it there, then pick that wallet here. The device will show a call to Multicall3 (0xcA11…CA11) on Base Sepolia. What that call approves is on this console's screen.";
     walletId2 = (info) => info.rdns || info.uuid;
     followed = /* @__PURE__ */ new WeakSet();

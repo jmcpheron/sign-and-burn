@@ -22,6 +22,13 @@ the last seat in `SeatFactory.seatsOf`, and anyone can add seats to that list fo
   first fails (it took the unused seat on sight) and the e2e stops there, so the second was never
   run against the old page. On the new page both pass.
 
+- `main`'s new wallet page (`site/src/wallet.mjs`) came in with a merge of `main` into this branch,
+  and it took the last seat in `seatsOf` too. It now takes the newest of the last eight with
+  `n > 0`. It can't tap, so an unused seat is left to the main page. No e2e check covers the wallet
+  page's search yet.
+- The merge itself didn't rebuild `docs/`, so CI failed on it ("docs/ differs from a rebuild").
+  Rebuilt and committed.
+
 ## Not done
 
 - A list with more than eight strangers' seats after the real one still hides it, and a long enough
