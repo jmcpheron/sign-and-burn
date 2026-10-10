@@ -838,6 +838,8 @@ try {
   // This one starts on the wallet page, with no passkey: "Import transactions" reads the codes, and
   // the main page pays.
   await scanner2.goto(URL_ + "wallet.html");
+  check(await see(/No passkey here yet[\s\S]*can still pay for an approval signed there: tap Import transactions/, 30000, scanner2),
+    "the wallet page with no passkey, as in a wallet app's browser: it says this browser can still pay, by Import transactions");
   await scanner2.locator("#scan-start:not([disabled])", { hasText: "Import transactions" }).click();
   check(await waitFor(/carries 1 owner signature from Safe\{Wallet\} that check out[\s\S]*makes 2 of the 2 the Safe needs: your one transaction approves it and runs it/, 60000, scanner2) &&
     new URL(scanner2.url()).pathname === "/" && !new URL(scanner2.url()).hash && await scanner2.evaluate(() => sessionStorage.getItem("sab.scanned")) === null,

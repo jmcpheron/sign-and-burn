@@ -31,3 +31,12 @@ for a request". Jason asked for an "Import transactions" button to scan them.
 
 - A real phone's camera.
 - Scanning a proposal link's code with the camera (the proposal link itself is checked).
+
+## In MetaMask's browser
+
+Jason opened the wallet page in MetaMask's own browser and saw only "No passkey here yet". That is
+not new: a wallet app's browser keeps its own storage, so the passkey made in Chrome or Safari isn't
+there, and the page had nothing else to offer. The button wasn't on the live site yet either (this
+branch wasn't merged). Now the no-passkey screen says this browser can still pay for an approval
+signed in the other one, by "Import transactions", and the page says so if the browser gives pages no
+camera. Whether MetaMask's browser lets a page use the camera is not checked.

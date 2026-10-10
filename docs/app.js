@@ -32542,6 +32542,7 @@ async function boot2() {
   $("#scan-start").addEventListener("click", importScan);
   $("#scan-stop").addEventListener("click", () => stopScan(""));
   $("#scan-start").disabled = !canScan();
+  if (!canScan()) $("#scan-status").textContent = "This browser gives pages no camera. Open the approval's link here instead.";
   await reconnectWallet().catch(() => {
   });
   await guard("Reading your Safe from the chain…", find);
@@ -32932,7 +32933,11 @@ function drawAccount() {
   const box = $("#account");
   if (!S.C) return box.replaceChildren(el("p", { class: S.error ? "note error" : "muted" }, S.error || "Starting the console…"));
   const main = el("p", {}, el("a", { href: "./" }, "Go to the main page"), ": it makes a passkey, your first one-time key, and builds your shielded Safe.");
-  if (!S.pk) return box.replaceChildren(el("h1", {}, "No passkey here yet"), main);
+  if (!S.pk) return box.replaceChildren(
+    el("h1", {}, "No passkey here yet"),
+    el("p", {}, "A wallet app's browser, say? Passkeys are kept by the browser that made them, so yours is in the other one. This browser can still pay for an approval signed there: tap Import transactions, below, and scan its codes. Your wallet here sends it."),
+    main
+  );
   if (!S.safe && S.busy) return box.replaceChildren(el("p", { class: "muted" }, "Reading your Safe from the chain…"));
   if (!S.safe?.exists) return box.replaceChildren(el("h1", {}, "Your Safe isn't built yet"), main);
   const a = S.safe.address, name = nameOf(a), shortA = short(a, 6, 4);
