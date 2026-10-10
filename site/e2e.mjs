@@ -611,6 +611,32 @@ try {
   check((await onChain()).nonce === nonce4 + 1 && formatEther(await pc.getBalance({ address: TO4 })) === "0.0001" &&
     Number(await pc.readContract({ address: H2.seat, abi: SEAT_ABI, functionName: "n" })) === 1, "on chain: the Safe ran it, and the second seat is at key 1");
   check(await page.locator("#act").waitFor({ state: "hidden", timeout: 15000 }).then(() => true, () => false), "the first browser sees it run, by itself");
+  // d. a phone with no wallet, as on a real one: the second browser adds the first seat to its own
+  // Safe, 1 of 2. Holding signs; nobody else is asked (its seat's vote is enough); the approval goes
+  // out as a link, and the first browser's wallet sends it from the main page.
+  await second.evaluate(() => localStorage.setItem("e2e.nowallet", "1"));
+  await second.goto(URL_ + "wallet.html");
+  await see(/your shielded safe[\s\S]*1 of 1 to approve/i, 30000, second);
+  await second.locator("#add-owner").fill(H.seat);
+  await second.locator("#owners .owner-add").getByRole("button", { name: "Review", exact: true }).click();
+  check(await see(/ADD OWNER[\s\S]*No wallet here: you then share the approval as a link/, 30000, second) && !(await second.getByText(/Ask another owner/).count()),
+    "a browser with no wallet, a 1 of 1: holding is offered, and no other owner is asked");
+  await second.getByLabel("I read the red page").check();
+  const b3 = await signCount3();
+  await hold(2400, second);
+  check(await see(/Approval 1 is signed\. Send it from another device/, 60000, second) && (await signCount3()) === b3 + 1, "…one tap: key 1 signs, and the approval waits, as a link");
+  await second.locator("#act").getByRole("button", { name: "Copy link" }).click();
+  const alink2 = await second.evaluate(() => window.__e2eCopied);
+  check(alink2.startsWith(URL_ + "#pay="), "the link opens on the main page, where any wallet can send it");
+  await page.goto(alink2);
+  await waitFor(/Send approval 1[\s\S]*The seat accepts it/, 30000);
+  await click("Send it: one transaction");
+  check(await waitFor(/Sent\. Approval 1 landed[\s\S]*The Safe ran the transaction/, 60000), "the first browser's wallet sends it");
+  const owners2 = (await pc.readContract({ address: H2.safe, abi: SAFE_OWNERS_ABI, functionName: "getOwners" })).map((o) => o.toLowerCase());
+  check(owners2.length === 2 && owners2.includes(H.seat.toLowerCase()), "on chain: the second Safe has both seats");
+  check(await second.locator("#act").waitFor({ state: "hidden", timeout: 15000 }).then(() => true, () => false) &&
+    await see(/1 of 2 to approve[\s\S]*Every approval needs a seat[\s\S]*A backup if your passkey is lost/, 30000, second),
+    "the second browser sees it land by itself: two seats, 1 of 2, and a backup");
   const listed = (await second.locator("#safes").innerText()).toLowerCase();
   check(listed.includes(H.safe.slice(-6).toLowerCase()) && listed.includes(H2.safe.slice(-6).toLowerCase()), "the second browser keeps both Safes its seat is in");
   await ctx3.close();

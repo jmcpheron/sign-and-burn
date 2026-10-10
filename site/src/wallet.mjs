@@ -280,9 +280,11 @@ async function voteSeat(tx) {
     const nonceBefore = S.safe.nonce;
     if (Number(tx.nonce) >= S.safe.nonce) keepProposal(tx);
     const others = S.votes.filter((v) => v.toLowerCase() !== S.seat.address.toLowerCase());
-    const got = await approve({ C: S.C, pk: S.pk, seat: S.seat, safe: S.safe, tx, wallet: S.wallet, others, say });
+    // No wallet here that can pay: the approval waits in the ledger, and the card offers it as a link.
+    const got = await approve({ C: S.C, pk: S.pk, seat: S.seat, safe: S.safe, tx, wallet: canPay() ? S.wallet : null, others, say });
     S.draft = null; S.acks = {};
     await refresh();
+    if (!got.hash) { S.flash = `Key ${got.n} signed it. Now send it from a device with a wallet: copy the link below.`; return; }
     const ran = S.safe.nonce > nonceBefore;
     S.flash = el("span", {}, `Key ${got.n}: signed, sent, burned. ` + (got.theirs ? "Someone copied the approval and sent it first: it can do only what you signed. " : "") +
       (ran ? "The Safe ran it. " : Number(tx.nonce) < nonceBefore ? "The Safe had moved past this transaction, so it ran nothing; the seat is at the next key now. " :
@@ -512,9 +514,10 @@ function approvalCard() {
   const needRed = red ? ["red"] : [];
   if ((!seatVoted || overtaken) && S.seatOwns && !wElse) {
     const label = w ? `Hold to send approval ${w.n} again` : `Hold to approve with key ${n}`;
-    if (!S.wallet) buttons.push(el("span", { class: "small" }, "Connect a wallet to pay the seat's gas, or send it from ", el("a", { href: "./" }, "the main page"), " by link."));
-    else if (!canPay()) buttons.push(el("span", { class: "small" }, `${S.wallet.name}'s account has no ETH for the seat's gas.`));
-    else buttons.push(gated(holdButton(label, () => voteSeat(tx), { red }), [...needRed, ...(elsewhere && !w ? ["elsewhere"] : [])]));
+    // With no wallet that can pay, holding still signs; the approval then goes out as a link. One that
+    // is signed already needs no hold here: only its link.
+    if (canPay() || !w) buttons.push(gated(holdButton(label, () => voteSeat(tx), { red }), [...needRed, ...(elsewhere && !w ? ["elsewhere"] : [])]));
+    if (S.wallet && !canPay()) buttons.push(el("span", { class: "small" }, `${S.wallet.name}'s account has no ETH for gas.`));
   }
   const mineToo = S.wallet && isOwner(S.wallet.account) && !S.votes.some((v) => v.toLowerCase() === S.wallet.account.toLowerCase());
   if (mineToo && !overtaken && !w && count < t) {
@@ -528,19 +531,39 @@ function approvalCard() {
     rejectButton()));
   if (elsewhere && !w && !seatVoted) out.push(el("p", { class: "note" }, `Another device made this seat, and this browser has no record of what its keys signed. If that device signed with key ${n} ` +
     `and its transaction is still pending, signing here would be key ${n}'s second signature: enough to forge a third. Check there first, and use one device per seat.`));
-  if (!overtaken && count < t) {
+  // Other owners: those who are neither this seat nor the wallet here, and haven't voted. Asking them
+  // is a choice when this device's own votes would be enough.
+  const mine_ = (S.seatOwns && !seatVoted && !wElse ? 1 : 0) + (mineToo && !w ? 1 : 0);
+  const askable = S.owners.some((o) => !o.yours && !same(o.address, S.wallet?.account) && !S.votes.some((v) => same(v, o.address)));
+  if (w) out.push(approvalShare(w, overtaken));
+  if (!overtaken && count < t && askable) {
     const link = pay.proposalLink(S.C, S.safe.address, tx, location.origin + location.pathname);
     out.push(el("div", { class: "share" },
-      el("h4", {}, "Ask another owner"),
+      el("h4", {}, count + mine_ >= t ? "Or ask another owner" : "Ask another owner"),
       el("p", { class: "small" }, `Send this link to another owner's device: a seat's, or a wallet's. Its console works out the hash itself, and its code should read ${r.verify}. ` +
         "It sees the votes cast so far on chain. The link holds the transaction, and nothing signed."),
       el("input", { class: "mono share-link", readonly: true, value: link, "aria-label": "The link", onfocus: (e) => e.target.select() }),
       el("div", { class: "actions" }, el("button", { type: "button", disabled: !!S.busy, onclick: () => copy(link, "Link copied. This page shows the new votes as they land.") }, "Copy link"))));
   }
   if (w && !overtaken) out.push(el("p", { class: "small" }, `Key ${w.n} already signed this approval. One signature per key, ever: the console will only send this same one again. No tap needed.`));
-  else if (!seatVoted && !overtaken) out.push(el("p", { class: "small" }, `Holding asks your passkey once. The console signs with key ${n}, burns it and names key ${n + 1}. Your wallet pays the gas.`));
+  else if (!seatVoted && !overtaken && S.seatOwns && !wElse) out.push(el("p", { class: "small" }, `Holding asks your passkey once. The console signs with key ${n}, burns it and names key ${n + 1}. ` +
+    (canPay() ? "Your wallet pays the gas." : `${S.wallet ? "No gas in that wallet" : "No wallet here"}: you then share the approval as a link, and a wallet on another device sends it. It pays the gas and approves nothing.`)),
+    S.wallet ? null : el("div", { class: "actions" }, el("button", { class: "link", type: "button", disabled: !!S.busy, onclick: connectWallet }, "I have a wallet in this browser")));
   if (mineToo && !overtaken && !w && count < t) out.push(el("p", { class: "small" }, "Your wallet votes with its own key, the curve key a broken curve would forge. It shows that key's public half on chain, if it wasn't already."));
   return out;
+}
+
+/** Approval w.n, signed and waiting in the ledger, as a link to the main page, where a wallet on any
+ * device sends it (src/pay.mjs, sign-and-burn/approval/v1). */
+function approvalShare(w, overtaken) {
+  const link = pay.approvalLink(S.C, w.n, w.approval, w.tx, new URL("./", location.href).href);
+  return el("div", { class: "share" },
+    el("h4", {}, canPay() ? "Or send it from another device" : `Approval ${w.n} is signed. Send it from another device`),
+    el("p", { class: "small" }, `Copy this link to a device with a wallet on ${S.C.chain.name} and a little ETH for gas. It opens on the main page, which works out the hash itself ` +
+      `(its code should read ${S.review.verify}), asks the seat, and sends it. ${overtaken ? "It will run nothing, and moves the seat to the next key. " : ""}` +
+      `This page moves on once it lands. Until then key ${w.n} sends nothing else.`),
+    el("input", { class: "mono share-link", readonly: true, value: link, "aria-label": "The link", onfocus: (e) => e.target.select() }),
+    el("div", { class: "actions" }, el("button", { class: canPay() ? "" : "go", type: "button", disabled: !!S.busy, onclick: () => copy(link, "Link copied. This page moves on once the approval lands.") }, "Copy link")));
 }
 
 /** Reject is one easy press, except for a transaction key n has signed: that one is the only thing

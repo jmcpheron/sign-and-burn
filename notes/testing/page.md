@@ -101,6 +101,10 @@ The checks, in order:
       the wallet's vote counted, the same check code. One press there (key 0, one passkey signature)
       makes two votes, and the Safe runs it. The first browser sees it run by itself; the second
       keeps both Safes its seat is in.
+    - A phone with no wallet: the second browser adds the first seat to its own 1 of 1 Safe. Holding
+      is offered, and no other owner is asked. One tap signs key 1, and the approval waits as a link to
+      the main page. The first browser's wallet sends it there; on chain the second Safe has both
+      seats, and the second browser sees it land by itself: 1 of 2, and a backup.
 18. The CSP refuses another host. A phone-width screen has no sideways scroll. No page errors.
 
 Screenshots go to `site/shots/` (not committed).
