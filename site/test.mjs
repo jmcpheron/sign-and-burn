@@ -9,6 +9,7 @@ import { readFileSync } from "node:fs";
 import * as w from "./src/wots.mjs";
 import { decodeFunctionData, encodeAbiParameters, encodeFunctionData, parseAbi, parseAbiParameters } from "viem";
 import * as qr from "./src/qr.mjs";
+import * as names from "./src/names.mjs";
 import { MULTICALL_ABI, SAFE_ABI, approveCalls, execData, findApprove, ownerTx, parseCfg } from "./src/chain.mjs";
 import * as pay from "./src/pay.mjs";
 
@@ -159,6 +160,27 @@ badQ("a byte more", "#aq=" + rest + "00");
 badQ("a character outside base 43", "#aq=" + rest.slice(0, -3) + "aaa");
 badQ("another chain", "#aq=" + pay.approvalQr({ ...C, id: 1 }, 7, real, otx, "x").link.split("#aq=")[1]);
 console.log(`compact approvals: ${compact.link.length} characters, a version ${code.version} code, and four refusals`);
+
+// The address book a file carries between browsers: addresses lowercased, names trimmed, and a file
+// with any bad entry refused whole.
+const book = (n, extra = {}) => JSON.stringify({ tag: names.BOOK_TAG, chain: 84532, names: n, ...extra });
+const A1 = "0x" + "Ab".repeat(20), A2 = "0x" + "cd".repeat(20);
+const parsed = names.parseBook(book({ [A1]: "  My phone's seat ", [A2]: "Shared Safe" }), 84532).names;
+check("an address book reads", parsed[A1.toLowerCase()] === "My phone's seat" && parsed[A2] === "Shared Safe" && Object.keys(parsed).length === 2);
+const badB = (what, text) => { let threw = false; try { names.parseBook(text, 84532); } catch { threw = true; } check(`refused: ${what}`, threw); };
+badB("not JSON", "{names:");
+badB("another tag", book({ [A1]: "x" }, { tag: "sign-and-burn/address-book/v2" }));
+badB("another chain", book({ [A1]: "x" }, { chain: 1 }));
+badB("names that are a list", book([A1]));
+badB("an address that isn't one", book({ "0x1234": "x" }));
+badB("an empty name", book({ [A1]: "   " }));
+badB("a name too long", book({ [A1]: "x".repeat(names.MAX_NAME + 1) }));
+badB("a control character", book({ [A1]: "ab\u0007" }));
+badB("a direction override", book({ [A1]: "My \u202eefaS" }));
+badB("a zero-width space", book({ [A1]: "Sa\u200bfe" }));
+badB("a name that isn't text", book({ [A1]: 42 }));
+badB("one bad entry among good ones", book({ [A2]: "Shared Safe", "0xzz": "x" }));
+console.log("address books: read, and twelve refusals");
 
 const cfg = parseCfg(readFileSync(new URL("../console/cfg.py", import.meta.url), "utf8"));
 const dep = JSON.parse(readFileSync(new URL("../contracts/deployment.json", import.meta.url), "utf8"));

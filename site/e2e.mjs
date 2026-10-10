@@ -691,6 +691,29 @@ try {
   check((await onChain()).nonce === nonce4 + 1 && formatEther(await pc.getBalance({ address: TO4 })) === "0.0001" &&
     Number(await pc.readContract({ address: H2.seat, abi: SEAT_ABI, functionName: "n" })) === 1, "on chain: the Safe ran it, and the second seat is at key 1");
   check(await page.locator("#act").waitFor({ state: "hidden", timeout: 15000 }).then(() => true, () => false), "the first browser sees it run, by itself");
+  // e. names: the first browser names the second seat and the shared Safe, exports its address book,
+  // and the second browser imports the file. A bad paste is refused, and changes nothing.
+  await page.locator("#owners li.owner", { hasText: H2.seat.slice(-6) }).getByRole("button", { name: "Name it" }).click();
+  await page.locator("#book-name").fill("Phone seat");
+  await page.getByRole("button", { name: "Save name" }).click();
+  await page.locator("#safes li", { hasText: H.safe.slice(-6) }).getByRole("button", { name: "Name it" }).click();
+  await page.locator("#book-name").fill("Shared Safe");
+  await page.getByRole("button", { name: "Save name" }).click();
+  check(/Phone seat[\s\S]*Another passkey's seat/.test(await page.locator("#owners").innerText()) && /Shared Safe/.test(await page.locator("#account").innerText()),
+    "names: the second seat and the Safe, shown beside their addresses wherever they appear");
+  const [dl] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Export JSON" }).click()]);
+  const bookFile = await dl.path(), exported = JSON.parse(readFileSync(bookFile, "utf8"));
+  check(exported.tag === "sign-and-burn/address-book/v1" && exported.names[H2.seat.toLowerCase()] === "Phone seat" && exported.names[H.safe.toLowerCase()] === "Shared Safe",
+    "Export JSON: the address book, tagged, names and addresses only");
+  await second.locator("#book-file").setInputFiles(bookFile);
+  check(await see(/Imported: 2 new names/, 10000, second) && /Shared Safe/.test(await second.locator("#safes").innerText()) && /Phone seat/.test(await second.locator("#owners").innerText()),
+    "the second browser imports the file: the same names there");
+  await second.locator("#book summary").click();
+  await second.locator("#book-paste").fill('{"tag":"sign-and-burn/address-book/v1","chain":31337,"names":{"0x12":"x"}}');
+  await second.locator("#book").getByRole("button", { name: "Import", exact: true }).click();
+  check(await see(/Address book: "0x12" isn't an address\. Nothing was imported\./, 10000, second) && /Phone seat/.test(await second.locator("#owners").innerText()),
+    "a bad file is refused whole, and says why");
+
   // d. a phone with no wallet, as on a real one: the second browser adds the first seat to its own
   // Safe, 1 of 2. Holding signs; nobody else is asked (its seat's vote is enough); the approval goes
   // out as a link, and the first browser's wallet sends it from the main page.
