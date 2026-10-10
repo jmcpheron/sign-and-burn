@@ -896,7 +896,7 @@ function drawSide() {
   const es = mine().slice().reverse();
   if (es.length) hist.replaceChildren(el("ul", { class: "history" }, ...es.map((e) => el("li", {},
     el("div", { class: "h" }, el("span", {}, `#${e.n} · ${e.summary}`), el("span", { class: `badge ${e.status}` }, e.status)),
-    el("div", { class: "s" }, `verify ${e.verify} · `, e.txHash ? txLink(e.txHash) : "not sent yet")))));
+    el("div", { class: "s" }, `verify ${e.verify} · `, e.txHash ? txLink(e.txHash) : e.status === "landed" ? "sent from another device" : "not sent yet")))));
 }
 
 // ----------------------------------------------------------------------------- the attack room

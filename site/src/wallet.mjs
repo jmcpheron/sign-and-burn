@@ -26,7 +26,7 @@ import * as ch from "./chain.mjs";
 import { approve } from "./approve.mjs";
 import * as pay from "./pay.mjs";
 import * as names from "./names.mjs";
-import { $, addr, drawBlockie, el, eth, holdButton, plain, qrToggle, refuseFrames, reviewParts, rows, short, txLink, useChain } from "./ui.mjs";
+import { $, addr, drawBlockie, el, eth, holdButton, label, picker, plain, qrToggle, refuseFrames, reviewParts, rows, short, txLink, useChain } from "./ui.mjs";
 
 refuseFrames();
 
@@ -393,14 +393,14 @@ function drawAccount() {
   box.replaceChildren(c, el("div", {},
     el("p", { class: "eyebrow" }, same(S.safe.address, S.home.safe) ? "Your shielded Safe" : S.seatOwns ? "A Safe your seat is in" : "A Safe your wallet is in"),
     el("div", { class: "balance" }, eth(S.safe.balance)),
-    el("div", { class: "wallet-sub" }, addr(S.safe.address),
+    el("div", { class: "wallet-sub" }, addr(S.safe.address, { copy: true }), safesPicker(),
       el("span", { class: "chip" }, `${S.safe.threshold} of ${S.safe.owners.length} to approve`),
       el("span", { class: "chip" }, `seat at key ${S.seat.n}`),
       el("span", { class: "chip" }, `nonce ${S.safe.nonce}`)),
     tokens().some((t) => S.tokenBal?.get(t.address.toLowerCase())) ? el("div", { class: "wallet-sub tokens" },
       ...tokens().filter((t) => S.tokenBal?.get(t.address.toLowerCase())).map((t) => el("span", { class: "chip token", title: t.address }, units(S.tokenBal.get(t.address.toLowerCase()), t)))) : null),
     el("div", { class: "wallet-who" }, S.wallet
-      ? el("span", {}, el("span", { class: "small" }, `${S.wallet.name}: `), addr(S.wallet.account),
+      ? el("span", {}, el("span", { class: "small" }, `${S.wallet.name}: `), addr(S.wallet.account, { copy: true }),
         el("span", { class: "small" }, ` ${S.walletBalance != null ? eth(S.walletBalance) : ""} · ${isOwner(S.wallet.account) ? "an owner" : "pays gas only"}`))
       : el("button", { type: "button", disabled: !!S.busy, onclick: connectWallet }, "Connect a wallet"),
     S.choosing ? el("div", { class: "chooser" }, el("p", {}, "Which wallet?"), el("div", { class: "actions" },
@@ -424,7 +424,7 @@ function ownersCard() {
   out.push(el("ul", { class: "owners" }, ...S.owners.map((o) => {
     const [cls, name, what] = kindOf(o);
     return el("li", { class: `owner ${cls}` },
-      el("div", { class: "h" }, addr(o.address), el("span", { class: "badge" }, name),
+      el("div", { class: "h" }, addr(o.address, { copy: true }), el("span", { class: "badge" }, name),
         o.yours ? el("span", { class: "badge you" }, "your seat") : null,
         S.wallet && same(o.address, S.wallet.account) ? el("span", { class: "badge you" }, "this wallet") : null),
       el("div", { class: "small" }, o.yours ? `Key ${S.seat.n} now. ${what}` : !o.isSeat && !o.contract && o.sent ? `Sent ${o.sent} transaction${o.sent === 1 ? "" : "s"}. ${what}` : what),
@@ -479,7 +479,7 @@ function safesCard() {
   const list = safes();
   if (!list.some((a) => same(a, S.safe.address))) list.push(S.safe.address);
   return [el("h2", {}, "Safes"),
-    el("ul", { class: "safes" }, ...list.map((a) => el("li", {}, addr(a),
+    el("ul", { class: "safes" }, ...list.map((a) => el("li", {}, addr(a, { copy: true }),
       same(a, S.home.safe) ? el("span", { class: "badge" }, "yours") : null,
       same(a, S.safe.address) ? el("span", { class: "badge you" }, "open") : el("button", { class: "link", type: "button", disabled: !!S.busy, onclick: () => openSafe(a) }, "Open"),
       nameLink(a)))),
@@ -534,7 +534,7 @@ function bookCard() {
   const entries = Object.entries(names.all()).sort((x, y) => x[1].localeCompare(y[1]));
   return [el("h2", {}, "Address book"),
     el("p", { class: "small" }, "Your names for Safes, seats and wallets, kept in this browser. A name always shows beside its address, and the console never sees them."),
-    entries.length ? el("ul", { class: "book" }, ...entries.map(([a]) => el("li", {}, addr(a), nameLink(a),
+    entries.length ? el("ul", { class: "book" }, ...entries.map(([a]) => el("li", {}, addr(a, { copy: true }), nameLink(a),
       el("button", { class: "link", type: "button", onclick: () => { names.setName(S.C.id, a, ""); render(); } }, "Remove"))))
       : el("p", { class: "muted" }, "No names yet. “Name it” beside an owner or a Safe starts one."),
     el("div", { class: "form book-form" },
@@ -560,19 +560,58 @@ async function copy(text, said) {
   render();
 }
 
+/** Who "To" is: your name for it, or that it isn't in your address book. */
+function toPreview() {
+  const a = S.send.to;
+  if (!a) return el("span", { class: "small" }, "");
+  if (!isAddress(a)) return el("span", { class: "small" }, "Not an address yet.");
+  return el("span", { class: "small" }, label(getAddress(a)), names.nameOf(a) ? "" : " not in your address book");
+}
+
+/** Where a send can go, from the menu beside "To": your other Safes, the wallet here, and your contacts. */
+function contacts() {
+  const out = [], add = (address, note) => { if (!same(address, S.safe.address) && !out.some((x) => same(x.address, address))) out.push({ address: getAddress(address), note }); };
+  for (const a of safes()) add(a, "your Safe");
+  if (S.wallet) add(S.wallet.account, "the wallet here");
+  const book = Object.entries(names.all()).sort((x, y) => x[1].localeCompare(y[1]));
+  for (const [a] of book) add(a, "");
+  return out;
+}
+
+/** The caret beside the Safe's address: your Safes, to switch between. */
+function safesPicker() {
+  const list = safes();
+  if (!list.some((a) => same(a, S.safe.address))) list.push(S.safe.address);
+  return picker("safes", "Switch Safe", list.map((a) => ({ address: a, on: same(a, S.safe.address), note: same(a, S.home.safe) ? "yours" : same(a, S.safe.address) ? "open" : "" })),
+    (a) => { if (!same(a, S.safe.address)) openSafe(a); },
+    { footer: el("button", { type: "button", class: "link", onclick: () => $("#safes").scrollIntoView({ block: "start", behavior: "smooth" }) }, "Open another Safe your seat is in…") });
+}
+
 function sendCard() {
   const disabled = !!S.busy || !!S.current, list = tokens(), t = S.send.asset === "ETH" ? null : tokenOf(S.send.asset);
+  const preview = el("div", { class: "to-preview" }, toPreview());
   if (S.send.asset !== "ETH" && !t) S.send.asset = "ETH";
   const bal = t ? S.tokenBal?.get(t.address.toLowerCase()) : S.safe.balance;
   return [el("h2", {}, "Send"),
     el("div", { class: "form send-form" },
-      el("label", {}, "To", el("input", { id: "send-to", class: "mono", value: S.send.to, placeholder: "0x…", spellcheck: "false", autocomplete: "off", oninput: (e) => { S.send.to = e.target.value.trim(); } })),
+      el("div", { class: "to-field" }, el("label", { for: "send-to" }, "To"),
+        el("div", { class: "to-row" },
+          el("input", { id: "send-to", class: "mono", value: S.send.to, placeholder: "0x…, or pick one", spellcheck: "false", autocomplete: "off",
+            oninput: (e) => { S.send.to = e.target.value.trim(); preview.replaceChildren(toPreview()); } }),
+          picker("send-to", "Your Safes and contacts", contacts(), (a) => { S.send.to = a; render(); },
+            { footer: el("span", { class: "small" }, "Add contacts in the Address book, below.") })),
+        preview),
       el("label", {}, "Asset", el("select", { id: "send-asset", onchange: (e) => { S.send.asset = e.target.value; render(); } },
         el("option", { value: "ETH", selected: !t }, "ETH"),
         ...list.map((x) => el("option", { value: x.address, selected: !!t && same(t.address, x.address) }, x.pinned ? x.symbol : `${x.symbol} (added here)`)))),
       el("label", {}, `Amount (${t ? t.symbol : "ETH"})`, el("input", { id: "send-amount", value: S.send.amount, inputmode: "decimal", oninput: (e) => { S.send.amount = e.target.value.trim(); } }))),
     el("p", { class: "small" }, `The Safe holds ${bal == null ? "an amount this page couldn't read" : t ? units(bal, t) : eth(bal)}.` +
       (t && !t.pinned ? ` The console doesn't know ${t.symbol}: its review shows the amount in raw units (${t.decimals} decimals).` : "")),
+    // A share of what the Safe holds, worked out exactly in its smallest units. Max is all of it: the
+    // Safe pays no gas of its own (the wallet that sends the approval does).
+    el("div", { class: "actions quick" }, ...[[25, "25%"], [50, "50%"], [100, "Max"]].map(([pct, name]) =>
+      el("button", { type: "button", disabled: disabled || !bal, "aria-label": pct === 100 ? "All of it" : `${name} of it`,
+        onclick: () => { S.send.amount = formatUnits((bal * BigInt(pct)) / 100n, t ? t.decimals : 18); render(); } }, name))),
     el("div", { class: "actions" }, el("button", { class: "go", type: "button", disabled, onclick: draftSend }, "Review")),
     S.current ? el("p", { class: "small" }, "One transaction at a time: finish or reject the one above first.") : null,
     el("details", {}, el("summary", { class: "small" }, "Add a token"),
@@ -691,10 +730,10 @@ function rejectButton() {
 function activityCard() {
   const es = mine().slice().reverse();
   return [el("h2", {}, "Your seat's approvals"),
-    rows([["Seat", addr(S.home.seat)], ["Key now", el("span", { class: "mono", title: S.seat.current }, `${S.seat.n}: ${short(S.seat.current, 10, 6)}`)]]),
+    rows([["Seat", addr(S.home.seat, { copy: true })], ["Key now", el("span", { class: "mono", title: S.seat.current }, `${S.seat.n}: ${short(S.seat.current, 10, 6)}`)]]),
     es.length ? el("ul", { class: "history" }, ...es.map((e) => el("li", {},
       el("div", { class: "h" }, el("span", {}, `#${e.n} · ${e.summary}${same(e.safe, S.safe.address) ? "" : ` · Safe ${short(e.safe)}`}`), el("span", { class: `badge ${e.status}` }, e.status)),
-      el("div", { class: "s" }, `verify ${e.verify} · `, e.txHash ? txLink(e.txHash) : "not sent yet"))))
+      el("div", { class: "s" }, `verify ${e.verify} · `, e.txHash ? txLink(e.txHash) : e.status === "landed" ? "sent from another device" : "not sent yet"))))
       : el("p", { class: "muted" }, "This browser's console hasn't approved anything for this seat yet."),
     el("p", { class: "small" }, "Votes by other owners aren't listed here: the Safe's own history on the explorer has them.")];
 }

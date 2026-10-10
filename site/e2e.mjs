@@ -612,6 +612,10 @@ try {
   await page.reload();
   check(await see(/5 USDC/), "tokens: the Safe's USDC shows beside its ETH");
   await page.locator("#send-asset").selectOption({ label: "USDC" });
+  await page.getByRole("button", { name: "50% of it" }).click();
+  const half = await page.locator("#send-amount").inputValue();
+  await page.getByRole("button", { name: "All of it" }).click();
+  check(half === "2.5" && (await page.locator("#send-amount").inputValue()) === "5", "50% and Max: a share of the Safe's USDC, exactly");
   await page.locator("#send-to").fill(TO3);
   await page.locator("#send-amount").fill("100");
   await inCard("#send", "Review");
@@ -624,7 +628,7 @@ try {
   await hold();
   check(await see(/Key \d+: signed, sent, burned\. The Safe ran it/, 60000) && (await pc.readContract({ address: USDC, abi: ERC20, functionName: "balanceOf", args: [TO3] })) === 1500000n,
     "one press: the Safe sends 1.5 USDC");
-  await page.locator("#send details summary").click();
+  await page.locator("#send summary", { hasText: "Add a token" }).click();
   await page.locator("#add-token").fill(OTHER);
   await page.getByRole("button", { name: "Add it" }).click();
   check(await see(/Added TEST\. The console doesn't know it/), "a token added by address: its symbol and decimals from its contract");
@@ -780,6 +784,21 @@ try {
   check(await second.locator("#act").waitFor({ state: "hidden", timeout: 15000 }).then(() => true, () => false) &&
     await see(/1 of 2 to approve[\s\S]*Every approval needs a seat[\s\S]*A backup if your passkey is lost/, 30000, second),
     "the second browser sees it land by itself: two seats, 1 of 2, and a backup");
+  // f. the header's copy icon and caret, and the "To" menu, in the second browser: it has two Safes,
+  // and the names it imported
+  await second.locator("#account button.copy").first().click();
+  check((await second.evaluate(() => window.__e2eCopied)).toLowerCase() === H2.safe.toLowerCase(), "the copy icon beside the Safe's address: one press copies it");
+  await second.locator("#account details.picker > summary").click();
+  await second.locator("#account .menu button", { hasText: "Shared Safe" }).click();
+  check(await see(/A Safe your seat is in[\s\S]*Shared Safe/i, 15000, second), "the caret beside it: a menu of your Safes, by name; picking one opens it");
+  await second.locator("#send details.picker > summary").click();
+  const offered = await second.locator("#send .menu").innerText();
+  check(/Phone seat/.test(offered) && /your Safe/.test(offered) && !/Shared Safe/.test(offered), "the To menu: your other Safe and your contacts, by name, and not the Safe you send from");
+  await second.locator("#send .menu button", { hasText: "Phone seat" }).click();
+  check((await second.locator("#send-to").inputValue()).toLowerCase() === H2.seat.toLowerCase() && /Phone seat/.test(await second.locator("#send .to-preview").innerText()),
+    "picking a contact fills To, and says who it is");
+  await second.locator("#send-to").fill("0x00000000000000000000000000000000000b0b09");
+  check(/not in your address book/.test(await second.locator("#send .to-preview").innerText()), "an address typed in: not in your address book, said as you type");
   const listed = (await second.locator("#safes").innerText()).toLowerCase();
   check(listed.includes(H.safe.slice(-6).toLowerCase()) && listed.includes(H2.safe.slice(-6).toLowerCase()), "the second browser keeps both Safes its seat is in");
   await ctx3.close();
