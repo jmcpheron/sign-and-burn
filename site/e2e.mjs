@@ -8,9 +8,11 @@
 //   two presses, each burning a key and running the Safe transaction → every attack refused →
 //   the console's refusals and red page → the guardrail: a wallet that says no, then the same
 //   approval sent again with no new signature → the danger case → a browser with no ledger finds
-//   the seat, past a stranger's junk seats, and is warned → a front-run approval lands in someone else's transaction → a press
-//   with no wallet goes out as a link, and the other browser sends it → the CSP
-//   refuses other hosts → a reload keeps the ledger. Before all that, the explainers in "How it works".
+//   the seat and is warned → a front-run approval lands in someone else's transaction → a press
+//   with no wallet goes out as a link, and the other browser sends it → the wallet page: the wallet
+//   added as a second owner, 1 of 2 and 2 of 2, the guardrail when the wallet's own transaction gets
+//   ahead of an approval the seat signed, the owner removed again → the CSP refuses other hosts → a
+//   reload keeps the ledger. Before all that, the explainers in "How it works".
 //   cd site && npm ci && node e2e.mjs        (Chromium: SAB_CHROMIUM=/path/to/chrome if playwright-core has none)
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, statSync } from "node:fs";
@@ -125,14 +127,14 @@ const waitFor = (re, timeout = 30000, on = page) => on.waitForFunction((s) => ne
   .then(() => true, async () => { console.log("  screen said:", (await on.evaluate(said)).slice(0, 600)); return false; });
 const shot = (name) => page.screenshot({ path: join(SHOTS, `${name}.png`), fullPage: true });
 const click = (name, on = page) => on.getByRole("button", { name }).first().click();
-async function hold(ms = 2400) {
-  const btn = page.locator("button.hold");
+async function hold(ms = 2400, on = page) {
+  const btn = on.locator("button.hold");
   await btn.scrollIntoViewIfNeeded();
   const box = await btn.boundingBox();
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await page.mouse.down();
-  await page.waitForTimeout(ms);
-  await page.mouse.up();
+  await on.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await on.mouse.down();
+  await on.waitForTimeout(ms);
+  await on.mouse.up();
 }
 const SEAT_ABI = parseAbi(["function n() view returns (uint64)", "function current() view returns (bytes32)"]);
 const SAFE_ABI = parseAbi(["function nonce() view returns (uint256)", "function getOwners() view returns (address[])"]);
@@ -182,6 +184,8 @@ try {
   const H = await home();
   check(link === await page.locator(".share-link").inputValue() && link.startsWith(URL_ + "#pay=") && !link.includes(H.seat.slice(2).toLowerCase()) && !link.includes(H.safe.slice(2).toLowerCase()),
     "the link: this page's address, then public values only (it names neither the seat nor the Safe)");
+  await click("Show QR code");
+  check((await page.locator(".qr canvas").getAttribute("data-text")) === link, "Show QR code: the same link, as a QR code");
 
   const ctx2 = await newBrowser();
   const payer = await ctx2.newPage();
@@ -397,11 +401,19 @@ try {
   await page.reload();
   check(await waitFor(/Approval 5 is signed/) && (await signCount()) === before + 1 && (await page.locator(".share-link").inputValue()) === alink,
     "after a reload: the same approval, the same link, and no new passkey signature");
+  // The link is too long for one QR code; the code carries the approval's compact form (#aq=).
+  if (!(await page.locator(".qr canvas").count())) await click("Show QR code");
+  const qrText = await page.locator(".qr canvas").getAttribute("data-text");
+  await page.locator(".qr canvas").screenshot({ path: join(SHOTS, "qr-approval.png") });
+  check(qrText.startsWith(URL_ + "#aq=") && /^[0-9A-Z$*+\-./:]+$/.test(qrText.split("#aq=")[1]), "its QR code: the approval in compact form, this page's address then base 43");
   const tampered = new URLSearchParams(new URL(alink).hash.slice(1));
   tampered.set("next", "0x" + "ab".repeat(32));
   await payer.goto(URL_ + "#" + tampered);
   check(await waitFor(/The seat would refuse this approval \(Bad/, 30000, payer) && !(await payer.getByRole("button", { name: "Send it: one transaction" }).count()),
     "the other browser: the link with another next key, and the seat would refuse it; no button");
+  await payer.goto(qrText);
+  check(await waitFor(/Send approval 5[\s\S]*The seat accepts it/, 30000, payer) && (await payer.locator("#screen .verify .code").innerText()) === code,
+    "the compact form, opened as a phone's camera would: the same approval, the same check code, and the seat accepts it");
   await payer.goto(URL_);
   await payer.locator(".payment-request summary").click();
   await payer.locator("#pay-request-link").fill(alink);
@@ -418,6 +430,246 @@ try {
   check(/#5[\s\S]*landed/.test(await page.locator("#history").innerText()), "history: approval 5 landed, with the other browser's transaction");
   await ctx2.close();
   await page.evaluate(() => localStorage.removeItem("e2e.nowallet"));
+
+  // 9c. the wallet page: the same Safe, its owners, and the wallet in this browser as a second owner. It
+  // shares this browser's passkey, home and ledger with the main page.
+  const SAFE_OWNERS_ABI = parseAbi(["function getOwners() view returns (address[])", "function getThreshold() view returns (uint256)", "function nonce() view returns (uint256)",
+    "function execTransaction(address to, uint256 value, bytes data, uint8 operation, uint256 safeTxGas, uint256 baseGas, uint256 gasPrice, address gasToken, address refundReceiver, bytes signatures) payable returns (bool)"]);
+  const onChain = async () => ({ n: Number(await pc.readContract({ address: H.seat, abi: SEAT_ABI, functionName: "n" })),
+    nonce: Number(await pc.readContract({ address: H.safe, abi: SAFE_OWNERS_ABI, functionName: "nonce" })),
+    owners: (await pc.readContract({ address: H.safe, abi: SAFE_OWNERS_ABI, functionName: "getOwners" })).map((o) => o.toLowerCase()),
+    threshold: Number(await pc.readContract({ address: H.safe, abi: SAFE_OWNERS_ABI, functionName: "getThreshold" })) });
+  const wsaid = (on) => on.evaluate(() => document.querySelector("main").innerText);
+  const see = (re, timeout = 30000, on = page) => on.waitForFunction(([s, f]) => new RegExp(s, f).test(document.querySelector("main").innerText), [re.source, re.flags], { timeout })
+    .then(() => true, async () => { console.log("  page said:", (await wsaid(on)).slice(0, 900)); return false; });
+  const inCard = (id, name) => page.locator(id).getByRole("button", { name, exact: true }).click();
+  const ME = wallet.account;
+  await page.goto(URL_ + "wallet.html");
+  const start = await onChain();
+  check(await see(/your shielded safe[\s\S]*1 of 1 to approve[\s\S]*Every owner is a seat[\s\S]*No backup if your passkey is lost/i) && await see(new RegExp(`seat at key ${start.n}`)),
+    "the wallet page: the main page's Safe, its balance and its one owner, the seat");
+  check(await see(/pays gas only/), "…and the wallet in this browser, which pays gas only");
+  await shot("9-wallet");
+
+  // a. the wallet becomes a second owner, 1 of 2: a red transaction, approved by the seat with one press
+  await inCard("#owners", "Use my wallet's address");
+  await inCard("#owners .owner-add", "Review");
+  check(await see(/Approve: Add owner[\s\S]*ADD OWNER/) && await page.locator("#act.red").count() === 1 && await page.locator("button.hold").isDisabled(),
+    "adding the wallet as an owner: the console's red page, and holding waits for the box");
+  await page.getByLabel("I read the red page").check();
+  before = await signCount();
+  await hold();
+  check(await see(new RegExp(`Key ${start.n}: signed, sent, burned\\. The Safe ran it`), 60000) && (await signCount()) === before + 1, "one press: the seat approves it, and the Safe runs it");
+  let now = await onChain();
+  check(now.owners.length === 2 && now.owners.includes(ME) && now.threshold === 1, "on chain: two owners, the seat and the wallet, 1 of 2");
+  check(await see(/1 of 2 to approve[\s\S]*Ordinary keys can approve without a seat[\s\S]*A backup if your passkey is lost/) && await see(/this wallet[\s\S]*Ordinary key|Ordinary key[\s\S]*this wallet/),
+    "the page says the wallet can approve without a seat: a backup, and a way around the seat");
+  check(await see(/Sent \d+ transactions?\. Its public key is on chain/), "…and that the wallet's public key is already on chain");
+  await shot("9-wallet-1of2");
+
+  // b. 1 of 2: the wallet sends on its own key. No passkey, no one-time key
+  const TO3 = "0x00000000000000000000000000000000000b0b03";
+  await page.locator("#send-to").fill(TO3);
+  await page.locator("#send-amount").fill("0.0001");
+  await inCard("#send", "Review");
+  check(await see(/Approve: Send 0\.0001 ETH[\s\S]*Votes: 0 of 1/) && await page.getByRole("button", { name: "Run it with my wallet" }).count() === 1,
+    "a send in a 1 of 2: the console reviews it, and the wallet may run it alone");
+  before = await signCount();
+  await page.getByRole("button", { name: "Run it with my wallet" }).click();
+  check(await see(/Your wallet ran it/, 60000), "the wallet runs it, with its own key as its vote");
+  now = await onChain();
+  check(now.nonce === start.nonce + 2 && now.n === start.n + 1 && (await signCount()) === before && formatEther(await pc.getBalance({ address: TO3 })) === "0.0001",
+    "on chain: the Safe ran it; the seat and the passkey did nothing");
+
+  // c. the guardrail across both kinds of owner: key n signs, the wallet refuses to send it, and the
+  // wallet's own key then runs another transaction at the same nonce. Key n's approval is overtaken,
+  // yet it is still the only thing key n may send: the page sends it, and it runs nothing.
+  const k = now.n;
+  await page.locator("#send-to").fill(TO3);
+  await inCard("#send", "Review");
+  await see(/Approve: Send 0\.0001 ETH/);
+  wallet.refuseNext = true;
+  before = await signCount();
+  await hold();
+  check(await see(/wallet said no/) && (await signCount()) === before + 1, `the wallet refuses to send approval ${k}, after the passkey signed it`);
+  check(await see(new RegExp(`Key ${k} already signed this approval`)) && !(await page.locator("#act").getByRole("button", { name: /^Reject/ }).count()) &&
+    !(await page.getByRole("button", { name: "Run it with my wallet" }).count()), `…the card keeps it: no reject, no other vote, only approval ${k} again`);
+  const rejection = encodeFunctionData({ abi: SAFE_OWNERS_ABI, functionName: "execTransaction",
+    args: [H.safe, 0n, "0x", 0, 0n, 0n, 0n, "0x0000000000000000000000000000000000000000", "0x0000000000000000000000000000000000000000", concat(["0x" + ME.slice(2).padStart(64, "0"), "0x" + "00".repeat(32), "0x01"])] });
+  const r = await rpc("eth_sendTransaction", [{ from: ME, to: H.safe, data: rejection, gas: "0x" + (300000).toString(16) }]);
+  await pc.waitForTransactionReceipt({ hash: r.result });
+  await page.reload();
+  check(await see(new RegExp(`Overtaken[\\s\\S]*this approval is the only thing key ${k} will ever send`)), "the wallet's own transaction overtakes it: the page says so, and still offers only that approval");
+  before = await signCount();
+  const nonceNow = (await onChain()).nonce;
+  await hold();
+  check(await see(new RegExp(`Key ${k}: signed, sent, burned\\. The Safe had moved past this transaction`), 60000), "sent: it lands, and runs nothing");
+  now = await onChain();
+  check(now.n === k + 1 && now.nonce === nonceNow && (await signCount()) === before, `on chain: the seat is at key ${k + 1}, the Safe ran nothing, and key ${k} signed once, ever`);
+
+  // d. 2 of 2, decided by the wallet alone while it still can
+  await page.locator("#threshold").selectOption("2");
+  await inCard("#owners .threshold-row", "Review");
+  check(await see(/THRESHOLD[\s\S]*Approvals needed: 2/) && await page.getByRole("button", { name: "Run it with my wallet" }).isDisabled(), "2 of 2: red, and the wallet's button waits for the box too");
+  await page.getByLabel("I read the red page").check();
+  await page.getByRole("button", { name: "Run it with my wallet" }).click();
+  check(await see(/2 of 2 to approve[\s\S]*Every approval needs a seat[\s\S]*No backup if your passkey is lost/, 60000) && (await onChain()).threshold === 2, "on chain: 2 of 2, and the page says every approval needs the seat");
+  await shot("9-wallet-2of2");
+
+  // e. 2 of 2, the seat first: its vote lands, the Safe waits; then the wallet's vote runs it
+  const nonce2 = (await onChain()).nonce;
+  await page.locator("#send-to").fill(TO3);
+  await inCard("#send", "Review");
+  await see(/Votes: 0 of 2/);
+  check(!(await page.getByRole("button", { name: "Run it with my wallet" }).count()) && await page.getByRole("button", { name: "Approve with my wallet" }).count() === 1,
+    "with no votes yet, the wallet's vote alone isn't enough: it approves, it doesn't run");
+  before = await signCount();
+  await hold();
+  check(await see(/The seat's vote is on chain\. The Safe runs it once 2 owners have approved[\s\S]*Votes: 1 of 2/, 60000) && (await signCount()) === before + 1,
+    "the seat votes with one press; the Safe waits for the second vote");
+  now = await onChain();
+  check(now.n === k + 2 && now.nonce === nonce2, "on chain: the seat's key moved on; the Safe hasn't run it");
+  await page.reload();
+  check(await see(/Votes: 1 of 2/), "after a reload: the transaction and its vote are still there");
+  await page.getByRole("button", { name: "Run it with my wallet" }).click();
+  check(await see(/Your wallet ran it/, 60000) && (await onChain()).nonce === nonce2 + 1 && formatEther(await pc.getBalance({ address: TO3 })) === "0.0002",
+    "the wallet's vote makes two: it runs it");
+
+  // f. remove the wallet, the wallet first: its vote waits on chain, and the seat's press runs it
+  const n2 = (await onChain()).n;
+  await page.locator(`#owners li.owner:has-text("this wallet")`).getByRole("button", { name: "Remove" }).click();
+  check(await see(/REMOVE OWNER[\s\S]*Approvals needed becomes 1/), "removing the wallet: red, and approvals needed drops to 1");
+  await page.getByLabel("I read the red page").check();
+  await page.getByRole("button", { name: "Approve with my wallet" }).click();
+  check(await see(/Your wallet's vote is on chain[\s\S]*Votes: 1 of 2/, 60000), "the wallet votes first, with approveHash");
+  await page.getByLabel("I read the red page").check();
+  before = await signCount();
+  await hold();
+  check(await see(new RegExp(`Key ${n2}: signed, sent, burned\\. The Safe ran it`), 60000) && (await signCount()) === before + 1, "then the seat's press carries both votes, and the Safe runs it");
+  now = await onChain();
+  check(now.owners.length === 1 && now.owners[0] === H.seat.toLowerCase() && now.threshold === 1 && now.n === n2 + 1, "on chain: the seat alone again, 1 of 1");
+
+  // g. at phone width, with a transaction on the card; then reject is one press
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.locator("#send-to").fill(TO3);
+  await inCard("#send", "Review");
+  await see(/Approve: Send 0\.0001 ETH/);
+  await page.locator("#act details summary").click();
+  const wide = await page.evaluate(() => [...document.querySelectorAll("body *")].filter((e) => e.getBoundingClientRect().right > 391)
+    .map((e) => `${e.tagName.toLowerCase()}.${e.className}#${e.id}:${Math.round(e.getBoundingClientRect().right)}`).slice(0, 8));
+  check(await page.evaluate(() => document.documentElement.scrollWidth <= 390), `the wallet page at phone width, a transaction open: no sideways scroll${wide.length ? ": " + wide.join(" ") : ""}`);
+  await shot("9-wallet-phone");
+  await inCard("#act", "Reject");
+  check(await page.locator("#act").waitFor({ state: "hidden", timeout: 5000 }).then(() => true, () => false) && (await onChain()).n === n2 + 1, "Reject: one press, and nothing signed");
+  const hist2 = await page.locator("#activity").innerText();
+  check([k, k + 1, n2].every((x) => hist2.includes(`#${x}`)), "the seat's approvals from both pages, in one ledger");
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.setViewportSize({ width: 1360, height: 1000 });
+
+  // 9d. two seats. A second browser makes its own passkey, key 0 and shielded Safe; its own wallet pays
+  // for the build, from the main page. The first Safe takes the second seat as an owner (1 of 2: every
+  // owner a seat, and a backup), then the wallet (2 of 3). The wallet starts a send, a link carries it
+  // to the second browser, and the second seat's press makes two votes: the Safe runs it.
+  const ctx3 = await newBrowser();
+  const second = await ctx3.newPage();
+  second.on("pageerror", (e) => errors.push("second: " + e.message));
+  const cdp3 = await ctx3.newCDPSession(second);
+  await cdp3.send("WebAuthn.enable");
+  const { authenticatorId: auth3 } = await cdp3.send("WebAuthn.addVirtualAuthenticator", { options: {
+    protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true,
+    automaticPresenceSimulation: true, hasPrf: true } });
+  const signCount3 = async () => (await cdp3.send("WebAuthn.getCredentials", { authenticatorId: auth3 })).credentials[0]?.signCount ?? 0;
+  await second.goto(URL_);
+  await waitFor(/Make a passkey/, 30000, second);
+  await click("Make a passkey", second);
+  await waitFor(/Tap to make key 0/, 30000, second);
+  await click("Tap to make key 0", second);
+  await waitFor(/Build your shielded Safe/, 30000, second);
+  await click("Connect a wallet", second);
+  await second.locator(".chooser").waitFor();
+  await click("Test wallet (Anvil)", second);
+  await click("Build it: one transaction", second);
+  check(await waitFor(/Your Safe is built, and empty/, 60000, second), "a second browser: its own passkey, key 0 and shielded Safe, built by the wallet in that browser");
+  const H2 = Object.values(JSON.parse(await second.evaluate(() => localStorage.getItem("sab.home"))))[0];
+
+  // a. the second seat joins the first Safe, 1 of 2
+  let k2 = (await onChain()).n;
+  await page.locator("#add-owner").fill(H2.seat);
+  await page.locator("#add-threshold").selectOption("1");
+  await inCard("#owners .owner-add", "Review");
+  await see(/ADD OWNER/);
+  await page.getByLabel("I read the red page").check();
+  await hold();
+  check(await see(new RegExp(`Key ${k2}: signed, sent, burned\\. The Safe ran it`), 60000), "the first seat adds the second as an owner: one press");
+  check(await see(/1 of 2 to approve[\s\S]*Every approval needs a seat[\s\S]*A backup if your passkey is lost/) && await page.locator("#owners li.owner.seat").count() === 2 &&
+    /Another passkey's seat/.test(await page.locator("#owners").innerText()),
+    "two seats, 1 of 2: the page knows the other for a seat (the SeatFactory made it): every approval needs a seat, and there is a backup");
+
+  // b. the wallet as a third owner, 2 of 3
+  k2 = (await onChain()).n;
+  await inCard("#owners", "Use my wallet's address");
+  await page.locator("#add-threshold").selectOption("2");
+  await inCard("#owners .owner-add", "Review");
+  await see(/ADD OWNER[\s\S]*Approvals needed becomes 2/);
+  await page.getByLabel("I read the red page").check();
+  await hold();
+  await see(new RegExp(`Key ${k2}: signed, sent, burned\\. The Safe ran it`), 60000);
+  now = await onChain();
+  check(now.owners.length === 3 && now.owners.includes(H2.seat.toLowerCase()) && now.owners.includes(ME) && now.threshold === 2, "on chain: two seats and the wallet, 2 of 3");
+  check(await see(/2 of 3 to approve[\s\S]*Every approval needs a seat[\s\S]*A backup if your passkey is lost/), "2 of 3: the wallet can't approve alone, and either seat with the wallet still reaches 2");
+
+  // c. the wallet starts a send, and asks the second seat by link
+  const TO4 = "0x00000000000000000000000000000000000b0b04";
+  await page.locator("#send-to").fill(TO4);
+  await page.locator("#send-amount").fill("0.0001");
+  await inCard("#send", "Review");
+  await see(/Votes: 0 of 2/);
+  await page.getByRole("button", { name: "Approve with my wallet" }).click();
+  check(await see(/Your wallet's vote is on chain[\s\S]*Votes: 1 of 2/, 60000), "the wallet votes first");
+  const code2 = await page.locator("#act .verify .code").innerText();
+  await inCard("#act", "Copy link");
+  const plink = await page.evaluate(() => window.__e2eCopied);
+  check(plink.startsWith(URL_ + "wallet.html#propose=") && !plink.includes(code2), "the link to ask another owner: the wallet page and the transaction, no hash");
+  const nonce4 = (await onChain()).nonce;
+  await second.goto(plink);
+  check(await see(/A Safe your seat is in[\s\S]*Votes: 1 of 2/i, 30000, second) && (await second.locator("#act .verify .code").innerText()) === code2,
+    "the second browser opens it: the first Safe, the wallet's vote counted, and its own console shows the same check code");
+  const before3 = await signCount3();
+  await hold(2400, second);
+  check(await see(/Key 0: signed, sent, burned\. The Safe ran it/, 60000, second) && (await signCount3()) === before3 + 1,
+    "the second seat's press: one tap, key 0, and with the wallet's vote that makes two: the Safe runs it");
+  check((await onChain()).nonce === nonce4 + 1 && formatEther(await pc.getBalance({ address: TO4 })) === "0.0001" &&
+    Number(await pc.readContract({ address: H2.seat, abi: SEAT_ABI, functionName: "n" })) === 1, "on chain: the Safe ran it, and the second seat is at key 1");
+  check(await page.locator("#act").waitFor({ state: "hidden", timeout: 15000 }).then(() => true, () => false), "the first browser sees it run, by itself");
+  // d. a phone with no wallet, as on a real one: the second browser adds the first seat to its own
+  // Safe, 1 of 2. Holding signs; nobody else is asked (its seat's vote is enough); the approval goes
+  // out as a link, and the first browser's wallet sends it from the main page.
+  await second.evaluate(() => localStorage.setItem("e2e.nowallet", "1"));
+  await second.goto(URL_ + "wallet.html");
+  await see(/your shielded safe[\s\S]*1 of 1 to approve/i, 30000, second);
+  await second.locator("#add-owner").fill(H.seat);
+  await second.locator("#owners .owner-add").getByRole("button", { name: "Review", exact: true }).click();
+  check(await see(/ADD OWNER[\s\S]*No wallet here: you then share the approval as a link/, 30000, second) && !(await second.getByText(/Ask another owner/).count()),
+    "a browser with no wallet, a 1 of 1: holding is offered, and no other owner is asked");
+  await second.getByLabel("I read the red page").check();
+  const b3 = await signCount3();
+  await hold(2400, second);
+  check(await see(/Approval 1 is signed\. Send it from another device/, 60000, second) && (await signCount3()) === b3 + 1, "…one tap: key 1 signs, and the approval waits, as a link");
+  await second.locator("#act").getByRole("button", { name: "Copy link" }).click();
+  const alink2 = await second.evaluate(() => window.__e2eCopied);
+  check(alink2.startsWith(URL_ + "#pay="), "the link opens on the main page, where any wallet can send it");
+  await page.goto(alink2);
+  await waitFor(/Send approval 1[\s\S]*The seat accepts it/, 30000);
+  await click("Send it: one transaction");
+  check(await waitFor(/Sent\. Approval 1 landed[\s\S]*The Safe ran the transaction/, 60000), "the first browser's wallet sends it");
+  const owners2 = (await pc.readContract({ address: H2.safe, abi: SAFE_OWNERS_ABI, functionName: "getOwners" })).map((o) => o.toLowerCase());
+  check(owners2.length === 2 && owners2.includes(H.seat.toLowerCase()), "on chain: the second Safe has both seats");
+  check(await second.locator("#act").waitFor({ state: "hidden", timeout: 15000 }).then(() => true, () => false) &&
+    await see(/1 of 2 to approve[\s\S]*Every approval needs a seat[\s\S]*A backup if your passkey is lost/, 30000, second),
+    "the second browser sees it land by itself: two seats, 1 of 2, and a backup");
+  const listed = (await second.locator("#safes").innerText()).toLowerCase();
+  check(listed.includes(H.safe.slice(-6).toLowerCase()) && listed.includes(H2.safe.slice(-6).toLowerCase()), "the second browser keeps both Safes its seat is in");
+  await ctx3.close();
 
   // 10. the page reaches only this folder and the RPC
   const reach = await page.evaluate(() => fetch("https://example.com/").then(() => "reached", () => "blocked"));

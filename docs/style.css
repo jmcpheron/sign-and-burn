@@ -140,6 +140,8 @@ input.mono { font-family: var(--mono); font-size: 0.85rem; }
 .verify { display: flex; gap: 12px; align-items: center; margin: 10px 0; }
 .verify canvas { width: 40px; height: 40px; image-rendering: pixelated; border-radius: 6px; }
 .verify .code { font-family: var(--mono); font-size: 1.3rem; letter-spacing: 0.08em; color: var(--flame-2); }
+.verify > div { min-width: 0; }
+.verify .mono { overflow-wrap: anywhere; }
 .note { border-left: 3px solid var(--flame); padding: 8px 12px; background: var(--panel-2); border-radius: 0 8px 8px 0; font-size: 0.92rem; }
 .error { border-left-color: var(--bad); color: var(--bad); }
 .status { display: flex; gap: 10px; align-items: center; color: var(--muted); }
@@ -267,3 +269,60 @@ footer { max-width: 1240px; margin: 0 auto; padding: 10px 24px 40px; font-size: 
 
 .payment-request { margin-bottom: 24px; }
 .payment-request summary { cursor: pointer; }
+
+/* ---- the wallet page */
+.top nav a[aria-current="page"] { color: var(--text); }
+main.wallet { max-width: 1100px; }
+.wallet-head { display: flex; flex-wrap: wrap; gap: 14px 18px; align-items: center; padding: 30px 0 10px; }
+.wallet-head h1 { font-size: 1.6rem; width: 100%; }
+.wallet-blockie { width: 56px; height: 56px; image-rendering: pixelated; border-radius: 12px; flex: none; }
+.wallet-head .eyebrow { margin: 0; }
+.balance { font-size: clamp(1.8rem, 5vw, 2.6rem); font-weight: 700; line-height: 1.1; }
+.wallet-sub { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin-top: 6px; }
+.wallet-who { margin-left: auto; display: grid; gap: 8px; justify-items: end; min-width: 0; }
+.console-line { display: flex; gap: 10px; align-items: center; font-size: 0.84rem; color: var(--muted); margin: 0 0 14px; }
+.console-line .lamp { flex: none; }
+#flash:empty { display: none; }
+#flash { margin-bottom: 14px; display: grid; gap: 8px; }
+#flash p { margin: 0; }
+.wallet-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+.wallet-main, .wallet-grid .side { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.card h3 { font-size: 1rem; margin: 18px 0 8px; }
+.card.approval { border-color: var(--flame); }
+.card.approval.red { border-color: var(--bad); box-shadow: inset 0 0 0 2px var(--bad); background: var(--bad-bg); }
+.send-form, .owner-form { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+.owners, .votes { list-style: none; padding: 0; margin: 10px 0; display: grid; gap: 8px; }
+.owner { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 4px; }
+.owner .h { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
+.owner .actions { margin-top: 2px; }
+.owner.seat { border-left: 4px solid var(--ok); }
+.owner.seat .badge { color: var(--ok); }
+.owner.exposed { border-left: 4px solid var(--warn); }
+.owner.exposed .badge, .owner.fresh .badge, .owner.contract .badge { color: var(--warn); }
+.badge.you { color: var(--flame-2); }
+.verdict { border-radius: 10px; padding: 10px 12px; margin: 12px 0; background: var(--panel-2); border-left: 4px solid var(--ok); }
+.verdict.bad { border-left-color: var(--bad); }
+.verdict.bad b { color: var(--bad); }
+.verdict.warn { border-left-color: var(--warn); }
+.verdict.warn b { color: var(--warn); }
+.safes { list-style: none; padding: 0; margin: 10px 0; display: grid; gap: 8px; }
+.safes li { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
+#add-safe { flex: 1 1 14em; }
+.verdict.ok b { color: var(--ok); }
+.verdict p { margin: 4px 0 0; }
+.card details p { margin: 6px 0; }
+.votes li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 0.9rem; }
+.votes .mark { width: 1.2em; color: var(--muted); font-weight: 700; }
+.votes .yes .mark { color: var(--ok); }
+.ack { display: flex; gap: 6px; align-items: center; }
+#log { margin-top: 8px; }
+@media (max-width: 920px) {
+  .wallet-grid { grid-template-columns: minmax(0, 1fr); }
+  .wallet-who { margin-left: 0; justify-items: start; width: 100%; }
+}
+@media (max-width: 600px) {
+  .send-form, .owner-form { grid-template-columns: minmax(0, 1fr); }
+}
+.qr-wrap { margin-top: 10px; }
+.qr canvas { display: block; width: 100%; max-width: 320px; height: auto; margin-top: 8px; image-rendering: pixelated; border-radius: 6px; }
+.qr canvas.dense { max-width: 640px; }

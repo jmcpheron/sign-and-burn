@@ -1,7 +1,11 @@
-// The chain: what the page reads, and the one kind of transaction it asks a wallet to send. The
+// The chain: what the page reads, and the transactions it asks a wallet to send. For a press the
 // wallet only pays gas. Everything it sends is a Multicall3 call whose parts anyone could send, and
 // none of it is approved by the wallet's own key: the seat approves, with the passkey and its
 // one-time key. So a wallet whose curve key breaks loses its gas money, not the Safe.
+//
+// The one exception is a wallet the Safe has made an owner (the wallet page, wallet.html). It votes
+// with its own key: Safe's approveHash, or execTransaction as the sender. A Safe in which such owners
+// can reach the threshold without the seat loses the seat's protection (notes/research.md, question 5).
 //
 // Addresses come from console/cfg.py (the same file the console runs) and contracts/deployment.json.
 // viem's client keeps ccipRead off: the page never follows a contract's request to fetch elsewhere.
@@ -22,7 +26,12 @@ export const SAFE_ABI = parseAbi([
   "function isOwner(address owner) view returns (bool)",
   "function VERSION() view returns (string)",
   "function approvedHashes(address owner, bytes32 hash) view returns (uint256)",
+  "function approveHash(bytes32 hashToApprove)",
+  "function addOwnerWithThreshold(address owner, uint256 _threshold)",
+  "function removeOwner(address prevOwner, address owner, uint256 _threshold)",
+  "function changeThreshold(uint256 _threshold)",
 ]);
+const SENTINEL = "0x0000000000000000000000000000000000000001";
 const PROXY_FACTORY_ABI = parseAbi([
   "function createProxyWithNonce(address _singleton, bytes initializer, uint256 saltNonce) returns (address)",
   "function proxyCreationCode() pure returns (bytes)",
@@ -216,19 +225,70 @@ export async function buildCalls(C, { pk, signer, seatNumber, firstKey, seat }) 
 }
 
 /** One press: the seat's approval (it must land), then the Safe transaction it approves (it may
- * fail, say for lack of ETH, and run later: the Safe keeps the seat's vote). */
-export function approveCalls(a, tx) {
+ * fail, say for lack of ETH or of other owners' votes, and run later: the Safe keeps the seat's vote).
+ * others: owners whose votes the Safe already holds for it, counted in the same execTransaction. */
+export function approveCalls(a, tx, others = []) {
   const approve = { target: a.seat, allowFailure: false, callData: encodeFunctionData({ abi: SEAT_ABI, functionName: "approve",
     args: [a.safe, a.safeTxHash, a.nextKey, a.oneTime, a.curveSig] }) };
-  return [approve, execCall(a.seat, a.safe, tx)];
+  return [approve, execCall(a.seat, a.safe, tx, others)];
 }
 
-/** execTransaction with the seat's vote as a pre-approved signature: r = the seat, s = 0, v = 1. */
-export function execCall(seat, safe, tx) {
-  const signatures = concat([pad(seat, { size: 32 }), pad("0x", { size: 32 }), "0x01"]);
-  return { target: safe, allowFailure: true, callData: encodeFunctionData({ abi: SAFE_ABI, functionName: "execTransaction",
-    args: [tx.to, BigInt(tx.value), tx.data || "0x", Number(tx.operation), 0n, 0n, 0n, zeroAddress, zeroAddress, signatures] }) };
+/** execTransaction with the seat's vote, and any others', as pre-approved signatures. */
+export function execCall(seat, safe, tx, others = []) {
+  return { target: safe, allowFailure: true, callData: execData(tx, [seat, ...others]) };
 }
+
+/** execTransaction for these voters. Each vote is a pre-approved signature: r = the owner, s = 0,
+ * v = 1. Safe accepts one when the owner is the sender, or has approved the hash on chain (the seat
+ * does, in approve). It wants them in ascending order of owner. */
+export function execData(tx, voters) {
+  const sorted = [...new Set(voters.map((v) => v.toLowerCase()))].sort((x, y) => (BigInt(x) < BigInt(y) ? -1 : 1));
+  const signatures = sorted.length ? concat(sorted.map((v) => concat([pad(v, { size: 32 }), pad("0x", { size: 32 }), "0x01"]))) : "0x";
+  return encodeFunctionData({ abi: SAFE_ABI, functionName: "execTransaction",
+    args: [tx.to, BigInt(tx.value), tx.data || "0x", Number(tx.operation), 0n, 0n, 0n, zeroAddress, zeroAddress, signatures] });
+}
+
+// ----------------------------------------------------------------------------- owners
+/** The owners whose votes the Safe holds for this hash (approveHash, or a seat's approval). */
+export async function votesFor(C, safe, owners, hash) {
+  const got = await Promise.all(owners.map((o) => C.pc.readContract({ address: safe, abi: SAFE_ABI, functionName: "approvedHashes", args: [o, hash] })));
+  return owners.filter((_, i) => got[i] > 0n);
+}
+
+/** Whether an owner is a seat: a contract that names a passkey signer, and that the SeatFactory says
+ * it made for that signer. Anything else that answers curveSigner() is not one. */
+export async function isSeat(C, a) {
+  try {
+    const signer = await C.pc.readContract({ address: a, abi: SEAT_ABI, functionName: "curveSigner" });
+    return (await seatsOf(C, signer)).some((s) => s.toLowerCase() === a.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+/** A Safe transaction that changes the owners. Removing one needs the owner before it in Safe's
+ * list (the first one's is the sentinel, 0x…01). */
+export function ownerTx(safe, nonce, change) {
+  let data;
+  if (change.add) data = encodeFunctionData({ abi: SAFE_ABI, functionName: "addOwnerWithThreshold", args: [getAddress(change.add), BigInt(change.threshold)] });
+  else if (change.remove) {
+    const i = change.owners.findIndex((o) => o.toLowerCase() === change.remove.toLowerCase());
+    if (i < 0) throw new Error("That address isn't an owner of this Safe.");
+    data = encodeFunctionData({ abi: SAFE_ABI, functionName: "removeOwner", args: [i ? change.owners[i - 1] : SENTINEL, change.owners[i], BigInt(change.threshold)] });
+  } else data = encodeFunctionData({ abi: SAFE_ABI, functionName: "changeThreshold", args: [BigInt(change.threshold)] });
+  return { to: safe, value: "0", data, operation: 0, nonce: String(nonce) };
+}
+
+/** A call to the Safe from the wallet itself, not through Multicall3: an owner's vote (approveHash, or
+ * execTransaction, where the sender's own vote counts), or a transaction its votes already allow.
+ * Simulated first: a call that would revert is never sent. -> the transaction hash */
+export async function sendToSafe(C, W, safe, data) {
+  const account = W.account;
+  await C.pc.call({ account, to: safe, data });
+  const gas = await C.pc.estimateGas({ account, to: safe, data });
+  return W.w.sendTransaction({ account, to: safe, data, gas: gas + gas / 4n, chain: C.chain });
+}
+export const approveHashData = (hash) => encodeFunctionData({ abi: SAFE_ABI, functionName: "approveHash", args: [hash] });
 
 /** Ask the seat itself, without sending anything: -> null if it would accept, else its error's name. */
 export async function trySeat(C, seat, args, from) {

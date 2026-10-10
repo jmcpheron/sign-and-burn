@@ -29,6 +29,11 @@ MicroPython (https://micropython.org), MIT, Copyright (c) 2013-2025 Damien P. Ge
 viem, @noble/hashes, @noble/curves, @scure/base, abitype and ox, MIT: bundled into docs/app.js, with
   their notices at the end of that file.
 
+QR Code generator, by Project Nayuki (https://www.nayuki.io/page/qr-code-generator-library), MIT,
+  Copyright (c) Project Nayuki: site/src/qr.mjs follows its structure, and its tables of error
+  correction blocks. site/qr-vectors.json, the encoder's test vectors, was made with python-qrcode 8.2
+  (BSD) by tools/qr-vectors.py; neither is part of the page.
+
 Blockies (https://github.com/ethereum/blockies): site/src/blockies.mjs draws the same identicons,
   ported from its algorithm.
 

@@ -18,6 +18,7 @@
   </a>
   <span class="net">Base Sepolia · test network only</span>
   <nav aria-label="Main">
+    <a href="wallet.html">Wallet</a>
     <a href="#how">How it works</a>
     <a href="#attacks">Attack room</a>
     <a href="#check">Check this page</a>
@@ -201,7 +202,7 @@ m = sha256("sign-and-burn/one-time/v1" ‖ c ‖ nextKey)</pre>
         <tr><td>One key signs two messages, both public, and curves are broken</td><td class="bad">no</td><td>The guardrail is the only defence.</td></tr>
         <tr><td>A bug in the one-time code</td><td class="warn">partly</td><td>The curve signature still binds the transaction, but not the next key. Someone who could forge one-time signatures could swap the next key on an approval waiting to land, and take the seat.</td></tr>
         <tr><td>A lost ledger (cleared site data, a restored backup), or a synced passkey used on a second device</td><td class="bad">no</td><td>The console's ledger lives in one browser. Use one device at a time.</td></tr>
-        <tr><td>Other owners who can reach the threshold without the seat</td><td class="bad">no</td><td>A seat protects a Safe only if every set of owners that meets the threshold includes enough seats. The demo Safe is 1 of 1.</td></tr>
+        <tr><td>Other owners who can reach the threshold without the seat</td><td class="bad">no</td><td>A seat protects a Safe only if every set of owners that meets the threshold includes enough seats. The demo Safe starts 1 of 1. The <a href="wallet.html">wallet page</a> can add owners, and says when they can approve without the seat.</td></tr>
         <tr><td>A hostile copy of this page, or a hostile browser extension</td><td class="bad">no</td><td>The page sees the seeds. Check its fingerprint, or run your own copy.</td></tr>
         <tr><td>A stolen, unlocked device, or a taken-over account that syncs your passkeys</td><td class="bad">no</td><td>Whoever has the passkey has both halves.</td></tr>
         <tr><td>Lost passkey</td><td class="warn">stuck</td><td>Here the seat can't approve again. In a real multisig the other owners replace it.</td></tr>

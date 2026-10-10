@@ -10,7 +10,10 @@ npm run e2e     # the whole flow in Chromium (needs anvil)
 
 `src/wots.mjs` against all 7 vectors; the danger case's forgery against a throwaway key; and
 `console/cfg.py` against what the page reads (Base Sepolia only, the factory's address as
-`contracts/deployment.json` has it).
+`contracts/deployment.json` has it). Also the links (build, approval, proposal, compact approval)
+and their refusals, the votes and owner changes the wallet page sends, and `src/qr.mjs` module for
+module against 16 codes from python-qrcode 8.2 (`site/qr-vectors.json`, made by `tools/qr-vectors.py`
+by hand; CI only reads the file).
 
 ## In Chromium (`site/e2e.mjs`)
 
@@ -32,6 +35,7 @@ The checks, in order:
 3. One tap: key 0's fingerprint, and every address before anything exists.
 4. With no wallet in the browser, at phone width, the build keeps Connect and a visible link.
    Copied, it is this page's address followed by public values only: it names neither the seat nor the Safe.
+   "Show QR code" draws the same link as a QR code.
 5. With no wallet found, Connect stays available and explains the payment link. Copy writes only
    the URL, even when the browser has a share sheet. If the clipboard refuses, the link stays visible.
    The second browser refuses a link with another chain. Its “Pay for a request” form refuses bad
@@ -66,11 +70,50 @@ The checks, in order:
     names it, the seat is at key 5, and the Safe hasn't run it.
 15. A press with no wallet: the first browser loses its wallet. Holding asks the passkey once (key 5),
     and the approval waits to be shared. After a reload: the same link, and no new passkey signature.
-    The second browser refuses a link with another next key (the seat's own refusal, no button), then
+    Its QR code carries the approval in compact form (`#aq=`, base 43). The second browser opens that
+    compact link as a phone's camera would: the same approval, the same check code, and the seat
+    accepts it. It refuses a link with another next key (the seat's own refusal, no button), then
     pastes the real one into “Pay for a request”. The seat accepts it, and the hash it works out
     shows the same check code. Its wallet sends it: the seat moves to key 6, and the Safe runs it. The first browser sees approval 5
     land by itself, says another device sent it, and its history has it landed.
-16. The CSP refuses another host. A phone-width screen has no sideways scroll. No page errors.
+16. The wallet page (`wallet.html`), in the same browser: it finds the main page's Safe, its balance,
+    and the seat as its one owner; the wallet pays gas only.
+    - **Add the wallet as an owner, 1 of 2.** Red, and holding waits for the box. One press: the
+      seat approves and the Safe runs it. On chain: two owners, threshold 1. The page says the seat
+      isn't needed now, and that the wallet's public key is on chain (it has sent transactions).
+    - **The wallet alone.** A send the console reviews; the wallet runs it as an owner. The Safe runs
+      it; the seat's `n` and the passkey's sign count don't move.
+    - **The guardrail across both kinds of owner.** Key 7 signs a send and the wallet refuses to
+      send it. The card offers only approval 7 again: no Reject, no wallet vote. Then the wallet
+      runs another transaction at the same Safe nonce, straight to the Safe. After a reload the card
+      says the approval was overtaken and still offers only it. Sent: it lands, the seat moves to
+      key 8, the Safe runs nothing, and no new passkey signature.
+    - **2 of 2**, run by the wallet while it still can (red, and its button waits for the box). The
+      page says every approval needs the seat.
+    - **2 of 2, the seat first.** With no votes, the wallet may approve but not run. One press: the
+      seat's vote lands and the Safe waits. After a reload the vote is still shown. The wallet's
+      vote runs it.
+    - **Remove the wallet, the wallet first.** Red; approvals needed drops to 1. The wallet votes
+      with `approveHash`; the seat's press carries both votes, and the Safe runs it. On chain: the
+      seat alone, 1 of 1.
+    - **Reject** is one press, and nothing is signed. The seat's history lists approvals made on
+      both pages, from one ledger. At phone width, no sideways scroll.
+17. Two seats. A second browser, with its own virtual passkey, makes a passkey, key 0 and its own
+    Safe; the wallet in that browser pays for the build from the main page ("Build it"). Then, on
+    the first browser's wallet page:
+    - The second seat is added to the first Safe, 1 of 2, with one press. The owners card knows it
+      for a seat (the SeatFactory made it): every approval needs a seat, and there is a backup.
+    - The wallet is added too, 2 of 3. On chain: two seats and the wallet, threshold 2.
+    - The wallet votes first on a send, and copies the link to ask another owner. It names the
+      wallet page and the transaction, and no hash. The second browser opens it: the first Safe,
+      the wallet's vote counted, the same check code. One press there (key 0, one passkey signature)
+      makes two votes, and the Safe runs it. The first browser sees it run by itself; the second
+      keeps both Safes its seat is in.
+    - A phone with no wallet: the second browser adds the first seat to its own 1 of 1 Safe. Holding
+      is offered, and no other owner is asked. One tap signs key 1, and the approval waits as a link to
+      the main page. The first browser's wallet sends it there; on chain the second Safe has both
+      seats, and the second browser sees it land by itself: 1 of 2, and a backup.
+18. The CSP refuses another host. A phone-width screen has no sideways scroll. No page errors.
 
 Screenshots go to `site/shots/` (not committed).
 
@@ -82,6 +125,9 @@ Screenshots go to `site/shots/` (not committed).
 | After a reload, the page didn't reconnect the wallet, so "send it again" had no button | a quiet reconnect, with no prompt, of the wallet used last |
 | The page took the first wallet the browser announced | a chooser, remembered by the wallet's `rdns` |
 | The danger case sometimes found no forgery in two million tries: four random signatures can leave long odds | it signs until the odds are about 1 in 50,000, and says how many it took |
+| A link pasted into "Pay for a request" while the page started was opened twice, and the screen went back to "Working out…" for a moment | start-up leaves an open review alone, and redraws it with the wallet it found |
+| Two quick account switches: the first one's late redraw replaced the recipient field while it was being typed in | a switch that a later one has replaced doesn't redraw |
+| The wallet page scrolled sideways at phone width with a transaction open: the Safe transaction hash didn't wrap | the hash wraps, and the wallet page's columns are `minmax(0, 1fr)` |
 
 Found live, not by the e2e: with a smart-account wallet the attack room stayed empty, because the page
 looked for the approval only in a plain Multicall3 call, and that wallet wraps it. It now searches the

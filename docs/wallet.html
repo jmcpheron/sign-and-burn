@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en" data-page="wallet">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://sepolia.base.org; base-uri 'none'; form-action 'none'">
+<title>Sign and Burn · Wallet</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="dark light">
+<meta name="description" content="Your shielded Safe as a plain wallet: send, see who owns it, and add your ordinary wallet as a second owner. Base Sepolia only.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="./" aria-label="Sign and Burn, home">
+    <img src="favicon.svg" width="26" height="26" alt="">
+    <span>Sign and Burn</span>
+  </a>
+  <span class="net">Base Sepolia · test network only</span>
+  <nav aria-label="Main">
+    <a href="wallet.html" aria-current="page">Wallet</a>
+    <a href="./">The demo, step by step</a>
+    <a href="./#how">How it works</a>
+    <a href="https://github.com/jmcpheron/sign-and-burn">Source</a>
+  </nav>
+</header>
+
+<main class="wallet">
+  <section class="wallet-head" id="account" aria-live="polite">
+    <p class="muted">Starting the console…</p>
+  </section>
+
+  <p class="console-line"><span class="lamp" id="lamp" aria-hidden="true"></span>
+    <span id="stats">The console: MicroPython in WebAssembly. It reviews every transaction here, and signs only for your seat.</span></p>
+
+  <div id="flash" role="status"></div>
+
+  <section class="wallet-grid">
+    <div class="wallet-main">
+      <section class="card" id="act"></section>
+      <section class="card" id="send"></section>
+      <section class="card" id="activity"></section>
+    </div>
+    <aside class="side">
+      <section class="card" id="owners"></section>
+      <section class="card" id="safes"></section>
+    </aside>
+  </section>
+
+  <details class="card serial">
+    <summary>Serial: every line this page and the console said</summary>
+    <p class="small">The same console as the main page, and the same ledger: whichever page signs with a key, the other only
+      sends that approval again. Your passkey's seeds are secret and are never shown.</p>
+    <pre id="log"></pre>
+  </details>
+</main>
+
+<footer>
+  <p><b>Test network only.</b> Base Sepolia; every other chain is refused. Not audited, and not for real money.</p>
+  <p class="muted">Making a passkey and building the Safe happen on <a href="./">the main page</a>.
+    <a href="https://github.com/jmcpheron/sign-and-burn">Source</a></p>
+</footer>
+<script type="module" src="app.js"></script>
+</body>
+</html>
