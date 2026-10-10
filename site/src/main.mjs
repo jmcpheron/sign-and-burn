@@ -459,12 +459,13 @@ async function payApproval() {
     S.busy = "Your wallet sends it. It pays gas, and approves nothing…"; render();
     const hash = await ch.send(S.C, S.wallet, ch.approveCalls(W.a, P.req.tx));
     S.busy = "Waiting for the block…"; render();
-    await ch.receipt(S.C, hash);
-    // As after a press here: the seat says whether the approval landed, and in which transaction.
-    const landed = await ch.approvalOnChain(S.C, P.req.seat, P.req.n);
+    const rc = await ch.receipt(S.C, hash);
+    // As after a press here: the seat says whether the approval landed, and in which transaction, as
+    // of the receipt's block (chain.readAt).
+    const landed = await ch.approvalOnChain(S.C, P.req.seat, P.req.n, rc.blockNumber);
     if (!landed) throw new Error(`The transaction went through (${short(hash, 10, 6)}), but approval ${P.req.n} didn't land: the seat is still at key ${P.req.n}.`);
     P.hash = landed.txHash || hash;
-    P.ran = (await ch.readSafe(S.C, P.req.safe)).nonce > W.safe.nonce;
+    P.ran = (await ch.nonceAt(S.C, P.req.safe, rc.blockNumber)) > W.safe.nonce;
     P.what = { ...W, landed };
   });
 }
@@ -509,7 +510,8 @@ async function press(tx) {
     }
     if (!got.hash) { S.shared = ""; return; }
     await refresh();
-    S.last = { n: got.n, a: got.a, hash: got.hash, theirs: got.theirs, ran: S.safe.nonce > nonceBefore, m: got.signed?.m, summary: got.review.summary };
+    const ran = (await ch.nonceAt(S.C, S.safe.address, got.block)) > nonceBefore;
+    S.last = { n: got.n, a: got.a, hash: got.hash, theirs: got.theirs, ran, m: got.signed?.m, summary: got.review.summary };
     S.step = "done";
   });
   if (S.error || S.step === "working") S.step = "ready";

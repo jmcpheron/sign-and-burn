@@ -88,3 +88,14 @@ account's own wrapper. At 0.006 gwei, about 0.0000053 test ETH a press. After th
 - [ ] **A second device** with the synced passkey: "I already have one", then a press from there. One
       device at a time (KICKOFF.md, "What's left").
 - [ ] **Ten in a row**, on this Mac and one other platform.
+
+## Two seats, from the wallet page (2026-10-10)
+
+Read back from the chain on 2026-10-10 with `cast`: the second seat, `0xb73851bAF45A5C21B22b9FDA338763DBC7348b6b`,
+and its Safe `0x1EF7Ef5A8a13A7FEaDF00dcA1296F6311CBC6d82`. That Safe's owners are both seats, threshold 1,
+nonce 3. Approval 4 of the first seat (`0xCE5fa5…`) is a vote on that second Safe, signed on one device
+and sent from another's wallet by link: transaction
+`0x35d0c3977f74591c6e12aa062a4c494e0652fb52f51a5868bf1f165c323f80b8`, block 47,920,999. In it the seat
+moved to key 5, the second Safe's `approveHash` and its `ExecutionSuccess`. The page that sent it said
+"approval 4 didn't land": a false alarm. Its read after the receipt reached a node behind the block
+(log, 2026-10-10, "a lagging RPC").

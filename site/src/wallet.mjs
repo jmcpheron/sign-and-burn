@@ -287,7 +287,7 @@ async function voteSeat(tx) {
     S.draft = null; S.acks = {};
     await refresh();
     if (!got.hash) { S.flash = `Key ${got.n} signed it. Now send it from a device with a wallet: copy the link below.`; return; }
-    const ran = S.safe.nonce > nonceBefore;
+    const ran = (await ch.nonceAt(S.C, S.safe.address, got.block)) > nonceBefore;
     S.flash = el("span", {}, `Key ${got.n}: signed, sent, burned. ` + (got.theirs ? "Someone copied the approval and sent it first: it can do only what you signed. " : "") +
       (ran ? "The Safe ran it. " : Number(tx.nonce) < nonceBefore ? "The Safe had moved past this transaction, so it ran nothing; the seat is at the next key now. " :
         `The seat's vote is on chain. The Safe runs it once ${S.safe.threshold} owners have approved. `), txLink(got.hash));

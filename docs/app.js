@@ -21012,8 +21012,19 @@ async function readSafe(C2, address) {
   ]);
   return { address, exists: true, owners, threshold: Number(threshold), nonce: Number(nonce), version: version4, balance };
 }
-async function approvalOnChain(C2, seat, k) {
-  const block = await C2.pc.readContract({ address: seat, abi: SEAT_ABI, functionName: "approvedIn", args: [BigInt(k)] });
+async function readAt(C2, at, read2) {
+  for (let i = 0; ; i++) {
+    try {
+      return await read2(at);
+    } catch (e) {
+      if (i >= 20) throw e;
+      await new Promise((r) => setTimeout(r, C2.id === 31337 ? 250 : 1e3));
+    }
+  }
+}
+async function approvalOnChain(C2, seat, k, at) {
+  const ask2 = (blockNumber) => C2.pc.readContract({ address: seat, abi: SEAT_ABI, functionName: "approvedIn", args: [BigInt(k)], ...blockNumber ? { blockNumber } : {} });
+  const block = at ? await readAt(C2, at, ask2) : await ask2();
   if (!block) return null;
   const event = SEAT_ABI.find((x) => x.type === "event" && x.name === "Approved");
   const [log3] = await C2.pc.getLogs({ address: seat, event, args: { n: BigInt(k) }, fromBlock: block, toBlock: block });
@@ -21139,7 +21150,7 @@ async function trySeat(C2, seat, args, from16) {
     return r?.data?.errorName || r?.reason || r?.shortMessage || e.shortMessage || String(e.message || e);
   }
 }
-var SEAT_ABI, FACTORY_ABI, SAFE_ABI, SENTINEL, PROXY_FACTORY_ABI, SIGNER_FACTORY_ABI, MULTICALL_ABI, hasCode, receipt, APPROVE, creationCode, deployFactory, approveHashData;
+var SEAT_ABI, FACTORY_ABI, SAFE_ABI, SENTINEL, PROXY_FACTORY_ABI, SIGNER_FACTORY_ABI, MULTICALL_ABI, hasCode, receipt, nonceAt, APPROVE, creationCode, deployFactory, approveHashData;
 var init_chain2 = __esm({
   "src/chain.mjs"() {
     init_esm();
@@ -21176,6 +21187,7 @@ var init_chain2 = __esm({
     ]);
     hasCode = async (C2, address) => (await C2.pc.getCode({ address }) || "0x") !== "0x";
     receipt = (C2, hash3) => C2.pc.waitForTransactionReceipt({ hash: hash3, pollingInterval: C2.id === 31337 ? 250 : 2e3 });
+    nonceAt = (C2, safe, at) => readAt(C2, at, async (blockNumber) => Number(await C2.pc.readContract({ address: safe, abi: SAFE_ABI, functionName: "nonce", blockNumber })));
     APPROVE = toFunctionSelector(SEAT_ABI.find((x) => x.type === "function" && x.name === "approve")).slice(2);
     creationCode = null;
     deployFactory = (C2) => ({ target: C2.cfg.create2Deployer, allowFailure: false, callData: concat([deployment_default.salt, deployment_default.SeatFactory.initCode]) });
@@ -21711,11 +21723,11 @@ async function approve2({ C: C2, pk, seat, safe, tx, wallet, others = [], say: s
   ask({ op: "sent", chainId: C2.id, seat: a.seat, n, txHash: hash3 });
   say2("Waiting for the block…");
   const r = await receipt(C2, hash3);
-  const landed = await approvalOnChain(C2, a.seat, n);
+  const landed = await approvalOnChain(C2, a.seat, n, r.blockNumber);
   if (!landed) throw new Error(`The transaction ${r.status === "reverted" ? "reverted" : "went through"} (${short(hash3, 10, 6)}), but approval ${n} didn't land: the seat is still at key ${n}. The console keeps the approval, and will only ever send this one for key ${n}.`);
   const theirs = !!landed.txHash && landed.txHash.toLowerCase() !== hash3.toLowerCase();
   if (theirs) ask({ op: "sent", chainId: C2.id, seat: a.seat, n, txHash: landed.txHash });
-  return { ...out, hash: landed.txHash || hash3, theirs };
+  return { ...out, hash: landed.txHash || hash3, theirs, block: r.blockNumber };
 }
 var init_approve2 = __esm({
   "src/approve.mjs"() {
@@ -22257,7 +22269,7 @@ async function voteSeat(tx) {
       S.flash = `Key ${got.n} signed it. Now send it from a device with a wallet: copy the link below.`;
       return;
     }
-    const ran = S.safe.nonce > nonceBefore;
+    const ran = await nonceAt(S.C, S.safe.address, got.block) > nonceBefore;
     S.flash = el("span", {}, `Key ${got.n}: signed, sent, burned. ` + (got.theirs ? "Someone copied the approval and sent it first: it can do only what you signed. " : "") + (ran ? "The Safe ran it. " : Number(tx.nonce) < nonceBefore ? "The Safe had moved past this transaction, so it ran nothing; the seat is at the next key now. " : `The seat's vote is on chain. The Safe runs it once ${S.safe.threshold} owners have approved. `), txLink(got.hash));
   });
 }
@@ -23161,11 +23173,11 @@ async function payApproval() {
     const hash3 = await send(S2.C, S2.wallet, approveCalls(W.a, P2.req.tx));
     S2.busy = "Waiting for the block…";
     render2();
-    await receipt(S2.C, hash3);
-    const landed = await approvalOnChain(S2.C, P2.req.seat, P2.req.n);
+    const rc = await receipt(S2.C, hash3);
+    const landed = await approvalOnChain(S2.C, P2.req.seat, P2.req.n, rc.blockNumber);
     if (!landed) throw new Error(`The transaction went through (${short(hash3, 10, 6)}), but approval ${P2.req.n} didn't land: the seat is still at key ${P2.req.n}.`);
     P2.hash = landed.txHash || hash3;
-    P2.ran = (await readSafe(S2.C, P2.req.safe)).nonce > W.safe.nonce;
+    P2.ran = await nonceAt(S2.C, P2.req.safe, rc.blockNumber) > W.safe.nonce;
     P2.what = { ...W, landed };
   });
 }
@@ -23216,7 +23228,8 @@ async function press(tx) {
       return;
     }
     await refresh2();
-    S2.last = { n: got.n, a: got.a, hash: got.hash, theirs: got.theirs, ran: S2.safe.nonce > nonceBefore, m: got.signed?.m, summary: got.review.summary };
+    const ran = await nonceAt(S2.C, S2.safe.address, got.block) > nonceBefore;
+    S2.last = { n: got.n, a: got.a, hash: got.hash, theirs: got.theirs, ran, m: got.signed?.m, summary: got.review.summary };
     S2.step = "done";
   });
   if (S2.error || S2.step === "working") S2.step = "ready";
