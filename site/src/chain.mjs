@@ -287,6 +287,50 @@ export async function isSeat(C, a) {
   }
 }
 
+// ----------------------------------------------------------------------------- tokens
+export const ERC20_ABI = parseAbi([
+  "function balanceOf(address) view returns (uint256)",
+  "function decimals() view returns (uint8)",
+  "function symbol() view returns (string)",
+  "function transfer(address to, uint256 amount) returns (bool)",
+]);
+
+/** The tokens the console knows on this chain (cfg.py "tokens", or the chain it is the same as):
+ * [{ address, symbol, decimals, pinned: true }]. */
+export function pinnedTokens(C) {
+  const list = C.cfg.tokens?.[String(C.id)] || C.cfg.tokens?.[C.cfg.sameAs?.[String(C.id)]] || {};
+  return Object.entries(list).map(([address, [symbol, decimals]]) => ({ address: getAddress(address), symbol, decimals, pinned: true }));
+}
+
+/** A token's symbol and decimals, as its contract says: for the page's own display only. The console
+ * reads amounts only for the tokens it knows, and shows raw units for the rest. */
+export async function tokenInfo(C, address) {
+  const [symbol, decimals] = await Promise.all([
+    C.pc.readContract({ address, abi: ERC20_ABI, functionName: "symbol" }),
+    C.pc.readContract({ address, abi: ERC20_ABI, functionName: "decimals" }),
+  ]);
+  return { address: getAddress(address), symbol: String(symbol).slice(0, 12), decimals: Number(decimals) };
+}
+
+export async function tokenBalances(C, holder, tokens) {
+  return Promise.all(tokens.map((t) => C.pc.readContract({ address: t.address, abi: ERC20_ABI, functionName: "balanceOf", args: [holder] }).catch(() => null)));
+}
+
+/** A Safe transaction that sends `amount` (in the token's smallest units) of a token. */
+export const tokenTx = (token, to, amount, nonce) => ({ to: getAddress(token), value: "0", operation: 0, nonce: String(nonce),
+  data: encodeFunctionData({ abi: ERC20_ABI, functionName: "transfer", args: [getAddress(to), BigInt(amount)] }) });
+
+/** A transaction's token send, if that is what it is: { token, to, amount }. */
+export function tokenSendOf(tx) {
+  if (BigInt(tx.value || 0) !== 0n || Number(tx.operation) !== 0 || !String(tx.data || "").toLowerCase().startsWith("0xa9059cbb")) return null;
+  try {
+    const d = decodeFunctionData({ abi: ERC20_ABI, data: tx.data });
+    return { token: tx.to, to: d.args[0], amount: d.args[1] };
+  } catch {
+    return null;
+  }
+}
+
 /** A Safe transaction that changes the owners. Removing one needs the owner before it in Safe's
  * list (the first one's is the sentinel, 0x…01). */
 export function ownerTx(safe, nonce, change) {

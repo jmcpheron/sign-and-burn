@@ -127,7 +127,7 @@ input.mono { font-family: var(--mono); font-size: 0.85rem; }
 
 /* ---- the review */
 .review { display: grid; gap: 10px; margin: 14px 0; }
-.item { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; background: var(--panel); }
+.item { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; background: var(--panel); overflow-wrap: anywhere; }
 .item .t { font-size: 0.75rem; letter-spacing: 0.06em; color: var(--muted); }
 .item .w { font-size: 1.1rem; font-weight: 700; margin: 2px 0; }
 .item.ok { border-left: 4px solid var(--ok); }
@@ -291,7 +291,10 @@ main.wallet { max-width: 1100px; }
 .card h3 { font-size: 1rem; margin: 18px 0 8px; }
 .card.approval { border-color: var(--flame); }
 .card.approval.red { border-color: var(--bad); box-shadow: inset 0 0 0 2px var(--bad); background: var(--bad-bg); }
-.send-form, .owner-form { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+.send-form { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); }
+.owner-form { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+#add-token { flex: 1 1 16em; }
+.chip.token { color: var(--text); }
 .owners, .votes { list-style: none; padding: 0; margin: 10px 0; display: grid; gap: 8px; }
 .owner { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 4px; }
 .owner .h { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }

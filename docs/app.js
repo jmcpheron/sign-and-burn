@@ -12762,7 +12762,7 @@ var init_uid = __esm({
 
 // node_modules/viem/_esm/clients/createClient.js
 function createClient(parameters) {
-  const { batch, chain, ccipRead, dataSuffix, key = "base", name = "Base Client", tokens, type = "base" } = parameters;
+  const { batch, chain, ccipRead, dataSuffix, key = "base", name = "Base Client", tokens: tokens2, type = "base" } = parameters;
   const experimental_blockTag = parameters.experimental_blockTag ?? (typeof chain?.experimental_preconfirmationTime === "number" ? "pending" : void 0);
   const blockTime = chain?.blockTime ?? 12e3;
   const defaultPollingInterval = Math.min(Math.max(Math.floor(blockTime / 2), 500), 4e3);
@@ -12786,7 +12786,7 @@ function createClient(parameters) {
     name,
     pollingInterval,
     request: request2,
-    tokens,
+    tokens: tokens2,
     transport,
     type,
     uid: uid(),
@@ -18861,15 +18861,15 @@ function resolveToken(client, parameters) {
   throw new Error(`Token "${token}" is not a declared ERC-20 token on the client's \`tokens\` array (with an address for the client's chain), and is not a valid address.`);
 }
 function findDeclaredToken(client, token) {
-  const tokens = client.tokens;
+  const tokens2 = client.tokens;
   const chainId = client.chain?.id;
-  if (!tokens || chainId === void 0)
+  if (!tokens2 || chainId === void 0)
     return void 0;
-  const bySymbol = findTokenBySymbol(tokens, token);
+  const bySymbol = findTokenBySymbol(tokens2, token);
   if (bySymbol)
     return resolveTokenForChain(bySymbol, chainId);
   if (isAddress(token, { strict: false }))
-    for (const token_ of tokens) {
+    for (const token_ of tokens2) {
       const resolved = resolveTokenForChain(token_, chainId);
       if (resolved && isAddressEqual(resolved.address, token))
         return resolved;
@@ -18889,19 +18889,19 @@ function resolveTokenForChain(token, chainId) {
     symbol: token.symbol
   };
 }
-function findTokenBySymbol(tokens, symbol) {
+function findTokenBySymbol(tokens2, symbol) {
   const lowerSymbol = symbol.toLowerCase();
-  for (const token of tokens) {
+  for (const token of tokens2) {
     if (token.symbol?.toLowerCase() === lowerSymbol)
       return token;
   }
   return void 0;
 }
 function inferDecimals(client, address) {
-  const tokens = client.tokens;
+  const tokens2 = client.tokens;
   const chainId = client.chain?.id;
-  if (tokens && chainId !== void 0)
-    for (const token of tokens) {
+  if (tokens2 && chainId !== void 0)
+    for (const token of tokens2) {
       const resolved = resolveTokenForChain(token, chainId);
       if (resolved && isAddressEqual(resolved.address, address))
         return resolved.decimals;
@@ -20310,7 +20310,9 @@ var init_esm = __esm({
     init_sha2562();
     init_toFunctionSelector();
     init_formatEther();
+    init_formatUnits();
     init_parseEther();
+    init_parseUnits();
   }
 });
 
@@ -21125,6 +21127,29 @@ async function isSeat(C2, a) {
     return false;
   }
 }
+function pinnedTokens(C2) {
+  const list = C2.cfg.tokens?.[String(C2.id)] || C2.cfg.tokens?.[C2.cfg.sameAs?.[String(C2.id)]] || {};
+  return Object.entries(list).map(([address, [symbol, decimals]]) => ({ address: getAddress(address), symbol, decimals, pinned: true }));
+}
+async function tokenInfo(C2, address) {
+  const [symbol, decimals] = await Promise.all([
+    C2.pc.readContract({ address, abi: ERC20_ABI, functionName: "symbol" }),
+    C2.pc.readContract({ address, abi: ERC20_ABI, functionName: "decimals" })
+  ]);
+  return { address: getAddress(address), symbol: String(symbol).slice(0, 12), decimals: Number(decimals) };
+}
+async function tokenBalances(C2, holder, tokens2) {
+  return Promise.all(tokens2.map((t) => C2.pc.readContract({ address: t.address, abi: ERC20_ABI, functionName: "balanceOf", args: [holder] }).catch(() => null)));
+}
+function tokenSendOf(tx) {
+  if (BigInt(tx.value || 0) !== 0n || Number(tx.operation) !== 0 || !String(tx.data || "").toLowerCase().startsWith("0xa9059cbb")) return null;
+  try {
+    const d = decodeFunctionData({ abi: ERC20_ABI, data: tx.data });
+    return { token: tx.to, to: d.args[0], amount: d.args[1] };
+  } catch {
+    return null;
+  }
+}
 function ownerTx(safe, nonce, change) {
   let data;
   if (change.add) data = encodeFunctionData({ abi: SAFE_ABI, functionName: "addOwnerWithThreshold", args: [getAddress(change.add), BigInt(change.threshold)] });
@@ -21150,7 +21175,7 @@ async function trySeat(C2, seat, args, from16) {
     return r?.data?.errorName || r?.reason || r?.shortMessage || e.shortMessage || String(e.message || e);
   }
 }
-var SEAT_ABI, FACTORY_ABI, SAFE_ABI, SENTINEL, PROXY_FACTORY_ABI, SIGNER_FACTORY_ABI, MULTICALL_ABI, hasCode, receipt, nonceAt, APPROVE, creationCode, deployFactory, approveHashData;
+var SEAT_ABI, FACTORY_ABI, SAFE_ABI, SENTINEL, PROXY_FACTORY_ABI, SIGNER_FACTORY_ABI, MULTICALL_ABI, hasCode, receipt, nonceAt, APPROVE, creationCode, deployFactory, ERC20_ABI, tokenTx, approveHashData;
 var init_chain2 = __esm({
   "src/chain.mjs"() {
     init_esm();
@@ -21191,6 +21216,19 @@ var init_chain2 = __esm({
     APPROVE = toFunctionSelector(SEAT_ABI.find((x) => x.type === "function" && x.name === "approve")).slice(2);
     creationCode = null;
     deployFactory = (C2) => ({ target: C2.cfg.create2Deployer, allowFailure: false, callData: concat([deployment_default.salt, deployment_default.SeatFactory.initCode]) });
+    ERC20_ABI = parseAbi([
+      "function balanceOf(address) view returns (uint256)",
+      "function decimals() view returns (uint8)",
+      "function symbol() view returns (string)",
+      "function transfer(address to, uint256 amount) returns (bool)"
+    ]);
+    tokenTx = (token, to, amount, nonce) => ({
+      to: getAddress(token),
+      value: "0",
+      operation: 0,
+      nonce: String(nonce),
+      data: encodeFunctionData({ abi: ERC20_ABI, functionName: "transfer", args: [getAddress(to), BigInt(amount)] })
+    });
     approveHashData = (hash3) => encodeFunctionData({ abi: SAFE_ABI, functionName: "approveHash", args: [hash3] });
   }
 });
@@ -22098,6 +22136,29 @@ function keepSafe(a) {
   } catch {
   }
 }
+async function addToken() {
+  const a = (S.addToken || "").trim();
+  await guard("Reading the token from the chain…", async () => {
+    if (!isAddress(a)) throw new Error("Add a token: that isn't an address.");
+    if (tokenOf(a)) throw new Error("That token is on the list already.");
+    let t;
+    try {
+      t = await tokenInfo(S.C, a);
+    } catch {
+      throw new Error(`${short(a)} doesn't answer as a token (symbol and decimals). Nothing was added.`);
+    }
+    const all2 = read("sab.tokens");
+    all2[String(S.C.id)] = [...all2[String(S.C.id)] || [], t];
+    try {
+      localStorage.setItem("sab.tokens", JSON.stringify(all2));
+    } catch {
+    }
+    S.addToken = "";
+    S.send.asset = t.address;
+    S.flash = `Added ${t.symbol}. The console doesn't know it, so its review shows raw units: ${t.decimals} decimals make one ${t.symbol}.`;
+    await refresh();
+  });
+}
 function keepProposal(tx) {
   const all2 = read("sab.proposal");
   if (tx) all2[proposalKey()] = tx;
@@ -22204,6 +22265,8 @@ async function refresh() {
   }));
   S.seatOwns = S.owners.some((o) => o.yours);
   if (S.wallet) S.walletBalance = await S.C.pc.getBalance({ address: S.wallet.account }).catch(() => null);
+  const list = tokens(), bals = await tokenBalances(S.C, safe.address, list);
+  S.tokenBal = new Map(list.map((t, i) => [t.address.toLowerCase(), bals[i]]));
   const waiting2 = mine().find((e) => e.status !== "landed") || null;
   S.waiting = waiting2 && same(waiting2.safe, safe.address) ? waiting2 : null;
   S.waitingElsewhere = waiting2 && !S.waiting ? waiting2 : null;
@@ -22303,15 +22366,16 @@ function draft(tx) {
   });
 }
 function draftSend() {
-  const { to, amount } = S.send;
+  const { to, amount, asset } = S.send, t = asset === "ETH" ? null : tokenOf(asset);
   if (!isAddress(to)) return fail("Send to: that isn't an address.");
   let value;
   try {
-    value = parseEther(amount || "");
+    value = t ? parseUnits(amount || "", t.decimals) : parseEther(amount || "");
   } catch {
-    return fail("Amount: that isn't a number of ETH.");
+    return fail(`Amount: that isn't a number of ${t ? t.symbol : "ETH"}.`);
   }
   if (value <= 0n) return fail("Amount: send more than nothing.");
+  if (t) return draft(tokenTx(t.address, to, value, S.safe.nonce));
   draft({ to: getAddress(to), value: value.toString(), data: "0x", operation: 0, nonce: String(S.safe.nonce) });
 }
 function draftAdd() {
@@ -22450,7 +22514,12 @@ function drawAccount() {
         el("span", { class: "chip" }, `${S.safe.threshold} of ${S.safe.owners.length} to approve`),
         el("span", { class: "chip" }, `seat at key ${S.seat.n}`),
         el("span", { class: "chip" }, `nonce ${S.safe.nonce}`)
-      )
+      ),
+      tokens().some((t) => S.tokenBal?.get(t.address.toLowerCase())) ? el(
+        "div",
+        { class: "wallet-sub tokens" },
+        ...tokens().filter((t) => S.tokenBal?.get(t.address.toLowerCase())).map((t) => el("span", { class: "chip token", title: t.address }, units(S.tokenBal.get(t.address.toLowerCase()), t)))
+      ) : null
     ),
     el(
       "div",
@@ -22687,7 +22756,9 @@ async function copy(text, said) {
   render();
 }
 function sendCard() {
-  const disabled = !!S.busy || !!S.current;
+  const disabled = !!S.busy || !!S.current, list = tokens(), t = S.send.asset === "ETH" ? null : tokenOf(S.send.asset);
+  if (S.send.asset !== "ETH" && !t) S.send.asset = "ETH";
+  const bal = t ? S.tokenBal?.get(t.address.toLowerCase()) : S.safe.balance;
   return [
     el("h2", {}, "Send"),
     el(
@@ -22696,12 +22767,36 @@ function sendCard() {
       el("label", {}, "To", el("input", { id: "send-to", class: "mono", value: S.send.to, placeholder: "0x…", spellcheck: "false", autocomplete: "off", oninput: (e) => {
         S.send.to = e.target.value.trim();
       } })),
-      el("label", {}, "Amount (ETH)", el("input", { id: "send-amount", value: S.send.amount, inputmode: "decimal", oninput: (e) => {
+      el("label", {}, "Asset", el(
+        "select",
+        { id: "send-asset", onchange: (e) => {
+          S.send.asset = e.target.value;
+          render();
+        } },
+        el("option", { value: "ETH", selected: !t }, "ETH"),
+        ...list.map((x) => el("option", { value: x.address, selected: !!t && same(t.address, x.address) }, x.pinned ? x.symbol : `${x.symbol} (added here)`))
+      )),
+      el("label", {}, `Amount (${t ? t.symbol : "ETH"})`, el("input", { id: "send-amount", value: S.send.amount, inputmode: "decimal", oninput: (e) => {
         S.send.amount = e.target.value.trim();
       } }))
     ),
+    el("p", { class: "small" }, `The Safe holds ${bal == null ? "an amount this page couldn't read" : t ? units(bal, t) : eth(bal)}.` + (t && !t.pinned ? ` The console doesn't know ${t.symbol}: its review shows the amount in raw units (${t.decimals} decimals).` : "")),
     el("div", { class: "actions" }, el("button", { class: "go", type: "button", disabled, onclick: draftSend }, "Review")),
-    S.current ? el("p", { class: "small" }, "One transaction at a time: finish or reject the one above first.") : null
+    S.current ? el("p", { class: "small" }, "One transaction at a time: finish or reject the one above first.") : null,
+    el(
+      "details",
+      {},
+      el("summary", { class: "small" }, "Add a token"),
+      el(
+        "div",
+        { class: "actions" },
+        el("input", { id: "add-token", class: "mono", value: S.addToken || "", placeholder: "The token's address, 0x…", spellcheck: "false", autocomplete: "off", "aria-label": "The token's address", oninput: (e) => {
+          S.addToken = e.target.value;
+        } }),
+        el("button", { type: "button", disabled: !!S.busy, onclick: addToken }, "Add it")
+      ),
+      el("p", { class: "small" }, `The console knows ${pinnedTokens(S.C).map((x) => x.symbol).join(", ") || "no tokens"} on this chain. Any other ERC-20 works too; the console reviews it as a token it doesn't know, with the amount in raw units.`)
+    )
   ];
 }
 function approvalCard() {
@@ -22732,8 +22827,9 @@ function approvalCard() {
     out.push(el("p", { class: "note" }, `The Safe ran another transaction at nonce ${tx.nonce}, so it will never run this one. But key ${w.n} signed it, and a key signs once, ever: this approval is the only thing key ${w.n} will ever send. Send it to move the seat on to key ${w.n + 1}; it runs nothing.`));
   }
   const acks = S.acks, gates = [];
-  const tooMuch = !w && BigInt(tx.value || 0) > S.safe.balance;
-  if (tooMuch) out.push(el("p", { class: "note" }, `The Safe has ${eth(S.safe.balance)}, and this sends ${eth(BigInt(tx.value))}. Approving it now would spend a vote, and for the seat a key, on a transaction the Safe can't run.`));
+  const ts = tokenSendOf(tx), tk = ts && tokenOf(ts.token), tb = tk ? S.tokenBal?.get(tk.address.toLowerCase()) : null;
+  const tooMuch = !w && (BigInt(tx.value || 0) > S.safe.balance || tb != null && ts.amount > tb);
+  if (tooMuch) out.push(el("p", { class: "note" }, (tk && tb != null && ts.amount > tb ? `The Safe has ${units(tb, tk)}, and this sends ${units(ts.amount, tk)}. ` : `The Safe has ${eth(S.safe.balance)}, and this sends ${eth(BigInt(tx.value))}. `) + "Approving it now would spend a vote, and for the seat a key, on a transaction the Safe can't run."));
   const elsewhere = S.home.found && !mine().length;
   const wElse = S.waitingElsewhere;
   if (wElse && !seatVoted && S.seatOwns) out.push(el("p", { class: "note" }, `Key ${n} signed an approval for another Safe (${short(wElse.safe)}), and it hasn't landed. One signature per key, ever: send that one first, then key ${n + 1} can approve this. `, el("button", { class: "link", type: "button", disabled: !!S.busy, onclick: () => openSafe(getAddress(wElse.safe)) }, "Open that Safe")));
@@ -22824,7 +22920,7 @@ function activityCard() {
     el("p", { class: "small" }, "Votes by other owners aren't listed here: the Safe's own history on the explorer has them.")
   ];
 }
-var S, log, read, home, proposalKey, safesKey, safes, same, ledger, mine, say, walletId, isOwner, canPay, KIND, kindOf, nameLink;
+var S, log, read, home, proposalKey, safesKey, safes, same, tokens, tokenOf, units, ledger, mine, say, walletId, isOwner, canPay, KIND, kindOf, nameLink;
 var init_wallet2 = __esm({
   "src/wallet.mjs"() {
     init_esm();
@@ -22836,7 +22932,7 @@ var init_wallet2 = __esm({
     init_names();
     init_ui();
     refuseFrames();
-    S = { busy: "", error: "", flash: "", send: { to: "", amount: "0.0001" }, add: "", addThreshold: "1", threshold: "", draft: null, acks: {} };
+    S = { busy: "", error: "", flash: "", send: { to: "", amount: "0.0001", asset: "ETH" }, add: "", addThreshold: "1", threshold: "", draft: null, acks: {} };
     log = $("#log");
     onLine((dir, line) => {
       const tag = dir === "in" ? "page → console  " : dir === "out" ? "console → page  " : "console says    ";
@@ -22855,6 +22951,9 @@ var init_wallet2 = __esm({
     safesKey = () => `${S.C.id}:${S.home.seat.toLowerCase()}`;
     safes = () => [S.home.safe, ...read("sab.safes")[safesKey()] || []];
     same = (a, b) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
+    tokens = () => [...pinnedTokens(S.C), ...(read("sab.tokens")[String(S.C.id)] || []).filter((t) => !pinnedTokens(S.C).some((p) => same(p.address, t.address)))];
+    tokenOf = (a) => tokens().find((t) => same(t.address, a)) || null;
+    units = (v, t) => `${Number(formatUnits(v, t.decimals)).toLocaleString("en-US", { maximumFractionDigits: Math.min(t.decimals, 6) })} ${t.symbol}`;
     ledger = () => ask({ op: "ledger" }).entries || [];
     mine = () => ledger().filter((e) => e.chainId === S.C.id && e.seat === S.home.seat.toLowerCase());
     say = (t) => {

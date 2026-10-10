@@ -106,7 +106,7 @@ wallet on another device pays for the build, and sends each approval after the c
 MetaMask or Frame; the page lets you pick among the wallets in your browser.
 
 **The wallet page** ([signandburn.app/wallet.html](https://signandburn.app/wallet.html)) shows the same
-Safe as a plain wallet: its balance, a send form, and its owners. It can add your browser wallet as a
+Safe as a plain wallet: its balance, a send form for ETH or tokens, and its owners. It can add your browser wallet as a
 second owner, remove it, and change how many must approve. Each change is a Safe transaction that
 the console marks red. In a **1 of 2** your wallet can approve alone: a backup if the passkey is lost,
 and a way to get used to a multisig. It is also the way around the seat. Your wallet's key rests on a
