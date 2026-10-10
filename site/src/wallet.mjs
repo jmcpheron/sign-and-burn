@@ -19,6 +19,7 @@
 // wallet. The page keeps the Safes this seat is in ("sab.safes") and votes on whichever is open. A
 // transaction waiting for votes goes from one owner's device to another's as a link
 // (sign-and-burn/proposal/v1, src/pay.mjs): the Safe and the fields, nothing signed, no hash.
+// "Import transactions" scans those links' codes, and an approval's QR codes, which the main page pays.
 import { formatUnits, getAddress, isAddress, parseEther, parseUnits, zeroAddress } from "viem";
 import * as consoleCore from "./console.mjs";
 import * as P from "./passkey.mjs";
@@ -26,6 +27,7 @@ import * as ch from "./chain.mjs";
 import { approve } from "./approve.mjs";
 import * as pay from "./pay.mjs";
 import * as names from "./names.mjs";
+import { canScan, startScan } from "./scan.mjs";
 import { $, addr, copyButton, drawBlockie, el, eth, holdButton, label, picker, plain, qrToggle, refuseFrames, reviewParts, rows, short, txLink, useChain } from "./ui.mjs";
 
 refuseFrames();
@@ -109,6 +111,10 @@ async function boot() {
   if (!consoleCore.ledgerKept()) S.warn = "This browser won't keep the console's ledger (private browsing?). The guardrail then lasts only while this tab is open.";
   S.pk = P.stored();
   if (S.pk && S.pk.rpId !== location.hostname) S.pk = null;
+  $("#scan-start").addEventListener("click", importScan);
+  $("#scan-stop").addEventListener("click", () => stopScan(""));
+  $("#scan-start").disabled = !canScan();
+  if (!canScan()) $("#scan-status").textContent = "This browser gives pages no camera. Open the approval's link here instead.";
   await reconnectWallet().catch(() => {});
   await guard("Reading your Safe from the chain…", find);
   window.addEventListener("hashchange", () => { if (pay.proposalFrom(location.hash, S.C)) guard("Reading the Safe from the chain…", openProposal); });
@@ -152,6 +158,50 @@ async function openProposal() {
   S.at = getAddress(got.req.safe);
   S.draft = got.req.tx; S.acks = {}; S.flash = "";
   await refresh();
+}
+
+// ----------------------------------------------------------------------------- importing by camera
+// "Import transactions": the camera reads codes (src/scan.mjs), each as untrusted as a pasted link.
+//   a proposal link's code      opens here, as the link would
+//   an approval's QR codes      the main page pays for it: it gets the parts, by this tab's
+//   a payment link's code       sessionStorage or the link, and reads them again itself
+let stopCamera = null;
+function stopScan(said) {
+  stopCamera?.(); stopCamera = null;
+  $("#scan-start").hidden = false; $("#scan-stop").hidden = true;
+  $("#scan-status").textContent = said;
+}
+async function importScan() {
+  const status = $("#scan-status"), parts = pay.partCollector(S.C);
+  status.textContent = "Starting the camera…";
+  try {
+    stopCamera = await startScan($("#scan-box"), async (text) => {
+      const got = parts.add(text);
+      if (got?.done?.refuse) { status.textContent = got.done.refuse; return; }
+      if (got?.done) {
+        try { sessionStorage.setItem("sab.scanned", JSON.stringify(parts.texts)); } catch {}
+        stopScan("An approval to send: the main page pays for it. Opening it…");
+        location.assign(new URL("./#scanned", location.href).href);
+        return;
+      }
+      if (got) { status.textContent = `Read code ${got.part} of ${got.parts}: ${parts.have} of ${parts.total}. Keep the camera on them.`; return; }
+      let url = null;
+      try { url = new URL(text); } catch {}
+      if (!url || !["https:", "http:"].includes(url.protocol)) url = null;
+      if (url && pay.proposalFrom(url.hash, S.C)) {
+        stopScan("");
+        history.replaceState(null, "", location.pathname + location.search + url.hash);
+        await guard("Reading the Safe from the chain…", openProposal);
+      } else if (url && pay.fromLink(url.hash, S.C)) {
+        stopScan("A request to pay for: opening it on the main page…");
+        location.assign(new URL("./" + url.hash, location.href).href);
+      } else status.textContent = "That code isn't a Sign and Burn transaction. Keep looking.";
+    });
+    $("#scan-start").hidden = true; $("#scan-stop").hidden = false;
+    status.textContent = "Point the camera at the codes on the other device.";
+  } catch (e) {
+    stopScan(e?.name === "NotAllowedError" ? "The camera wasn't allowed. Allow it for this site, or open the link." : `The camera didn't start: ${e?.message || e}`);
+  }
 }
 
 /** Open another Safe this seat is in. */
@@ -427,7 +477,11 @@ function drawAccount() {
   const box = $("#account");
   if (!S.C) return box.replaceChildren(el("p", { class: S.error ? "note error" : "muted" }, S.error || "Starting the console…"));
   const main = el("p", {}, el("a", { href: "./" }, "Go to the main page"), ": it makes a passkey, your first one-time key, and builds your shielded Safe.");
-  if (!S.pk) return box.replaceChildren(el("h1", {}, "No passkey here yet"), main);
+  // A wallet app's own browser keeps its own storage: the passkey made in Chrome or Safari isn't here.
+  // It can still pay for an approval the passkey's device signed.
+  if (!S.pk) return box.replaceChildren(el("h1", {}, "No passkey here yet"),
+    el("p", {}, "A wallet app's browser, say? Passkeys are kept by the browser that made them, so yours is in the other one. " +
+      "This browser can still pay for an approval signed there: tap Import transactions, below, and scan its codes. Your wallet here sends it."), main);
   if (!S.safe && S.busy) return box.replaceChildren(el("p", { class: "muted" }, "Reading your Safe from the chain…"));
   if (!S.safe?.exists) return box.replaceChildren(el("h1", {}, "Your Safe isn't built yet"), main);
   // The Safe, in one box: its blockie, your name for it, the start and end of its address (the whole

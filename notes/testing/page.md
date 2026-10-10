@@ -120,8 +120,10 @@ The checks, in order:
       words, 1 of 2 votes ("signed in Safe{Wallet}"), and the forged one left out. The first seat's press
       carries the wallet's signature, and the Safe runs it: 2 of 3.
     - The same with no wallet on the seat's device: a second Safe{Wallet} transaction imported, the seat
-      signs, and its QR codes carry the wallet's signature. A browser with a fake camera scans them, finds
-      the signature checks out and that one send runs it, and sends: the Safe runs it.
+      signs, and its QR codes carry the wallet's signature. A browser with a fake camera and no passkey
+      opens the wallet page and taps "Import transactions": the codes go to the main page (no hash left,
+      `sab.scanned` gone), which finds the signature checks out and that one send runs it, and sends: the
+      Safe runs it.
     - Names: the first browser names the second seat and the shared Safe ("Name it"), and they show
       beside their addresses. Export JSON downloads the address book, tagged; the second browser
       imports the file and shows the same names. A pasted file with a bad address is refused whole.
