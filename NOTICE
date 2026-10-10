@@ -29,6 +29,9 @@ MicroPython (https://micropython.org), MIT, Copyright (c) 2013-2025 Damien P. Ge
 viem, @noble/hashes, @noble/curves, @scure/base, abitype and ox, MIT: bundled into docs/app.js, with
   their notices at the end of that file.
 
+jsQR 1.4.0, by Cosmo Wolfe and contributors (https://github.com/cozmo/jsQR), Apache-2.0: the QR
+  reader behind "Scan a code", bundled into docs/app.js. Its license is in docs/vendor/jsqr/LICENSE.txt.
+
 QR Code generator, by Project Nayuki (https://www.nayuki.io/page/qr-code-generator-library), MIT,
   Copyright (c) Project Nayuki: site/src/qr.mjs follows its structure, and its tables of error
   correction blocks. site/qr-vectors.json, the encoder's test vectors, was made with python-qrcode 8.2

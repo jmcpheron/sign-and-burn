@@ -20,6 +20,7 @@ npm run e2e       # the whole flow in Chromium against the local chain (needs an
 | `src/approve.mjs` | one press, for both pages: the console, one tap, the seat asked by simulation, the wallet, the block |
 | `src/ui.mjs` | what both pages draw with: addresses, the hold button, the console's review, "Show QR code" |
 | `src/names.mjs` | your names for addresses (`sab.names`), and the JSON file that moves them: `sign-and-burn/address-book/v1` |
+| `src/scan.mjs` | "Scan a code": the camera, read by jsQR (`jsqr` 1.4.0, Apache-2.0, bundled; its license in `docs/vendor/jsqr/`) |
 | `src/qr.mjs` | QR codes, written here: byte and alphanumeric modes, versions 1 to 40. `test.mjs` checks it against `qr-vectors.json`, made by an independent encoder (`tools/qr-vectors.py`) |
 | `src/console.mjs` | MicroPython 1.26 in the page, the console's files, the ledger kept in localStorage, the serial log (seeds never shown) |
 | `src/passkey.mjs` | make a passkey; one tap that signs `c` and answers two PRF salts; find a passkey made elsewhere |
@@ -39,8 +40,18 @@ funding and signed approvals. Pasting reads the request here; it does not visit 
 Every link the pages share has "Show QR code" beside "Copy link", and the wallet page shows the
 seat's address as one too. The code is drawn on a canvas, black on white whatever the theme.
 
-A signed approval's link is about 3,600 characters: more than one QR code holds. Its code carries a
-compact form instead (`sign-and-burn/approval-qr/v1`, `#aq=` in `src/pay.mjs`). The same fields are
+A signed approval goes as several medium codes instead (`sign-and-burn/approval-qr/v2`, `SAB2/…`): the
+approval packed as bytes, with any Safe{Wallet} signatures kept with its transaction (at most 10), in
+base 43, cut into about 5 parts of version 18 (89 modules), cycling on screen twice a second. Each part
+names its number, the count, and the first 8 hex digits of the whole payload's SHA-256, which is
+checked once the parts are together. They are not links: the main page's "Scan a code" reads them
+(and any link's code), puts them together in any order, and opens the approval as its link would. The
+paying page checks each signature that came with it against its owner and this transaction, and its
+one send carries the signatures and any votes the Safe holds, so it runs the Safe if that is enough.
+iPhones give pages no QR reader (Safari ships BarcodeDetector disabled), so the page bundles jsQR.
+
+The single-code form below is still read, as a link, but no longer shown. A signed approval's link is
+about 3,600 characters: more than one QR code holds. Its code carried a compact form (`sign-and-burn/approval-qr/v1`, `#aq=` in `src/pay.mjs`). The same fields are
 packed as bytes, with the curve signature as its four parts. They are written in base 43, characters
 that a QR code's alphanumeric mode stores in 5.5 bits each, and that a URL fragment carries unescaped.
 That's about 3,750 characters, in a version 37 or 38 code (165 or 169 modules a side). Only the

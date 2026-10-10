@@ -10,6 +10,7 @@
 //   console/               the console image, exactly the files console/manifest.json lists, by the
 //                          names a board gives them. They hash to the console fingerprint.
 //   vendor/micropython/    MicroPython 1.26 for WebAssembly, from npm, pinned by its hash
+//   vendor/jsqr/           the license of jsQR, the QR reader bundled into app.js
 //   CNAME                  signandburn.app, for GitHub Pages, which reads it and doesn't serve it
 //   SHA256SUMS, BUILD.json every served file's SHA-256, for sha256sum -c against the live site
 //
@@ -65,6 +66,10 @@ const js = await build({
 put("app.js", js.outputFiles[0].contents);
 for (const f of ["micropython.mjs", "micropython.wasm"]) copy(join(MP, f), `vendor/micropython/${f}`);
 const mpVersion = JSON.parse(readFileSync(join(MP, "package.json"), "utf8")).version;
+// jsQR (the scanner's QR reader) is bundled into app.js; its Apache-2.0 license goes with it.
+const jsqr = JSON.parse(readFileSync(join(SITE, "node_modules", "jsqr", "package.json"), "utf8"));
+put("vendor/jsqr/LICENSE.txt", `jsQR ${jsqr.version} (npm jsqr), bundled into app.js for "Scan a code". https://github.com/cozmo/jsQR\n\n` +
+  readFileSync(join(SITE, "node_modules", "jsqr", "LICENSE"), "utf8"));
 put("vendor/micropython/LICENSE.txt", `MicroPython ${mpVersion}, WebAssembly build (@micropython/micropython-webassembly-pyscript).\nMIT License, Copyright (c) 2013-2025 Damien P. George and others. https://github.com/micropython/micropython\n`);
 for (const f of ["style.css", "favicon.svg"]) copy(join(SITE, f), f);
 copy(join(ROOT, "LICENSE"), "LICENSE");

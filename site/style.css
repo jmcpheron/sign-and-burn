@@ -371,3 +371,6 @@ button.icon.done { color: var(--ok); }
 .safe-money { width: 100%; }
 #sw-paste { width: 100%; margin-top: 6px; }
 .sw-link { display: inline-block; margin: 4px 0; overflow-wrap: anywhere; }
+.scan { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); }
+.scan-video { display: block; width: 100%; max-width: 480px; border-radius: 12px; margin-top: 8px; background: #000; }
+.qr canvas.parts { max-width: 440px; }

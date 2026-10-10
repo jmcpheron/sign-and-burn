@@ -24,6 +24,8 @@ import { concat, createPublicClient, decodeFunctionData, encodeFunctionData, for
 import { privateKeyToAccount } from "viem/accounts";
 import { startChain } from "../tools/chain/anvil.mjs";
 import { tokenCode } from "../tools/chain/test-token.mjs";
+import { encode as qrEncode } from "./src/qr.mjs";
+import { writeFileSync } from "node:fs";
 import { MULTICALL_ABI } from "./src/chain.mjs";
 
 const SITE = fileURLToPath(new URL(".", import.meta.url));
@@ -114,10 +116,25 @@ async function walletRpc(method, params) {
 }
 
 const browser = await chromium.launch({ executablePath: process.env.SAB_CHROMIUM || undefined });
+
+/** A camera's view of QR codes, as a video file Chromium's fake camera plays in a loop: each text's
+ * code, black on white, for `per` frames (YUV4MPEG2, 4:2:0, grey). */
+function cameraFile(path, texts, { w = 640, h = 480, per = 3 } = {}) {
+  const frames = [], uv = Buffer.alloc((w / 2) * (h / 2) * 2, 128);
+  for (const t of texts) {
+    const q = qrEncode([{ mode: "alnum", text: t }], { ecl: "M" }), s = Math.floor(Math.min(w, h) / (q.size + 8));
+    const Y = Buffer.alloc(w * h, 255), ox = Math.floor((w - (q.size + 8) * s) / 2), oy = Math.floor((h - (q.size + 8) * s) / 2);
+    q.modules.forEach((row, y) => row.forEach((dark, x) => {
+      if (dark) for (let dy = 0; dy < s; dy++) Y.fill(0, (oy + (y + 4) * s + dy) * w + ox + (x + 4) * s, (oy + (y + 4) * s + dy) * w + ox + (x + 5) * s);
+    }));
+    for (let k = 0; k < per; k++) frames.push(Buffer.from("FRAME\n"), Y, uv);
+  }
+  writeFileSync(path, Buffer.concat([Buffer.from(`YUV4MPEG2 W${w} H${h} F5:1 Ip A1:1 C420jpeg\n`), ...frames]));
+}
 // Each browser has the two wallets, unless the page sets e2e.nowallet in its localStorage: then it
 // has none, as on a phone. The clipboard keeps exactly what was copied, even in a browser with a share sheet.
-async function newBrowser() {
-const ctx = await browser.newContext({ viewport: { width: 1360, height: 1000 } });
+async function newBrowser(b = browser) {
+const ctx = await b.newContext({ viewport: { width: 1360, height: 1000 } });
 await ctx.exposeFunction("__e2eWallet", walletRpc);
 await ctx.addInitScript(() => {
   Object.defineProperty(Navigator.prototype, "share", { configurable: true, value: async () => { throw new Error("Copy link must not open a share sheet"); } });
@@ -166,6 +183,16 @@ const screen = () => page.evaluate(said);
 const waitFor = (re, timeout = 30000, on = page) => on.waitForFunction((s) => new RegExp(s).test([...document.querySelectorAll("#screen > :not(.steps-bar)")]
   .map((e) => e.innerText).join("\n")), re.source, { timeout })
   .then(() => true, async () => { console.log("  screen said:", (await on.evaluate(said)).slice(0, 600)); return false; });
+// The main page redraws its screen on chain events, and a redraw that lands between Playwright's select
+// and its typing loses the text (a person typing then could lose a keystroke too: log 2026-10-10-10). So
+// a fill on the main page's form is checked, and typed again if it didn't take.
+async function fillSure(loc, value) {
+  for (let i = 0; i < 4; i++) {
+    await loc.fill(value);
+    await page.waitForTimeout(150);
+    if ((await loc.inputValue()) === value) return;
+  }
+}
 const shot = (name) => page.screenshot({ path: join(SHOTS, `${name}.png`), fullPage: true });
 const click = (name, on = page) => on.getByRole("button", { name }).first().click();
 async function hold(ms = 2400, on = page) {
@@ -307,9 +334,9 @@ try {
   // 4. two presses
   // more than the Safe holds: the hold is held back, or key 0 would burn on an approval the Safe can't run
   const amount = page.locator("#screen .form input").nth(1);
-  await amount.fill("1");
+  await fillSure(amount, "1");
   check(await waitFor(/Approving now would burn key 0[\s\S]*Fund it from another device/) && await page.locator("button.hold").isDisabled(), "sending more than the Safe holds: no hold, and a way to fund it");
-  await amount.fill("0.0001");
+  await fillSure(amount, "0.0001");
   // a wallet account with no ETH for gas: the page says so before anything is signed
   const EMPTY = "0x00000000000000000000000000000000000e0e01";
   wallet.account = EMPTY;
@@ -319,7 +346,7 @@ try {
   await page.evaluate((a) => window.__e2eEmit("accountsChanged", [a]), ACCOUNT);
   await waitFor(/Holding asks your passkey once\. The console signs with key 0, burns it and names key 1; your wallet/);
   const TO = "0x00000000000000000000000000000000000b0b01";
-  await page.locator("#screen input.mono").fill(TO);
+  await fillSure(page.locator("#screen .form input.mono"), TO);
   check(await waitFor(/Send 0\.0001 ETH[\s\S]*…0b0b01/), "the console says what the transaction does, and the hash it worked out");
   await shot("3-review");
   for (const k of [0, 1]) {
@@ -449,19 +476,34 @@ try {
   await page.reload();
   check(await waitFor(/Approval 5 is signed/) && (await signCount()) === before + 1 && (await page.locator(".share-link").inputValue()) === alink,
     "after a reload: the same approval, the same link, and no new passkey signature");
-  // The link is too long for one QR code; the code carries the approval's compact form (#aq=).
-  if (!(await page.locator(".qr canvas").count())) await click("Show QR code");
-  const qrText = await page.locator(".qr canvas").getAttribute("data-text");
+  // The link is too long for one QR code: the codes carry the approval in parts, for this site's scanner.
+  await click("Show QR codes");
+  const qrParts = JSON.parse(await page.locator(".qr-wrap[data-parts]").getAttribute("data-parts"));
   await page.locator(".qr canvas").screenshot({ path: join(SHOTS, "qr-approval.png") });
-  check(qrText.startsWith(URL_ + "#aq=") && /^[0-9A-Z$*+\-./:]+$/.test(qrText.split("#aq=")[1]), "its QR code: the approval in compact form, this page's address then base 43");
+  check(qrParts.length >= 3 && qrParts.every((t, i) => t.startsWith(`SAB2/${i + 1}/${qrParts.length}/`)) && await page.locator(".qr canvas").isVisible(),
+    `its QR codes: the approval in ${qrParts.length} parts, cycling on screen`);
   const tampered = new URLSearchParams(new URL(alink).hash.slice(1));
   tampered.set("next", "0x" + "ab".repeat(32));
   await payer.goto(URL_ + "#" + tampered);
   check(await waitFor(/The seat would refuse this approval \(Bad/, 30000, payer) && !(await payer.getByRole("button", { name: "Send it: one transaction" }).count()),
     "the other browser: the link with another next key, and the seat would refuse it; no button");
-  await payer.goto(qrText);
-  check(await waitFor(/Send approval 5[\s\S]*The seat accepts it/, 30000, payer) && (await payer.locator("#screen .verify .code").innerText()) === code,
-    "the compact form, opened as a phone's camera would: the same approval, the same check code, and the seat accepts it");
+  // A third browser points its (fake) camera at those codes, and "Scan a code" puts them together.
+  const camera = join(SHOTS, "camera.y4m");
+  cameraFile(camera, qrParts);
+  const camBrowser = await chromium.launch({ executablePath: process.env.SAB_CHROMIUM || undefined,
+    args: ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream", `--use-file-for-fake-video-capture=${camera}`] });
+  const camCtx = await newBrowser(camBrowser);
+  await camCtx.grantPermissions(["camera"], { origin: URL_.slice(0, -1) });
+  const scanner = await camCtx.newPage();
+  scanner.on("pageerror", (e) => errors.push("scanner: " + e.message));
+  scanner.on("console", (m) => { if (/Content Security Policy|Refused to/.test(m.text())) csp.push(m.text()); });
+  await scanner.goto(URL_);
+  await scanner.locator(".payment-request summary").click();
+  await scanner.locator("#scan-start:not([disabled])").click();
+  check(await waitFor(/Send approval 5[\s\S]*The seat accepts it/, 60000, scanner) && (await scanner.locator("#screen .verify .code").innerText()) === code,
+    "Scan a code: the camera reads the parts, and they open as the approval: the same check code, and the seat accepts it");
+  await scanner.screenshot({ path: join(SHOTS, "8-scanned.png"), fullPage: true });
+  await camBrowser.close();
   await payer.goto(URL_);
   await payer.locator(".payment-request summary").click();
   await payer.locator("#pay-request-link").fill(alink);
@@ -764,6 +806,52 @@ try {
   check(await see(/Key \d+: signed, sent, burned\. The Safe ran it/, 60000) && (await onChain()).nonce === nowSW.nonce + 1 &&
     (await pc.readContract({ address: USDC, abi: ERC20, functionName: "balanceOf", args: [TO4] })) === usdc4 + 250000n,
     "the seat's press carries the wallet's Safe{Wallet} signature: two of three, and the Safe runs it");
+
+  // c3. the same with no wallet on the seat's device, as on a phone: the seat signs, its approval goes
+  // out as QR codes that carry the wallet's Safe{Wallet} signature, a third browser scans them and sends
+  // it, and that one transaction lands the seat's vote and runs the Safe.
+  const nowSW2 = await onChain();
+  const swData2 = encodeFunctionData({ abi: parseAbi(["function transfer(address to, uint256 amount)"]), functionName: "transfer", args: [TO4, 100000n] });
+  const swHash2 = await pc.readContract({ address: H.safe, functionName: "getTransactionHash", args: [USDC, 0n, swData2, 0, 0n, 0n, 0n, Z, Z, BigInt(nowSW2.nonce)],
+    abi: parseAbi(["function getTransactionHash(address to, uint256 value, bytes data, uint8 operation, uint256 safeTxGas, uint256 baseGas, uint256 gasPrice, address gasToken, address refundReceiver, uint256 _nonce) view returns (bytes32)"]) });
+  const swTx2 = { ...swTx, data: swData2, nonce: nowSW2.nonce, safeTxHash: swHash2,
+    confirmations: [{ owner: getAddress(ME), signature: await privateKeyToAccount(SECOND_KEY).sign({ hash: swHash2 }), signatureType: "EOA" }] };
+  await page.evaluate(() => localStorage.setItem("e2e.nowallet", "1"));
+  await page.reload();
+  await see(/your shielded safe/i);
+  await page.locator("#send summary", { hasText: "Safe{Wallet}" }).click();
+  await page.locator("#sw-paste").fill(JSON.stringify({ count: 1, results: [swTx2] }));
+  await page.getByRole("button", { name: "Import it" }).click();
+  await see(/Send 0\.1 USDC[\s\S]*Votes: 1 of 2/);
+  await hold();
+  check(await see(/Approval \d+ is signed\. Send it from another device/, 60000), "no wallet on the seat's device: the seat signs, and the approval waits");
+  await page.locator("#act").getByRole("button", { name: "Show QR codes" }).click();
+  const swParts = JSON.parse(await page.locator("#act .qr-wrap[data-parts]").getAttribute("data-parts"));
+  const camera2 = join(SHOTS, "camera2.y4m");
+  cameraFile(camera2, swParts);
+  const camBrowser2 = await chromium.launch({ executablePath: process.env.SAB_CHROMIUM || undefined,
+    args: ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream", `--use-file-for-fake-video-capture=${camera2}`] });
+  const camCtx2 = await newBrowser(camBrowser2);
+  await camCtx2.grantPermissions(["camera"], { origin: URL_.slice(0, -1) });
+  const scanner2 = await camCtx2.newPage();
+  scanner2.on("pageerror", (e) => errors.push("scanner: " + e.message));
+  await scanner2.goto(URL_);
+  await scanner2.locator(".payment-request summary").click();
+  await scanner2.locator("#scan-start:not([disabled])").click();
+  check(await waitFor(/carries 1 owner signature from Safe\{Wallet\} that check out[\s\S]*makes 2 of the 2 the Safe needs: your one transaction approves it and runs it/, 60000, scanner2),
+    "the scanning browser: the codes carry the wallet's Safe{Wallet} signature, checked there, and one send will run it");
+  await click("Connect a wallet", scanner2);
+  await scanner2.locator(".chooser").waitFor();
+  await click("Test wallet (Anvil)", scanner2);
+  const usdc4b = await pc.readContract({ address: USDC, abi: ERC20, functionName: "balanceOf", args: [TO4] });
+  await click("Send it: one transaction", scanner2);
+  check(await waitFor(/Sent\. Approval \d+ landed[\s\S]*The Safe ran the transaction/, 60000, scanner2) && (await onChain()).nonce === nowSW2.nonce + 1 &&
+    (await pc.readContract({ address: USDC, abi: ERC20, functionName: "balanceOf", args: [TO4] })) === usdc4b + 100000n,
+    "…and it does: the seat's vote and the wallet's signature, in one transaction");
+  await camBrowser2.close();
+  await page.evaluate(() => localStorage.removeItem("e2e.nowallet"));
+  await page.reload();
+  await see(/your shielded safe/i);
 
   // e. names: the first browser names the second seat and the shared Safe, exports its address book,
   // and the second browser imports the file. A bad paste is refused, and changes nothing.

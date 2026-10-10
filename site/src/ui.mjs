@@ -161,6 +161,7 @@ const qrOpen = new Set(), qrMade = new Map();
 /** "Show QR code" for `what`: a text (byte mode), QR segments (src/qr.mjs), or null for one too long
  * for a QR code. Black on white whatever the theme, with the four-module quiet zone around it. */
 export function qrToggle(what) {
+  if (Array.isArray(what) && typeof what[0] === "string") return qrParts(what);
   const segs = typeof what === "string" ? [{ mode: "byte", text: what }] : what;
   const text = segs ? segs.map((g) => g.text).join("") : "";
   const key = text || "(too long)", open = qrOpen.has(key);
@@ -186,5 +187,37 @@ export function qrToggle(what) {
     wrap.replaceWith(qrToggle(what));
   } }, open ? "Hide QR code" : "Show QR code");
   const wrap = el("div", { class: "qr-wrap" }, btn, box);
+  return wrap;
+}
+
+/** "Show QR codes" for an approval in parts (pay.approvalParts): the codes cycle on screen, about two a
+ * second, for the page's own scanner on the paying device to collect. */
+export function qrParts(parts) {
+  const key = "parts:" + parts[0].split("/").slice(0, 4).join("/"), open = qrOpen.has(key);
+  const wrap = el("div", { class: "qr-wrap", "data-parts": JSON.stringify(parts) });
+  const btn = el("button", { type: "button", class: "link", "aria-expanded": String(open), onclick: () => {
+    if (qrOpen.has(key)) qrOpen.delete(key); else qrOpen.add(key);
+    wrap.replaceWith(qrParts(parts));
+  } }, open ? "Hide QR codes" : "Show QR codes");
+  wrap.append(btn);
+  if (!open) return wrap;
+  const codes = parts.map((t) => { let q = qrMade.get(t); if (!q) { q = qr.encode([{ mode: "alnum", text: t }], { ecl: "M" }); qrMade.set(t, q); } return q; });
+  const scale = 6, n = (Math.max(...codes.map((q) => q.size)) + 8) * scale;
+  const c = el("canvas", { width: n, height: n, class: "qr-code parts", role: "img", "aria-label": `QR code ${1} of ${parts.length}` });
+  const said = el("p", { class: "small" }), ctx = c.getContext("2d");
+  let i = 0, paused = false;
+  const draw = () => {
+    const q = codes[i], s = Math.floor(n / (q.size + 8));
+    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, n, n); ctx.fillStyle = "#000";
+    const off = Math.floor((n - (q.size + 8) * s) / 2);
+    q.modules.forEach((row, y) => row.forEach((dark, x) => { if (dark) ctx.fillRect(off + (x + 4) * s, off + (y + 4) * s, s, s); }));
+    c.setAttribute("aria-label", `QR code ${i + 1} of ${parts.length}`);
+    said.textContent = `Code ${i + 1} of ${parts.length}${paused ? " (paused)" : ""}. On the paying device, open this site and tap “Scan a code”; hold the camera on these until it has them all. They are not links: a phone's own camera can't use them.`;
+  };
+  const pause = el("button", { type: "button", onclick: () => { paused = !paused; pause.textContent = paused ? "Play" : "Pause"; draw(); } }, "Pause");
+  const next = el("button", { type: "button", onclick: () => { i = (i + 1) % codes.length; draw(); } }, "Next code");
+  draw();
+  const timer = setInterval(() => { if (!c.isConnected) return clearInterval(timer); if (!paused) { i = (i + 1) % codes.length; draw(); } }, 500);
+  wrap.append(el("div", { class: "qr" }, c, said, el("div", { class: "actions" }, pause, next)));
   return wrap;
 }

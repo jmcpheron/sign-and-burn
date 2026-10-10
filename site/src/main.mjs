@@ -8,6 +8,7 @@ import * as P from "./passkey.mjs";
 import * as ch from "./chain.mjs";
 import * as pay from "./pay.mjs";
 import * as wots from "./wots.mjs";
+import { canScan, startScan } from "./scan.mjs";
 import { approve } from "./approve.mjs";
 import { $, addr, drawBlockie, el, eth, holdButton, plain, qrToggle, refuseFrames, reviewParts, rows, short, txLink, useChain } from "./ui.mjs";
 
@@ -56,6 +57,9 @@ async function boot() {
   S.pk = P.stored();
   if (S.pk && S.pk.rpId !== location.hostname) S.pk = null;
   $("#pay-request").addEventListener("submit", reviewRequest);
+  $("#scan-start").addEventListener("click", scan);
+  $("#scan-stop").addEventListener("click", () => stopScan(""));
+  $("#scan-start").disabled = !canScan();
   $("#review-request").disabled = false;
   await reconnectWallet();
   window.addEventListener("hashchange", () => { if (pay.fromLink(location.hash, S.C)) openPayLink(); });
@@ -330,6 +334,49 @@ async function reviewRequest(e) {
   }
 }
 
+// ----------------------------------------------------------------------------- scanning
+// "Scan a code": the camera reads codes until it has a request (src/scan.mjs). A link's code is read as
+// a pasted link would be; the parts of an approval are put together (pay.partCollector), and the
+// approval opens as its link would, with any signatures that came with it.
+let stopCamera = null;
+function stopScan(said) {
+  stopCamera?.(); stopCamera = null;
+  $("#scan-start").hidden = false; $("#scan-stop").hidden = true;
+  $("#scan-status").textContent = said;
+}
+async function scan() {
+  const status = $("#scan-status"), parts = pay.partCollector(S.C);
+  status.textContent = "Starting the camera…";
+  try {
+    stopCamera = await startScan($("#scan-box"), async (text) => {
+      const got = parts.add(text);
+      if (got?.done) {
+        stopScan("");
+        await guard("Reviewing the approval…", () => openPayLink(got.done));
+        $("#screen").scrollIntoView({ block: "start" });
+        return;
+      }
+      if (got) { status.textContent = `Read code ${got.part} of ${got.parts}: ${parts.have} of ${parts.total}. Keep the camera on them.`; return; }
+      let url = null;
+      try { url = new URL(text); } catch {}
+      const link = url && ["https:", "http:"].includes(url.protocol) ? pay.fromLink(url.hash, S.C) : null;
+      if (link) {
+        stopScan("");
+        history.replaceState(null, "", location.pathname + location.search + url.hash);
+        await guard("Reviewing the request…", () => openPayLink());
+        $("#screen").scrollIntoView({ block: "start" });
+      } else if (url && pay.proposalFrom(url.hash, S.C)) {
+        stopScan("A transaction for a Safe's owners: opening it on the wallet page…");
+        location.assign(new URL("wallet.html" + url.hash, location.href).href);
+      } else status.textContent = "That code isn't a Sign and Burn request. Keep looking.";
+    });
+    $("#scan-start").hidden = true; $("#scan-stop").hidden = false;
+    status.textContent = "Point the camera at the codes on the signing device.";
+  } catch (e) {
+    stopScan(e?.name === "NotAllowedError" ? "The camera wasn't allowed. Allow it for this site, or paste the link." : `The camera didn't start: ${e?.message || e}`);
+  }
+}
+
 async function checkBuilt() {
   await guard("Looking for your Safe on chain…", async () => {
     await refresh();
@@ -382,8 +429,8 @@ function watch() {
 // ----------------------------------------------------------------------------- paying for another device
 // This page opened such a link. It rebuilds the calls from the public values in it, shows what they
 // make, and the wallet here pays the gas. It keeps nothing: no passkey, no home, no ledger entry.
-async function openPayLink() {
-  const got = pay.fromLink(location.hash, S.C);
+async function openPayLink(given = null) {
+  const got = given || pay.fromLink(location.hash, S.C);
   if (!got) return false;
   S.step = "pay"; S.pay = got; S.error = ""; S.choosing = null;
   render();
@@ -445,7 +492,16 @@ async function resolveApproval(req) {
   const a = { seat: req.seat, safe: req.safe, safeTxHash: r.safeTxHash, nextKey: req.nextKey, oneTime: req.oneTime, curveSig: req.curveSig };
   const landed = seat.n > req.n ? await ch.approvalOnChain(S.C, req.seat, req.n) : null;
   const why = landed || r.refuse ? null : await ch.trySeat(S.C, req.seat, [a.safe, a.safeTxHash, a.nextKey, a.oneTime, a.curveSig], S.wallet?.account);
-  return { seat, safe, r, a, landed, why, owner: !!safe.exists && safe.owners.some((o) => o.toLowerCase() === req.seat) };
+  // Owners' signatures from Safe{Wallet} that came with the approval (in its QR codes): each must be its
+  // owner's, of this transaction as this page's console works it out. Votes the Safe holds on chain count too.
+  const isOwner = (x) => !!safe.exists && safe.owners.some((o) => o.toLowerCase() === x.toLowerCase());
+  const sigs = [], dropped = [];
+  for (const g of req.sigs || []) {
+    const who = await ch.signerOf(r.safeTxHash, g.signature);
+    if (who && who.toLowerCase() === g.owner.toLowerCase() && isOwner(g.owner) && g.owner.toLowerCase() !== req.seat) sigs.push(g); else dropped.push(g.owner);
+  }
+  const others = safe.exists ? (await ch.votesFor(S.C, req.safe, safe.owners, r.safeTxHash)).filter((o) => o.toLowerCase() !== req.seat) : [];
+  return { seat, safe, r, a, landed, why, sigs, dropped, others, owner: isOwner(req.seat) };
 }
 
 async function payApproval() {
@@ -457,7 +513,7 @@ async function payApproval() {
     if (W.why) throw new Error(`The seat would refuse this approval (${W.why}). Nothing was sent.`);
     await needGas();
     S.busy = "Your wallet sends it. It pays gas, and approves nothing…"; render();
-    const hash = await ch.send(S.C, S.wallet, ch.approveCalls(W.a, P.req.tx));
+    const hash = await ch.send(S.C, S.wallet, ch.approveCalls(W.a, P.req.tx, W.others, W.sigs));
     S.busy = "Waiting for the block…"; render();
     const rc = await ch.receipt(S.C, hash);
     // As after a press here: the seat says whether the approval landed, and in which transaction, as
@@ -692,6 +748,12 @@ function payApprovalScreen(s, disabled) {
     return out;
   }
   if (Number(P.req.tx.nonce) !== W.safe.nonce) out.push(el("p", { class: "note" }, `The Safe is at nonce ${W.safe.nonce}, and this transaction is for nonce ${P.req.tx.nonce}. The approval would land, but the Safe couldn't run it now.`));
+  if (W.sigs.length || W.dropped.length) {
+    const votes = 1 + W.others.length + W.sigs.length, t = W.safe.threshold;
+    out.push(el("p", { class: "note" }, `It carries ${W.sigs.length} owner signature${W.sigs.length === 1 ? "" : "s"} from Safe{Wallet} that check out` +
+      (W.dropped.length ? `, and ${W.dropped.length} that don't, left out` : "") + `. With the seat's vote that makes ${votes} of the ${t} the Safe needs: ` +
+      (votes >= t ? "your one transaction approves it and runs it." : "the Safe will hold the votes until there are enough.")));
+  }
   out.push(el("p", { class: "small" }, "The seat accepts it: asked just now, by simulation. Your wallet will show a call to Multicall3 that approves and runs this, and sends no ETH of its own."));
   if (S.wallet) out.push(el("div", { class: "actions" }, el("button", { class: "go", type: "button", disabled, onclick: payApproval }, "Send it: one transaction"), leave("Cancel")));
   else out.push(connectButton(disabled), el("div", { class: "actions" }, leave("Cancel")));
@@ -806,8 +868,9 @@ function approvalShareBox(w, first, disabled) {
     el("div", { class: "actions" },
       el("button", { class: first ? "go" : "", type: "button", disabled, onclick: () => copyLink(link) }, "Copy link"),
       S.shared ? el("button", { type: "button", disabled, onclick: checkLanded }, "Check again") : null),
-    // The link is too long for a QR code; the code carries the same approval in its compact form.
-    qrToggle(pay.approvalQr(S.C, w.n, w.approval, w.tx, location.origin + location.pathname)?.segments ?? null),
+    // The link is too long for one QR code. The codes carry the approval in parts, for this site's
+    // scanner on the paying device, with any Safe{Wallet} signatures kept with the transaction.
+    qrToggle(pay.approvalParts(S.C, w.n, w.approval, w.tx, pay.keptSigs(S.C.id, w.safe, w.tx))),
     S.shared ? el("p", { class: "small", role: "status" }, `${S.shared} This page looks at the chain every few seconds.`) : null,
     el("details", {}, el("summary", { class: "small" }, "What the link holds"),
       el("p", { class: "small" }, `Approval ${w.n}, exactly as the console signed it:`),

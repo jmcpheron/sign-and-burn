@@ -13,6 +13,7 @@
   "devDependencies": {
     "@micropython/micropython-webassembly-pyscript": "1.26.0",
     "esbuild": "0.28.2",
+    "jsqr": "1.4.0",
     "playwright-core": "1.56.1",
     "viem": "2.56.8"
   }
