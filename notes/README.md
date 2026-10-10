@@ -8,6 +8,7 @@ each folder's README says how its code works.
 [Onboarding and three transactions](onboarding-walkthrough.md): screenshots of a phone-sized
 signing browser and a separate gas payer, paired with diagrams of the passkey methods, key
 counters and where seeds and signatures are exposed. Captured locally with disposable test accounts, not on a real phone.
+[PowerPoint version](onboarding-walkthrough.pptx) with the same information and paired images.
 
 ## Open questions
 
@@ -62,6 +63,7 @@ changes are reviewed, and the reviews so far.
 | [2026-10-09: onboarding walkthrough](log/2026-10-09-06-onboarding-walkthrough.md) | local screenshots, a separate gas payer, three transfers and disclosure timing |
 | [2026-10-09: diagrams beside screenshots](log/2026-10-09-07-onboarding-infographics.md) | passkey methods, key counters and public values beside each screen |
 | [2026-10-09: pictorial diagrams](log/2026-10-09-08-pictorial-infographics.md) | illustrated phones, seed capsules, signed approvals, wallets and chain blocks |
+| [2026-10-09: PowerPoint walkthrough](log/2026-10-09-09-onboarding-presentation.md) | the full walkthrough as editable slides with paired images |
 
 A new log entry is named `YYYY-MM-DD-NN-topic.md`: what was done, what was found, the numbers, and the
 mistakes.

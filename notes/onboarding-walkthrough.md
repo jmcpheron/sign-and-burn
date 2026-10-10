@@ -1,5 +1,8 @@
 # A phone signs; another wallet pays
 
+Also available as a [PowerPoint walkthrough](onboarding-walkthrough.pptx), with editable text and
+tables and the same paired screenshots and diagrams. Zoom in for small text inside the images.
+
 A sample Sign and Burn onboarding, followed by three shielded transactions. The signing browser
 keeps the passkey access and the console's ledger. A second browser holds the wallet that pays gas.
 The wallet can belong to you or to someone helping you. It does not become an owner of the Safe.
