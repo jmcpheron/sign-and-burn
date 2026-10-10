@@ -132,12 +132,10 @@ async function settle() {
     }
     S.home = homes()[homeKey()] || null;
     if (!S.home || !(await ch.hasCode(S.C, S.home.seat || zeroAddress))) {
-      const seats = await ch.seatsOf(S.C, S.signer);
       if (S.home?.firstKey && S.home.seatNumber === undefined) S.home = null;
-      if (!S.home?.firstKey && seats.length) {
-        const seat = seats[seats.length - 1];
-        const st = await ch.readSeat(S.C, seat);
-        saveHome({ seat, seatNumber: st.seatNumber, safe: await ch.safeAddress(S.C, seat), found: true });
+      if (!S.home?.firstKey) {
+        const used = (await recentSeats()).filter((s) => s.n > 0).pop();
+        if (used) saveHome({ seat: used.address, seatNumber: used.seatNumber, safe: await ch.safeAddress(S.C, used.address), found: true });
       }
     }
     await refresh();
@@ -193,15 +191,33 @@ async function makePasskey(existing) {
   });
 }
 
+// Anyone may add seats to seatsOf for any passkey (the baseline review's H-1), so a seat's place in
+// the list proves nothing. A seat with n > 0 landed this passkey's signature over its own address:
+// it is this passkey's. One with n = 0 is this passkey's only if its first key is, and only a tap
+// tells. The page reads the newest few, so a long list costs a few reads, not one per seat.
+const RECENT = 8;
+const recentSeats = async () => ch.seatCounts(S.C, (await ch.seatsOf(S.C, S.signer)).slice(-RECENT));
+
 async function firstKey() {
   await guard("One tap: your passkey's PRF makes the seed of key 0. The console keeps only its fingerprint…", async () => {
-    const seatNumber = (await ch.seatsOf(S.C, S.signer)).length;
-    const k = consoleCore.ask({ op: "keys", chainId: S.C.id, curveSigner: S.signer, seatNumber, n: 0 });
-    const t = await P.tap(S.pk, "0x" + [...crypto.getRandomValues(new Uint8Array(32))].map((b) => b.toString(16).padStart(2, "0")).join(""), [k.salts[0]]);
-    const f = consoleCore.ask({ op: "first", chainId: S.C.id, curveSigner: S.signer, seatNumber, seed: t.seeds[0] });
-    if (!f.ok) throw new Error(f.refuse);
-    const seat = await ch.seatAddress(S.C, S.signer, seatNumber, f.firstKey);
-    saveHome({ seat, seatNumber, firstKey: f.firstKey, safe: await ch.safeAddress(S.C, seat) });
+    const seats = await ch.seatsOf(S.C, S.signer);
+    const seatNumber = seats.length;
+    // The newest unused seat may be this passkey's own, built from another device: the same tap
+    // answers for its seat number too, and its first key says whether it is.
+    const unused = (await ch.seatCounts(S.C, seats.slice(-RECENT))).filter((s) => s.n === 0 && s.seatNumber !== seatNumber).pop();
+    const nums = unused ? [seatNumber, unused.seatNumber] : [seatNumber];
+    const salts = nums.map((num) => consoleCore.ask({ op: "keys", chainId: S.C.id, curveSigner: S.signer, seatNumber: num, n: 0 }).salts[0]);
+    const t = await P.tap(S.pk, "0x" + [...crypto.getRandomValues(new Uint8Array(32))].map((b) => b.toString(16).padStart(2, "0")).join(""), salts);
+    const firsts = nums.map((num, i) => consoleCore.ask({ op: "first", chainId: S.C.id, curveSigner: S.signer, seatNumber: num, seed: t.seeds[i] }));
+    for (const f of firsts) if (!f.ok) throw new Error(f.refuse);
+    const listed = new Set(seats.map((a) => a.toLowerCase()));
+    const found = unused && (await ch.seatAddress(S.C, S.signer, unused.seatNumber, firsts[1].firstKey));
+    if (found && listed.has(found.toLowerCase())) {
+      saveHome({ seat: found, seatNumber: unused.seatNumber, firstKey: firsts[1].firstKey, safe: await ch.safeAddress(S.C, found), found: true });
+    } else {
+      const seat = await ch.seatAddress(S.C, S.signer, seatNumber, firsts[0].firstKey);
+      saveHome({ seat, seatNumber, firstKey: firsts[0].firstKey, safe: await ch.safeAddress(S.C, seat) });
+    }
     await refresh();
     pickStep();
   });

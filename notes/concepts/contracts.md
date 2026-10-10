@@ -116,8 +116,12 @@ the same transaction. The same arguments twice give the same address, and the se
 
 `seatsOf(curveSigner)` is a list anyone can append to: anyone may make a seat for any passkey, with any
 first key. A seat whose first key isn't the passkey's own can't be signed for, and the console checks
-the key before signing, so a stranger's seat is noise, not a danger. It could make the list long.
-The page reads it in one call; see "A paged `seatsOf`" below.
+the key before signing, so a stranger's seat is noise, not a danger. So the page trusts no seat for
+its place in the list. It reads the newest eight and takes the newest with `n > 0`: only this
+passkey's signature can have moved one. A seat with `n = 0` it takes only after a tap shows its first
+key is this passkey's. A long list still costs `seatsOf` one call for all of it, and many strangers'
+seats can make that call too big, or push a real seat out of the newest eight; see "A paged
+`seatsOf`" below. The baseline review raised this (H-1).
 
 The factory itself has no state but that list and no owner. With salt 0 through the CREATE2 deployer,
 it lands at `0x0a6514135d34dfd19c3f1a636f3e952caeba3871` on every chain.

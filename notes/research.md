@@ -117,13 +117,13 @@ public.
 - **Another device.** A synced passkey gives the same seeds on a second device, which has its own
   ledger. Two devices could each sign key `n` for different transactions. Today the page warns and
   asks, and the rule is one device per seat. A warning can't stop it.
-- **Finding the seat on a new device.** A browser with no saved seat takes the last address in
-  `SeatFactory.seatsOf`, and anyone can add seats to that list for any passkey. One junk seat points
-  a new device at a seat nobody can sign for; the console refuses to sign for it, so no key is spent,
-  but the page is stuck. Many junk seats can make `seatsOf` too big to read at all. Found by the
-  baseline review (H-1, [reviews/2026-10-08-baseline.md](reviews/2026-10-08-baseline.md)). The page
-  could check each seat against the passkey's own first key, or read `SeatCreated` events; paging
-  `seatsOf` would need a new factory.
+- **Finding the seat on a new device.** Anyone can add seats to `SeatFactory.seatsOf` for any
+  passkey (the baseline review's H-1, [reviews/2026-10-08-baseline.md](reviews/2026-10-08-baseline.md)).
+  The page used to take the last one; since 2026-10-10 it takes the newest of the last eight with
+  `n > 0`, which only this passkey can have moved, and an unused seat only after a tap shows its
+  first key is this passkey's (checked in the e2e). Still open: many strangers' seats can push a real
+  seat out of the last eight, or make `seatsOf` too big to read at all. Paging `seatsOf` would need a
+  new factory.
 
 **Candidates:**
 - **Reserve on chain first.** A first transaction records "key `n` is for `hash(m)`" with the curve

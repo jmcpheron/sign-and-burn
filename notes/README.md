@@ -64,6 +64,7 @@ changes are reviewed, and the reviews so far.
 | [2026-10-09: pictorial diagrams](log/2026-10-09-08-pictorial-infographics.md) | illustrated phones, seed capsules, signed approvals, wallets and chain blocks |
 | [2026-10-10: prior art, and the review plan](log/2026-10-10-01-prior-art.md) | wedgie-pq and Riva Labs, the nearest designs; the review asks about the standing vote; paying on Base mainnet |
 | [2026-10-10: the baseline review's report](log/2026-10-10-02-baseline-report.md) | job 987's six findings, answered; a page that trusts the last seat in `seatsOf` |
+| [2026-10-10: finding the seat past a stranger's seats](log/2026-10-10-03-seat-discovery.md) | the page trusts a seat only once the passkey has signed for it, or a tap shows its first key |
 
 A new log entry is named `YYYY-MM-DD-NN-topic.md`: what was done, what was found, the numbers, and the
 mistakes.

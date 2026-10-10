@@ -19826,6 +19826,13 @@ async function seatsOf(C, signer) {
   if (!await hasCode(C, C.seatFactory)) return [];
   return C.pc.readContract({ address: C.seatFactory, abi: FACTORY_ABI, functionName: "seatsOf", args: [signer] });
 }
+async function seatCounts(C, seats) {
+  const read = (address, functionName) => C.pc.readContract({ address, abi: SEAT_ABI, functionName });
+  return Promise.all(seats.map(async (address) => {
+    const [n, seatNumber] = await Promise.all([read(address, "n"), read(address, "seatNumber")]);
+    return { address, n: Number(n), seatNumber: Number(seatNumber) };
+  }));
+}
 async function readSeat(C, address) {
   const read = (functionName) => C.pc.readContract({ address, abi: SEAT_ABI, functionName });
   const [n, current, curveSigner, seatNumber, pubSeed2] = await Promise.all(["n", "current", "curveSigner", "seatNumber", "pubSeed"].map(read));
@@ -20292,12 +20299,10 @@ async function settle() {
     }
     S.home = homes()[homeKey()] || null;
     if (!S.home || !await hasCode(S.C, S.home.seat || zeroAddress)) {
-      const seats = await seatsOf(S.C, S.signer);
       if (S.home?.firstKey && S.home.seatNumber === void 0) S.home = null;
-      if (!S.home?.firstKey && seats.length) {
-        const seat = seats[seats.length - 1];
-        const st = await readSeat(S.C, seat);
-        saveHome({ seat, seatNumber: st.seatNumber, safe: await safeAddress(S.C, seat), found: true });
+      if (!S.home?.firstKey) {
+        const used = (await recentSeats()).filter((s) => s.n > 0).pop();
+        if (used) saveHome({ seat: used.address, seatNumber: used.seatNumber, safe: await safeAddress(S.C, used.address), found: true });
       }
     }
     await refresh();
@@ -20359,15 +20364,26 @@ async function makePasskey(existing) {
     await settle();
   });
 }
+var RECENT = 8;
+var recentSeats = async () => seatCounts(S.C, (await seatsOf(S.C, S.signer)).slice(-RECENT));
 async function firstKey() {
   await guard("One tap: your passkey's PRF makes the seed of key 0. The console keeps only its fingerprint…", async () => {
-    const seatNumber = (await seatsOf(S.C, S.signer)).length;
-    const k = ask({ op: "keys", chainId: S.C.id, curveSigner: S.signer, seatNumber, n: 0 });
-    const t = await tap(S.pk, "0x" + [...crypto.getRandomValues(new Uint8Array(32))].map((b) => b.toString(16).padStart(2, "0")).join(""), [k.salts[0]]);
-    const f = ask({ op: "first", chainId: S.C.id, curveSigner: S.signer, seatNumber, seed: t.seeds[0] });
-    if (!f.ok) throw new Error(f.refuse);
-    const seat = await seatAddress(S.C, S.signer, seatNumber, f.firstKey);
-    saveHome({ seat, seatNumber, firstKey: f.firstKey, safe: await safeAddress(S.C, seat) });
+    const seats = await seatsOf(S.C, S.signer);
+    const seatNumber = seats.length;
+    const unused = (await seatCounts(S.C, seats.slice(-RECENT))).filter((s) => s.n === 0 && s.seatNumber !== seatNumber).pop();
+    const nums = unused ? [seatNumber, unused.seatNumber] : [seatNumber];
+    const salts = nums.map((num2) => ask({ op: "keys", chainId: S.C.id, curveSigner: S.signer, seatNumber: num2, n: 0 }).salts[0]);
+    const t = await tap(S.pk, "0x" + [...crypto.getRandomValues(new Uint8Array(32))].map((b) => b.toString(16).padStart(2, "0")).join(""), salts);
+    const firsts = nums.map((num2, i) => ask({ op: "first", chainId: S.C.id, curveSigner: S.signer, seatNumber: num2, seed: t.seeds[i] }));
+    for (const f of firsts) if (!f.ok) throw new Error(f.refuse);
+    const listed = new Set(seats.map((a) => a.toLowerCase()));
+    const found = unused && await seatAddress(S.C, S.signer, unused.seatNumber, firsts[1].firstKey);
+    if (found && listed.has(found.toLowerCase())) {
+      saveHome({ seat: found, seatNumber: unused.seatNumber, firstKey: firsts[1].firstKey, safe: await safeAddress(S.C, found), found: true });
+    } else {
+      const seat = await seatAddress(S.C, S.signer, seatNumber, firsts[0].firstKey);
+      saveHome({ seat, seatNumber, firstKey: firsts[0].firstKey, safe: await safeAddress(S.C, seat) });
+    }
     await refresh();
     pickStep();
   });
