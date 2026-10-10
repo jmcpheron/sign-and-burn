@@ -12876,14 +12876,14 @@ var init_errors3 = __esm({
 });
 
 // node_modules/viem/_esm/utils/ens/encodedLabelToLabelhash.js
-function encodedLabelToLabelhash(label) {
-  if (label.length !== 66)
+function encodedLabelToLabelhash(label2) {
+  if (label2.length !== 66)
     return null;
-  if (label.indexOf("[") !== 0)
+  if (label2.indexOf("[") !== 0)
     return null;
-  if (label.indexOf("]") !== 65)
+  if (label2.indexOf("]") !== 65)
     return null;
-  const hash3 = `0x${label.slice(1, 65)}`;
+  const hash3 = `0x${label2.slice(1, 65)}`;
   if (!isHex(hash3))
     return null;
   return hash3;
@@ -12927,11 +12927,11 @@ var init_encodeLabelhash = __esm({
 });
 
 // node_modules/viem/_esm/utils/ens/labelhash.js
-function labelhash(label) {
+function labelhash(label2) {
   const result = new Uint8Array(32).fill(0);
-  if (!label)
+  if (!label2)
     return bytesToHex(result);
-  return encodedLabelToLabelhash(label) || keccak256(stringToBytes(label));
+  return encodedLabelToLabelhash(label2) || keccak256(stringToBytes(label2));
 }
 var init_labelhash = __esm({
   "node_modules/viem/_esm/utils/ens/labelhash.js"() {
@@ -21662,16 +21662,80 @@ function refuseFrames() {
   document.body.textContent = "Sign and Burn doesn't run inside another page. Open https://signandburn.app/ directly.";
   throw new Error("framed");
 }
-function addr(a, { link = true } = {}) {
+function addr(a, { link = true, copy: copy2 = false } = {}) {
   if (!a) return el("span", { class: "muted" }, "—");
-  const name = nameOf(a);
-  const kids = [
-    el("img", { src: blockieSrc(a), alt: "" }),
-    name ? el("b", { class: "name", title: "Your name for it, kept in this browser" }, name) : null,
-    el("span", { title: a }, short(a, 8, 6))
-  ];
   const url = link && C?.explorer ? `${C.explorer}/address/${a}` : null;
-  return url ? el("a", { class: "addr", href: url, target: "_blank", rel: "noopener noreferrer" }, ...kids) : el("span", { class: "addr" }, ...kids);
+  const node = url ? el("a", { class: "addr", href: url, target: "_blank", rel: "noopener noreferrer" }, ...addrParts(a)) : el("span", { class: "addr" }, ...addrParts(a));
+  return copy2 ? el("span", { class: "addr-copy" }, node, copyButton(a)) : node;
+}
+function icon(paths) {
+  const s = document.createElementNS(SVG, "svg");
+  for (const [k, v] of Object.entries({
+    viewBox: "0 0 16 16",
+    width: "16",
+    height: "16",
+    "aria-hidden": "true",
+    fill: "none",
+    stroke: "currentColor",
+    "stroke-width": "1.5",
+    "stroke-linecap": "round",
+    "stroke-linejoin": "round"
+  })) s.setAttribute(k, v);
+  for (const d of paths) {
+    const p = document.createElementNS(SVG, "path");
+    p.setAttribute("d", d);
+    s.append(p);
+  }
+  return s;
+}
+function copyButton(text, what = "address") {
+  const b = el("button", { type: "button", class: "icon copy", title: `Copy the ${what}`, "aria-label": `Copy the ${what}`, onclick: async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      b.replaceChildren(checkIcon());
+      b.classList.add("done");
+      b.title = "Copied";
+      setTimeout(() => {
+        b.replaceChildren(copyIcon());
+        b.classList.remove("done");
+        b.title = `Copy the ${what}`;
+      }, 1500);
+    } catch {
+      b.title = "This browser wouldn't copy. Select the address and copy it yourself.";
+    }
+  } }, copyIcon());
+  return b;
+}
+function picker(id, title, items, onPick, { footer = null } = {}) {
+  const d = el(
+    "details",
+    { class: "picker", "data-picker": id, open: pickerOpen.has(id), ontoggle: (e) => {
+      if (e.target.open) pickerOpen.add(id);
+      else pickerOpen.delete(id);
+    } },
+    el("summary", { title, "aria-label": title }, caretIcon()),
+    el(
+      "ul",
+      { class: "menu", role: "list" },
+      ...items.map((it) => el(
+        "li",
+        {},
+        el(
+          "button",
+          { type: "button", class: it.on ? "on" : "", onclick: () => {
+            pickerOpen.delete(id);
+            d.open = false;
+            onPick(it.address);
+          } },
+          label(it.address),
+          it.note ? el("span", { class: "small" }, it.note) : null
+        )
+      )),
+      items.length ? null : el("li", { class: "small muted" }, "Nothing here yet."),
+      footer ? el("li", {}, footer) : null
+    )
+  );
+  return d;
 }
 function drawBlockie(canvas, seed) {
   const { data, color, bg, spot } = blockie(seed.toLowerCase());
@@ -21682,9 +21746,9 @@ function drawBlockie(canvas, seed) {
   });
   return canvas;
 }
-function holdButton(label, onDone, { red = false, ms = 2e3 } = {}) {
+function holdButton(label2, onDone, { red = false, ms = 2e3 } = {}) {
   const fill = el("span", { class: "fill" });
-  const b = el("button", { class: "hold" + (red ? " red" : ""), type: "button" }, fill, el("span", {}, label));
+  const b = el("button", { class: "hold" + (red ? " red" : ""), type: "button" }, fill, el("span", {}, label2));
   let t0 = 0, raf = 0;
   const stop = () => {
     cancelAnimationFrame(raf);
@@ -21725,7 +21789,7 @@ function plain(e) {
   if (e?.code === 4001 || /rejected|denied/i.test(e?.message || "")) return "The wallet said no. Nothing was sent.";
   return e?.shortMessage || e?.message || String(e);
 }
-function reviewParts(r, safe, tx, label) {
+function reviewParts(r, safe, tx, label2) {
   const vc = el("canvas", { width: 8, height: 8, "aria-hidden": "true" });
   drawBlockie(vc, r.safeTxHash);
   return [
@@ -21755,7 +21819,7 @@ function reviewParts(r, safe, tx, label) {
     el("div", { class: "verify" }, vc, el(
       "div",
       {},
-      el("div", { class: "small" }, label),
+      el("div", { class: "small" }, label2),
       el("div", { class: "code" }, r.verify),
       el("div", { class: "mono small" }, r.safeTxHash)
     ))
@@ -21796,7 +21860,7 @@ function qrToggle(what) {
   const wrap3 = el("div", { class: "qr-wrap" }, btn, box);
   return wrap3;
 }
-var C, useChain, $, short, eth, rows, txLink, qrOpen, qrMade;
+var C, useChain, $, short, eth, rows, addrParts, label, SVG, copyIcon, checkIcon, caretIcon, pickerOpen, txLink, qrOpen, qrMade;
 var init_ui = __esm({
   "src/ui.mjs"() {
     init_esm();
@@ -21811,6 +21875,30 @@ var init_ui = __esm({
     short = (h2, a = 6, b = 4) => h2 && h2.length > a + b + 3 ? `${h2.slice(0, a)}…${h2.slice(-b)}` : h2 || "";
     eth = (wei) => `${Number(formatEther2(wei)).toLocaleString("en-US", { maximumFractionDigits: 6 })} ETH`;
     rows = (pairs) => el("dl", { class: "rows" }, ...pairs.filter(Boolean).map(([k, v]) => el("div", {}, el("dt", {}, k), el("dd", {}, v))));
+    addrParts = (a) => {
+      const name = nameOf(a);
+      return [
+        el("img", { src: blockieSrc(a), alt: "" }),
+        name ? el("b", { class: "name", title: "Your name for it, kept in this browser" }, name) : null,
+        el("span", { title: a }, short(a, 8, 6))
+      ];
+    };
+    label = (a) => el("span", { class: "addr" }, ...addrParts(a));
+    SVG = "http://www.w3.org/2000/svg";
+    copyIcon = () => icon(["M6 5.5h6.5a1 1 0 0 1 1 1V13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6.5a1 1 0 0 1 1-1z", "M11 3.5V3a1 1 0 0 0-1-1H3.5a1 1 0 0 0-1 1v6.5a1 1 0 0 0 1 1H4"]);
+    checkIcon = () => icon(["M3 8.5l3.2 3.2L13 4.8"]);
+    caretIcon = () => icon(["M4 6l4 4 4-4"]);
+    pickerOpen = /* @__PURE__ */ new Set();
+    try {
+      document.addEventListener("click", (e) => {
+        if (e.target.closest?.("details.picker")) return;
+        for (const d of document.querySelectorAll("details.picker[open]")) {
+          d.open = false;
+          pickerOpen.delete(d.dataset.picker);
+        }
+      });
+    } catch {
+    }
     txLink = (h2) => C?.explorer ? el("a", { href: `${C.explorer}/tx/${h2}`, target: "_blank", rel: "noopener noreferrer", class: "mono" }, short(h2, 10, 6)) : el("span", { class: "mono" }, short(h2, 10, 6));
     qrOpen = /* @__PURE__ */ new Set();
     qrMade = /* @__PURE__ */ new Map();
@@ -22510,7 +22598,8 @@ function drawAccount() {
       el(
         "div",
         { class: "wallet-sub" },
-        addr(S.safe.address),
+        addr(S.safe.address, { copy: true }),
+        safesPicker(),
         el("span", { class: "chip" }, `${S.safe.threshold} of ${S.safe.owners.length} to approve`),
         el("span", { class: "chip" }, `seat at key ${S.seat.n}`),
         el("span", { class: "chip" }, `nonce ${S.safe.nonce}`)
@@ -22528,7 +22617,7 @@ function drawAccount() {
         "span",
         {},
         el("span", { class: "small" }, `${S.wallet.name}: `),
-        addr(S.wallet.account),
+        addr(S.wallet.account, { copy: true }),
         el("span", { class: "small" }, ` ${S.walletBalance != null ? eth(S.walletBalance) : ""} · ${isOwner(S.wallet.account) ? "an owner" : "pays gas only"}`)
       ) : el("button", { type: "button", disabled: !!S.busy, onclick: connectWallet }, "Connect a wallet"),
       S.choosing ? el("div", { class: "chooser" }, el("p", {}, "Which wallet?"), el(
@@ -22555,7 +22644,7 @@ function ownersCard() {
       el(
         "div",
         { class: "h" },
-        addr(o.address),
+        addr(o.address, { copy: true }),
         el("span", { class: "badge" }, name),
         o.yours ? el("span", { class: "badge you" }, "your seat") : null,
         S.wallet && same(o.address, S.wallet.account) ? el("span", { class: "badge you" }, "this wallet") : null
@@ -22638,7 +22727,7 @@ function safesCard() {
     el("ul", { class: "safes" }, ...list.map((a) => el(
       "li",
       {},
-      addr(a),
+      addr(a, { copy: true }),
       same(a, S.home.safe) ? el("span", { class: "badge" }, "yours") : null,
       same(a, S.safe.address) ? el("span", { class: "badge you" }, "open") : el("button", { class: "link", type: "button", disabled: !!S.busy, onclick: () => openSafe(a) }, "Open"),
       nameLink(a)
@@ -22705,7 +22794,7 @@ function bookCard() {
     entries.length ? el("ul", { class: "book" }, ...entries.map(([a]) => el(
       "li",
       {},
-      addr(a),
+      addr(a, { copy: true }),
       nameLink(a),
       el("button", { class: "link", type: "button", onclick: () => {
         setName(S.C.id, a, "");
@@ -22755,8 +22844,38 @@ async function copy(text, said) {
   }
   render();
 }
+function toPreview() {
+  const a = S.send.to;
+  if (!a) return el("span", { class: "small" }, "");
+  if (!isAddress(a)) return el("span", { class: "small" }, "Not an address yet.");
+  return el("span", { class: "small" }, label(getAddress(a)), nameOf(a) ? "" : " not in your address book");
+}
+function contacts() {
+  const out = [], add2 = (address, note) => {
+    if (!same(address, S.safe.address) && !out.some((x) => same(x.address, address))) out.push({ address: getAddress(address), note });
+  };
+  for (const a of safes()) add2(a, "your Safe");
+  if (S.wallet) add2(S.wallet.account, "the wallet here");
+  const book = Object.entries(all()).sort((x, y) => x[1].localeCompare(y[1]));
+  for (const [a] of book) add2(a, "");
+  return out;
+}
+function safesPicker() {
+  const list = safes();
+  if (!list.some((a) => same(a, S.safe.address))) list.push(S.safe.address);
+  return picker(
+    "safes",
+    "Switch Safe",
+    list.map((a) => ({ address: a, on: same(a, S.safe.address), note: same(a, S.home.safe) ? "yours" : same(a, S.safe.address) ? "open" : "" })),
+    (a) => {
+      if (!same(a, S.safe.address)) openSafe(a);
+    },
+    { footer: el("button", { type: "button", class: "link", onclick: () => $("#safes").scrollIntoView({ block: "start", behavior: "smooth" }) }, "Open another Safe your seat is in…") }
+  );
+}
 function sendCard() {
   const disabled = !!S.busy || !!S.current, list = tokens(), t = S.send.asset === "ETH" ? null : tokenOf(S.send.asset);
+  const preview = el("div", { class: "to-preview" }, toPreview());
   if (S.send.asset !== "ETH" && !t) S.send.asset = "ETH";
   const bal = t ? S.tokenBal?.get(t.address.toLowerCase()) : S.safe.balance;
   return [
@@ -22764,9 +22883,38 @@ function sendCard() {
     el(
       "div",
       { class: "form send-form" },
-      el("label", {}, "To", el("input", { id: "send-to", class: "mono", value: S.send.to, placeholder: "0x…", spellcheck: "false", autocomplete: "off", oninput: (e) => {
-        S.send.to = e.target.value.trim();
-      } })),
+      el(
+        "div",
+        { class: "to-field" },
+        el("label", { for: "send-to" }, "To"),
+        el(
+          "div",
+          { class: "to-row" },
+          el("input", {
+            id: "send-to",
+            class: "mono",
+            value: S.send.to,
+            placeholder: "0x…, or pick one",
+            spellcheck: "false",
+            autocomplete: "off",
+            oninput: (e) => {
+              S.send.to = e.target.value.trim();
+              preview.replaceChildren(toPreview());
+            }
+          }),
+          picker(
+            "send-to",
+            "Your Safes and contacts",
+            contacts(),
+            (a) => {
+              S.send.to = a;
+              render();
+            },
+            { footer: el("span", { class: "small" }, "Add contacts in the Address book, below.") }
+          )
+        ),
+        preview
+      ),
       el("label", {}, "Asset", el(
         "select",
         { id: "send-asset", onchange: (e) => {
@@ -22781,6 +22929,17 @@ function sendCard() {
       } }))
     ),
     el("p", { class: "small" }, `The Safe holds ${bal == null ? "an amount this page couldn't read" : t ? units(bal, t) : eth(bal)}.` + (t && !t.pinned ? ` The console doesn't know ${t.symbol}: its review shows the amount in raw units (${t.decimals} decimals).` : "")),
+    // A share of what the Safe holds, worked out exactly in its smallest units. Max is all of it: the
+    // Safe pays no gas of its own (the wallet that sends the approval does).
+    el("div", { class: "actions quick" }, ...[[25, "25%"], [50, "50%"], [100, "Max"]].map(([pct, name]) => el("button", {
+      type: "button",
+      disabled: disabled || !bal,
+      "aria-label": pct === 100 ? "All of it" : `${name} of it`,
+      onclick: () => {
+        S.send.amount = formatUnits(bal * BigInt(pct) / 100n, t ? t.decimals : 18);
+        render();
+      }
+    }, name))),
     el("div", { class: "actions" }, el("button", { class: "go", type: "button", disabled, onclick: draftSend }, "Review")),
     S.current ? el("p", { class: "small" }, "One transaction at a time: finish or reject the one above first.") : null,
     el(
@@ -22848,8 +23007,8 @@ function approvalCard() {
   };
   const needRed = red ? ["red"] : [];
   if ((!seatVoted || overtaken) && S.seatOwns && !wElse) {
-    const label = w ? `Hold to send approval ${w.n} again` : `Hold to approve with key ${n}`;
-    if (canPay() || !w) buttons.push(gated(holdButton(label, () => voteSeat(tx), { red }), [...needRed, ...elsewhere && !w ? ["elsewhere"] : []]));
+    const label2 = w ? `Hold to send approval ${w.n} again` : `Hold to approve with key ${n}`;
+    if (canPay() || !w) buttons.push(gated(holdButton(label2, () => voteSeat(tx), { red }), [...needRed, ...elsewhere && !w ? ["elsewhere"] : []]));
     if (S.wallet && !canPay()) buttons.push(el("span", { class: "small" }, `${S.wallet.name}'s account has no ETH for gas.`));
   }
   const mineToo = S.wallet && isOwner(S.wallet.account) && !S.votes.some((v) => v.toLowerCase() === S.wallet.account.toLowerCase());
@@ -22910,12 +23069,12 @@ function activityCard() {
   const es = mine().slice().reverse();
   return [
     el("h2", {}, "Your seat's approvals"),
-    rows([["Seat", addr(S.home.seat)], ["Key now", el("span", { class: "mono", title: S.seat.current }, `${S.seat.n}: ${short(S.seat.current, 10, 6)}`)]]),
+    rows([["Seat", addr(S.home.seat, { copy: true })], ["Key now", el("span", { class: "mono", title: S.seat.current }, `${S.seat.n}: ${short(S.seat.current, 10, 6)}`)]]),
     es.length ? el("ul", { class: "history" }, ...es.map((e) => el(
       "li",
       {},
       el("div", { class: "h" }, el("span", {}, `#${e.n} · ${e.summary}${same(e.safe, S.safe.address) ? "" : ` · Safe ${short(e.safe)}`}`), el("span", { class: `badge ${e.status}` }, e.status)),
-      el("div", { class: "s" }, `verify ${e.verify} · `, e.txHash ? txLink(e.txHash) : "not sent yet")
+      el("div", { class: "s" }, `verify ${e.verify} · `, e.txHash ? txLink(e.txHash) : e.status === "landed" ? "sent from another device" : "not sent yet")
     ))) : el("p", { class: "muted" }, "This browser's console hasn't approved anything for this seat yet."),
     el("p", { class: "small" }, "Votes by other owners aren't listed here: the Safe's own history on the explorer has them.")
   ];
@@ -23249,7 +23408,7 @@ async function reconnectWallet2() {
 }
 function chooser() {
   if (!S2.choosing) return null;
-  const icon = (info) => /^data:image\//.test(info.icon || "") ? el("img", { src: info.icon, alt: "", width: 20, height: 20 }) : null;
+  const icon2 = (info) => /^data:image\//.test(info.icon || "") ? el("img", { src: info.icon, alt: "", width: 20, height: 20 }) : null;
   return el(
     "div",
     { class: "chooser", role: "group", "aria-label": "Wallets in this browser" },
@@ -23257,7 +23416,7 @@ function chooser() {
     el(
       "div",
       { class: "actions" },
-      ...S2.choosing.map((w) => el("button", { type: "button", onclick: () => chooseWallet(w) }, icon(w.info), w.info.name || "A wallet")),
+      ...S2.choosing.map((w) => el("button", { type: "button", onclick: () => chooseWallet(w) }, icon2(w.info), w.info.name || "A wallet")),
       el("button", { class: "link", type: "button", onclick: () => {
         S2.choosing = null;
         render2();
@@ -23698,7 +23857,7 @@ function payScreen(s, disabled) {
 function payApprovalScreen(s, disabled) {
   const P2 = S2.pay, W = P2.what, n = P2.req.n;
   const out = [el("h3", {}, `Send approval ${n} for a shielded Safe`)];
-  const leave = (label, go = false) => el("button", { class: go ? "go" : "link", type: "button", disabled, onclick: leavePay }, label);
+  const leave = (label2, go = false) => el("button", { class: go ? "go" : "link", type: "button", disabled, onclick: leavePay }, label2);
   out.push(el("p", {}, `A link from another device: its passkey and console signed this approval there, with one-time key ${n}. A wallet here sends it. It pays the gas and approves nothing: anyone may send an approval, and it can do only what was signed.`));
   if (!W) {
     out.push(S2.error ? el("div", { class: "actions" }, leave("Go to the page")) : el("p", { class: "muted" }, "Checking the approval against the chain…"));
@@ -23740,7 +23899,7 @@ function payApprovalScreen(s, disabled) {
 function payBuildScreen(disabled) {
   const P2 = S2.pay, W = P2.what;
   const out = [el("h3", {}, "Pay the gas for a shielded Safe")];
-  const leave = (label) => el("button", { class: W?.built ? "go" : "link", type: "button", disabled, onclick: leavePay }, label);
+  const leave = (label2) => el("button", { class: W?.built ? "go" : "link", type: "button", disabled, onclick: leavePay }, label2);
   out.push(el("p", {}, "A link from another device: it made a passkey and key 0 there, and asks a wallet here to pay for the build. Your wallet sends one transaction, sends no ETH, and owns none of what it makes."));
   if (!W) {
     out.push(S2.error ? el("div", { class: "actions" }, leave("Go to the page")) : el("p", { class: "muted" }, "Working out what the link builds, from the chain…"));
@@ -24000,7 +24159,7 @@ function drawSide() {
     "li",
     {},
     el("div", { class: "h" }, el("span", {}, `#${e.n} · ${e.summary}`), el("span", { class: `badge ${e.status}` }, e.status)),
-    el("div", { class: "s" }, `verify ${e.verify} · `, e.txHash ? txLink(e.txHash) : "not sent yet")
+    el("div", { class: "s" }, `verify ${e.verify} · `, e.txHash ? txLink(e.txHash) : e.status === "landed" ? "sent from another device" : "not sent yet")
   ))));
 }
 function drawAttacks() {
@@ -24188,10 +24347,10 @@ var init_main = __esm({
     HARDWARE = "A Trezor or a Ledger pays the gas through a browser wallet that drives it, such as Rabby, MetaMask or Frame: connect it there, then pick that wallet here. The device will show a call to Multicall3 (0xcA11…CA11) on Base Sepolia. What that call approves is on this console's screen.";
     walletId2 = (info) => info.rdns || info.uuid;
     followed = /* @__PURE__ */ new WeakSet();
-    connectButton = (disabled, label = "Connect a wallet", go = true) => el(
+    connectButton = (disabled, label2 = "Connect a wallet", go = true) => el(
       "div",
       {},
-      el("div", { class: "actions" }, el("button", { class: go ? "go" : "", type: "button", disabled, onclick: () => connectWallet2() }, label)),
+      el("div", { class: "actions" }, el("button", { class: go ? "go" : "", type: "button", disabled, onclick: () => connectWallet2() }, label2)),
       S2.walletsHere ? el("p", { class: "small" }, HARDWARE) : null
     );
     sendTestEth = async (to) => {

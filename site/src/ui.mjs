@@ -35,14 +35,68 @@ export function refuseFrames() {
 
 /** An address: its blockie, your name for it if you gave one (src/names.mjs), and the address itself,
  * always: a name is a label you chose, never instead of the address. */
-export function addr(a, { link = true } = {}) {
+export function addr(a, { link = true, copy = false } = {}) {
   if (!a) return el("span", { class: "muted" }, "—");
-  const name = nameOf(a);
-  const kids = [el("img", { src: blockieSrc(a), alt: "" }), name ? el("b", { class: "name", title: "Your name for it, kept in this browser" }, name) : null,
-    el("span", { title: a }, short(a, 8, 6))];
   const url = link && C?.explorer ? `${C.explorer}/address/${a}` : null;
-  return url ? el("a", { class: "addr", href: url, target: "_blank", rel: "noopener noreferrer" }, ...kids) : el("span", { class: "addr" }, ...kids);
+  const node = url ? el("a", { class: "addr", href: url, target: "_blank", rel: "noopener noreferrer" }, ...addrParts(a)) : el("span", { class: "addr" }, ...addrParts(a));
+  return copy ? el("span", { class: "addr-copy" }, node, copyButton(a)) : node;
 }
+const addrParts = (a) => {
+  const name = nameOf(a);
+  return [el("img", { src: blockieSrc(a), alt: "" }), name ? el("b", { class: "name", title: "Your name for it, kept in this browser" }, name) : null,
+    el("span", { title: a }, short(a, 8, 6))];
+};
+/** An address as a label, not a link: for menus. */
+export const label = (a) => el("span", { class: "addr" }, ...addrParts(a));
+
+// ----------------------------------------------------------------------------- icons
+// Drawn as SVG elements (no markup strings), stroked in the text's own colour.
+const SVG = "http://www.w3.org/2000/svg";
+function icon(paths) {
+  const s = document.createElementNS(SVG, "svg");
+  for (const [k, v] of Object.entries({ viewBox: "0 0 16 16", width: "16", height: "16", "aria-hidden": "true", fill: "none", stroke: "currentColor",
+    "stroke-width": "1.5", "stroke-linecap": "round", "stroke-linejoin": "round" })) s.setAttribute(k, v);
+  for (const d of paths) { const p = document.createElementNS(SVG, "path"); p.setAttribute("d", d); s.append(p); }
+  return s;
+}
+export const copyIcon = () => icon(["M6 5.5h6.5a1 1 0 0 1 1 1V13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6.5a1 1 0 0 1 1-1z", "M11 3.5V3a1 1 0 0 0-1-1H3.5a1 1 0 0 0-1 1v6.5a1 1 0 0 0 1 1H4"]);
+const checkIcon = () => icon(["M3 8.5l3.2 3.2L13 4.8"]);
+export const caretIcon = () => icon(["M4 6l4 4 4-4"]);
+
+/** One press copies `text`; the icon turns to a check for a moment. */
+export function copyButton(text, what = "address") {
+  const b = el("button", { type: "button", class: "icon copy", title: `Copy the ${what}`, "aria-label": `Copy the ${what}`, onclick: async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      b.replaceChildren(checkIcon()); b.classList.add("done"); b.title = "Copied";
+      setTimeout(() => { b.replaceChildren(copyIcon()); b.classList.remove("done"); b.title = `Copy the ${what}`; }, 1500);
+    } catch {
+      b.title = "This browser wouldn't copy. Select the address and copy it yourself.";
+    }
+  } }, copyIcon());
+  return b;
+}
+
+// ----------------------------------------------------------------------------- pickers
+// A small drop-down: a caret that opens a menu of choices, each an address with its blockie and your
+// name for it. Whether it is open outlives a redraw; a click anywhere else closes it.
+const pickerOpen = new Set();
+export function picker(id, title, items, onPick, { footer = null } = {}) {
+  const d = el("details", { class: "picker", "data-picker": id, open: pickerOpen.has(id), ontoggle: (e) => { if (e.target.open) pickerOpen.add(id); else pickerOpen.delete(id); } },
+    el("summary", { title, "aria-label": title }, caretIcon()),
+    el("ul", { class: "menu", role: "list" }, ...items.map((it) => el("li", {},
+      el("button", { type: "button", class: it.on ? "on" : "", onclick: () => { pickerOpen.delete(id); d.open = false; onPick(it.address); } },
+        label(it.address), it.note ? el("span", { class: "small" }, it.note) : null))),
+      items.length ? null : el("li", { class: "small muted" }, "Nothing here yet."),
+      footer ? el("li", {}, footer) : null));
+  return d;
+}
+try {
+  document.addEventListener("click", (e) => {
+    if (e.target.closest?.("details.picker")) return;
+    for (const d of document.querySelectorAll("details.picker[open]")) { d.open = false; pickerOpen.delete(d.dataset.picker); }
+  });
+} catch {}
 export const txLink = (h) => (C?.explorer ? el("a", { href: `${C.explorer}/tx/${h}`, target: "_blank", rel: "noopener noreferrer", class: "mono" }, short(h, 10, 6)) : el("span", { class: "mono" }, short(h, 10, 6)));
 
 export function drawBlockie(canvas, seed) {

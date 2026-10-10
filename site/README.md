@@ -81,6 +81,14 @@ decimals for its own display, and the console reviews it as a token it doesn't k
 and says so. A token send is a Safe transaction calling the token's `transfer`, so its owners approve
 it like any other. The page holds the hold back when the Safe has less of the token than it sends.
 
+**Getting around.** The main addresses (the Safe, the wallet, owners, Safes, the address book)
+have a copy icon: one press copies the whole address. A caret beside the Safe's address opens a menu
+of your Safes, each by blockie and name. A caret beside "To" opens your other Safes, the wallet here
+and your contacts (any address with a name in the address book), and under "To" the page says
+whom it is: your name for it, or "not in your address book". 25%, 50% and Max fill in a share of the
+Safe's balance of the chosen asset, worked out in its smallest units; Max is all of it, since the
+Safe pays no gas of its own. The pickers are `ui.picker`, a `<details>` with a menu.
+
 **Names.** "Name it" beside an owner or a Safe, and the Address book card, keep your names for
 addresses in `sab.names`. Every address the pages draw shows its name beside it, never instead of it,
 and the console never sees them. Export JSON writes `{tag: "sign-and-burn/address-book/v1", chain,

@@ -117,6 +117,11 @@ The checks, in order:
     - Names: the first browser names the second seat and the shared Safe ("Name it"), and they show
       beside their addresses. Export JSON downloads the address book, tagged; the second browser
       imports the file and shows the same names. A pasted file with a bad address is refused whole.
+    - Getting around, in the second browser: the copy icon beside the Safe's address copies it; the
+      caret beside it lists the Safes by name, and picking the shared Safe opens it; the To menu lists
+      the other Safe and the contacts by name (not the Safe sent from), and picking one fills To and
+      names it; an address typed in is "not in your address book". (50% and Max are in the tokens
+      step: 2.5 and 5 of 5 USDC.)
     - A phone with no wallet: the second browser adds the first seat to its own 1 of 1 Safe. Holding
       is offered, and no other owner is asked. One tap signs key 1, and the approval waits as a link to
       the main page. The first browser's wallet sends it there; on chain the second Safe has both
