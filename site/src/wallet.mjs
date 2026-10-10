@@ -778,7 +778,7 @@ function approvalShare(w, overtaken) {
       `This page moves on once it lands. Until then key ${w.n} sends nothing else.`),
     el("input", { class: "mono share-link", readonly: true, value: link, "aria-label": "The link", onfocus: (e) => e.target.select() }),
     el("div", { class: "actions" }, el("button", { class: canPay() ? "" : "go", type: "button", disabled: !!S.busy, onclick: () => copy(link, "Link copied. This page moves on once the approval lands.") }, "Copy link")),
-    qrToggle(pay.approvalQr(S.C, w.n, w.approval, w.tx, new URL("./", location.href).href)?.segments ?? null));
+    qrToggle(pay.approvalParts(S.C, w.n, w.approval, w.tx, sameTx(w.tx, S.current?.tx) ? S.sigs : pay.keptSigs(S.C.id, w.safe, w.tx))));
 }
 
 /** Reject is one easy press, except for a transaction key n has signed: that one is the only thing

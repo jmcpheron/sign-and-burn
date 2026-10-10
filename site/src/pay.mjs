@@ -30,7 +30,7 @@
 // another's (sign-and-burn/proposal/v1, in "#propose=…"). It holds the Safe and the transaction's
 // fields, nothing signed and no hash. The other device's console works out the hash and what it does;
 // the votes already cast are on chain, where that page reads them.
-import { bytesToHex, decodeAbiParameters, encodeAbiParameters, getAddress, hexToBytes, parseAbiParameters } from "viem";
+import { bytesToHex, decodeAbiParameters, encodeAbiParameters, getAddress, hexToBytes, parseAbiParameters, sha256 } from "viem";
 import * as ch from "./chain.mjs";
 
 export const TAG = "sign-and-burn/build/v1";
@@ -114,6 +114,16 @@ const CURVE = parseAbiParameters("bytes authenticatorData, string clientDataFiel
 /** Approval n as a compact link for a QR code: { link, segments } (the link's start in byte mode, the
  * base-43 rest in alphanumeric mode), or null if the curve signature isn't in its canonical form. */
 export function approvalQr(C, n, a, tx, base) {
+  const bytes = packApproval(C, n, a, tx);
+  if (!bytes) return null;
+  const prefix = `${base}#aq=`, rest = base43(bytes);
+  return { link: prefix + rest, segments: [{ mode: "byte", text: prefix }, { mode: "alnum", text: rest }] };
+}
+
+/** The approval's bytes: format 1 (approval-qr/v1, the fields alone), or format 2 (approval-qr/v2:
+ * then the owners' own signatures of the Safe transaction, [{ owner, signature }], at most 10, each
+ * 20 + 65 bytes). null if the curve signature isn't in its canonical form. */
+function packApproval(C, n, a, tx, sigs = null) {
   let parts;
   try { parts = decodeAbiParameters(CURVE, a.curveSig); } catch { return null; }
   if (encodeAbiParameters(CURVE, parts).toLowerCase() !== a.curveSig.toLowerCase()) return null;
@@ -123,19 +133,28 @@ export function approvalQr(C, n, a, tx, base) {
   const int = (v, len) => { const h = BigInt(v).toString(16).padStart(len * 2, "0"); if (h.length > len * 2) throw new Error("too big"); put("0x" + h); };
   const bytes = (b, lenBytes) => { int(b.length, lenBytes); out.push(...b); };
   const num = (v) => { const h = BigInt(v).toString(16), b = BigInt(v) ? hexToBytes("0x" + (h.length % 2 ? "0" : "") + h) : new Uint8Array(); bytes(b, 1); };
-  out.push(1);
+  out.push(sigs ? 2 : 1);
   int(C.id, 4); put(a.seat); put(a.safe); int(n, 8); put(a.nextKey);
   for (const v of a.oneTime) put(v);
   put(tx.to); num(tx.value); out.push(Number(tx.operation)); num(tx.nonce); bytes(hexToBytes(tx.data || "0x"), 2);
   bytes(hexToBytes(ad), 2); bytes(new TextEncoder().encode(fields), 2); int(r, 32); int(s, 32);
-  const prefix = `${base}#aq=`, rest = base43(Uint8Array.from(out));
-  return { link: prefix + rest, segments: [{ mode: "byte", text: prefix }, { mode: "alnum", text: rest }] };
+  if (sigs) {
+    if (sigs.length > 10) throw new Error("at most 10 signatures");
+    out.push(sigs.length);
+    for (const g of sigs) { put(g.owner); put(g.signature); }
+  }
+  return Uint8Array.from(out);
 }
 
 /** The compact approval -> the same { req } the approval link gives, or { refuse }. */
 function approvalQrFrom(s, C) {
-  const again = " Ask for the code again.", b = unbase43(decodeURIComponent(s.replace(/%(?![0-9A-Fa-f]{2})/g, "%25")));
-  if (!b || b[0] !== 1) return { refuse: `This code isn't a ${APPROVAL_QR_TAG} approval.` + again };
+  return unpackApproval(unbase43(decodeURIComponent(s.replace(/%(?![0-9A-Fa-f]{2})/g, "%25"))), C, 1);
+}
+
+/** Bytes of format `format` (packApproval) -> { req } (with req.sigs for format 2), or { refuse }. */
+function unpackApproval(b, C, format) {
+  const again = " Ask for the code again.";
+  if (!b || b[0] !== format) return { refuse: `This code isn't a ${format === 1 ? APPROVAL_QR_TAG : APPROVAL_PARTS_TAG} approval.` + again };
   let i = 1;
   const take = (n) => { if (i + n > b.length) throw new Error("short"); const x = b.slice(i, i + n); i += n; return x; };
   const hex = (n) => bytesToHex(take(n));
@@ -151,13 +170,75 @@ function approvalQrFrom(s, C) {
     const to = hex(20), value = num(), operation = take(1)[0], nonce = num(), data = bytesToHex(lenThen(2, 8192));
     if (operation > 1) return { refuse: "This code's operation is neither a call nor a delegatecall." + again };
     const ad = bytesToHex(lenThen(2, 1024)), fields = new TextDecoder("utf-8", { fatal: true }).decode(lenThen(2, 2048)), r = int(32), sv = int(32);
+    let sigs = null;
+    if (format === 2) {
+      const k = take(1)[0];
+      if (k > 10) throw new Error("too many signatures");
+      sigs = Array.from({ length: k }, () => ({ owner: hex(20), signature: hex(65) }));
+    }
     if (i !== b.length) throw new Error("trailing bytes");
     const curveSig = encodeAbiParameters(CURVE, [ad, fields, r, sv]);
     return { req: { tag: APPROVAL_TAG, chain, seat, safe, n: Number(n), nextKey, oneTime, curveSig,
-      tx: { to, value, data, operation, nonce } } };
+      tx: { to, value, data, operation, nonce }, ...(sigs ? { sigs } : {}) } };
   } catch {
     return { refuse: "This code's approval isn't whole, or has bytes it shouldn't." + again };
   }
+}
+
+// ----------------------------------------------------------------------------- the approval in parts
+// For the page's own scanner ("Scan a code" on the main page), the approval goes as several medium QR
+// codes that cycle on screen, easier to read one by one than one dense code: format 2 above, with any
+// Safe{Wallet} signatures, in base 43, cut into parts. Each part is QR alphanumeric text:
+//   SAB2/<part>/<parts>/<id>/<base 43>
+// id is the first 8 hex digits (in capitals) of the whole payload's SHA-256: parts of different
+// approvals never mix, and the whole is checked once it is put together. A phone's own camera reads a
+// part as plain text; only this page's scanner puts them together.
+export const APPROVAL_PARTS_TAG = "sign-and-burn/approval-qr/v2";
+const PART = /^SAB2\/(\d{1,2})\/(\d{1,2})\/([0-9A-F]{8})\/([0-9A-Z$*+\-./:]+)$/;
+const partsId = (bytes) => sha256(bytes).slice(2, 10).toUpperCase();
+
+/** The owners' signatures kept with a transaction waiting for votes (the wallet page's "sab.proposal",
+ * imported from Safe{Wallet}), if they are for this same transaction. */
+export function keptSigs(chainId, safe, tx) {
+  let k = null;
+  try { k = JSON.parse(localStorage.getItem("sab.proposal"))?.[`${chainId}:${safe.toLowerCase()}`]; } catch {}
+  const same = k && ["to", "value", "data", "operation", "nonce"].every((f) => String(k[f] ?? "").toLowerCase() === String(tx[f] ?? "").toLowerCase());
+  return same && Array.isArray(k.sigs) ? k.sigs.slice(0, 10) : [];
+}
+
+/** Approval n, with the owners' signatures that ride with it, as the texts of its parts. null if the
+ * curve signature isn't canonical. */
+export function approvalParts(C, n, a, tx, sigs = [], size = 800) {
+  const bytes = packApproval(C, n, a, tx, sigs);
+  if (!bytes) return null;
+  const text = base43(bytes), id = partsId(bytes);
+  const cut = Math.ceil(text.length / Math.ceil(text.length / size) / 3) * 3;   // whole 3-character groups, parts of even size
+  const chunks = [];
+  for (let i = 0; i < text.length; i += cut) chunks.push(text.slice(i, i + cut));
+  return chunks.map((c, i) => `SAB2/${i + 1}/${chunks.length}/${id}/${c}`);
+}
+
+/** Puts scanned parts together. add(text) -> { part, parts } for a part, { done: { req } | { refuse } }
+ * once the last one is in, or null for text that isn't a part. */
+export function partCollector(C) {
+  let id = null, total = 0;
+  const got = new Map();
+  return {
+    get have() { return got.size; },
+    get total() { return total; },
+    add(text) {
+      const m = PART.exec(String(text || "").trim());
+      if (!m) return null;
+      const [, i, n, pid, chunk] = m, k = Number(i), all = Number(n);
+      if (!(all >= 1 && all <= 20 && k >= 1 && k <= all)) return null;
+      if (pid !== id) { id = pid; total = all; got.clear(); }   // another approval's parts start over
+      got.set(k, chunk);
+      if (got.size < total) return { part: k, parts: total };
+      const bytes = unbase43(Array.from({ length: total }, (_, j) => got.get(j + 1)).join(""));
+      if (!bytes || partsId(bytes) !== id) return { done: { refuse: "The parts didn't put together into the approval they name. Scan them again." } };
+      return { done: unpackApproval(bytes, C, 2) };
+    },
+  };
 }
 
 // ----------------------------------------------------------------------------- from Safe{Wallet}

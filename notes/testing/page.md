@@ -70,9 +70,9 @@ The checks, in order:
     names it, the seat is at key 5, and the Safe hasn't run it.
 15. A press with no wallet: the first browser loses its wallet. Holding asks the passkey once (key 5),
     and the approval waits to be shared. After a reload: the same link, and no new passkey signature.
-    Its QR code carries the approval in compact form (`#aq=`, base 43). The second browser opens that
-    compact link as a phone's camera would: the same approval, the same check code, and the seat
-    accepts it. It refuses a link with another next key (the seat's own refusal, no button), then
+    Its QR codes carry the approval in parts (`SAB2/…`, cycling). A third browser, its fake camera
+    playing a video of those codes (`--use-file-for-fake-video-capture`), taps "Scan a code": jsQR reads
+    them, they go together, and the approval opens with the same check code, the seat accepting it. It refuses a link with another next key (the seat's own refusal, no button), then
     pastes the real one into “Pay for a request”. The seat accepts it, and the hash it works out
     shows the same check code. Its wallet sends it: the seat moves to key 6, and the Safe runs it. The first browser sees approval 5
     land by itself, says another device sent it, and its history has it landed.
@@ -119,6 +119,9 @@ The checks, in order:
       key that names the second seat. With a tampered hash: refused. As it is: imported, the console's
       words, 1 of 2 votes ("signed in Safe{Wallet}"), and the forged one left out. The first seat's press
       carries the wallet's signature, and the Safe runs it: 2 of 3.
+    - The same with no wallet on the seat's device: a second Safe{Wallet} transaction imported, the seat
+      signs, and its QR codes carry the wallet's signature. A browser with a fake camera scans them, finds
+      the signature checks out and that one send runs it, and sends: the Safe runs it.
     - Names: the first browser names the second seat and the shared Safe ("Name it"), and they show
       beside their addresses. Export JSON downloads the address book, tagged; the second browser
       imports the file and shows the same names. A pasted file with a bad address is refused whole.

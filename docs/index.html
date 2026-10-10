@@ -51,6 +51,12 @@
       <div class="actions"><button id="review-request" type="submit" disabled>Review request</button></div>
       <p id="pay-request-status" class="small" role="status"></p>
     </form>
+    <div class="scan">
+      <p class="small">Or scan it: the signing device's QR codes, or any link's code. The camera stays in this page; nothing is recorded or sent.</p>
+      <div class="actions"><button id="scan-start" type="button" disabled>Scan a code</button><button id="scan-stop" type="button" class="link" hidden>Stop</button></div>
+      <div id="scan-box"></div>
+      <p id="scan-status" class="small" role="status"></p>
+    </div>
   </details>
 
   <section class="grid">

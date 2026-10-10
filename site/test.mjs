@@ -161,6 +161,29 @@ badQ("a character outside base 43", "#aq=" + rest.slice(0, -3) + "aaa");
 badQ("another chain", "#aq=" + pay.approvalQr({ ...C, id: 1 }, 7, real, otx, "x").link.split("#aq=")[1]);
 console.log(`compact approvals: ${compact.link.length} characters, a version ${code.version} code, and four refusals`);
 
+// The approval in parts, for the page's own scanner: several medium codes, with the owners' signatures
+// riding along; scanned in any order, twice over, put together, and checked.
+const owSig = [{ owner: "0x" + "12".repeat(20), signature: "0x" + "34".repeat(64) + "1b" }];
+const parts = pay.approvalParts(C, 7, real, otx, owSig);
+const versions = parts.map((t) => qr.encode([{ mode: "alnum", text: t }], { ecl: "M" })?.version);
+check("parts: QR alphanumeric text, each a medium code", parts.length >= 3 && parts.length <= 8 && versions.every((v) => v && v <= 20));
+const coll = pay.partCollector(C);
+let done = null;
+for (const t of [parts[2], parts[0], parts[2], ...parts.slice(1)]) { const r = await coll.add(t); if (r?.done) { done = r.done; break; } }
+check("parts: in any order, put together, read as the approval link does, with the signature",
+  done?.req && JSON.stringify({ ...done.req, sigs: undefined }) === JSON.stringify({ ...viaLink, sigs: undefined }) && JSON.stringify(done.req.sigs) === JSON.stringify(owSig));
+check("parts: text that isn't one is ignored", (await pay.partCollector(C).add("https://signandburn.app/")) === null);
+const other = pay.approvalParts(C, 8, real, otx, []);
+const mix = pay.partCollector(C);
+for (const t of parts.slice(0, -1)) await mix.add(t);
+await mix.add(other[0]);
+check("parts: another approval's part starts over", mix.have === 1 && mix.total === other.length);
+const broken = pay.partCollector(C);
+let badDone = null;
+for (const t of parts.map((t, i) => (i === 1 ? t.slice(0, -3) + (t.endsWith("000") ? "111" : "000") : t))) { const r = await broken.add(t); if (r?.done) badDone = r.done; }
+check("parts: a changed part is refused, not read", !!badDone?.refuse);
+console.log(`approval parts: ${parts.length} codes of versions ${[...new Set(versions)].join(", ")}, with a signature, any order, and refusals`);
+
 // The address book a file carries between browsers: addresses lowercased, names trimmed, and a file
 // with any bad entry refused whole.
 const book = (n, extra = {}) => JSON.stringify({ tag: names.BOOK_TAG, chain: 84532, names: n, ...extra });
