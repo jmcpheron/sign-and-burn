@@ -36,6 +36,13 @@
 
   <div id="flash" role="status"></div>
 
+  <section class="import" aria-label="Import transactions">
+    <div class="actions"><button id="scan-start" type="button" disabled>Import transactions</button><button id="scan-stop" type="button" class="link" hidden>Stop</button></div>
+    <p class="small">Scan another device's QR codes: an approval to send, or a transaction for a Safe's owners. The camera stays in this page; nothing is recorded or sent.</p>
+    <div id="scan-box"></div>
+    <p id="scan-status" class="small" role="status"></p>
+  </section>
+
   <section class="wallet-grid">
     <div class="wallet-main">
       <section class="card" id="act"></section>

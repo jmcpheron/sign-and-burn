@@ -226,6 +226,8 @@ export function partCollector(C) {
   return {
     get have() { return got.size; },
     get total() { return total; },
+    /** The parts read so far, as they were scanned: to hand to the main page, which reads them again. */
+    get texts() { return [...got].sort((x, y) => x[0] - y[0]).map(([k, chunk]) => `SAB2/${k}/${total}/${id}/${chunk}`); },
     add(text) {
       const m = PART.exec(String(text || "").trim());
       if (!m) return null;

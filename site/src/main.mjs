@@ -66,6 +66,7 @@ async function boot() {
   // A link pasted into "Pay for a request" while the page was starting is open already: don't open it
   // again, just draw it with the wallet found since.
   if (S.step === "pay") return render();
+  if (await openScanned()) return;
   if (await openPayLink()) return;
   await settle();
 }
@@ -375,6 +376,18 @@ async function scan() {
   } catch (e) {
     stopScan(e?.name === "NotAllowedError" ? "The camera wasn't allowed. Allow it for this site, or paste the link." : `The camera didn't start: ${e?.message || e}`);
   }
+}
+
+/** The wallet page's "Import transactions" read an approval's parts, and sent them here to be paid
+ * (#scanned). They are read again, as the camera's would be. */
+async function openScanned() {
+  if (location.hash !== "#scanned") return false;
+  let texts = [];
+  try { texts = JSON.parse(sessionStorage.getItem("sab.scanned")) || []; sessionStorage.removeItem("sab.scanned"); } catch {}
+  history.replaceState(null, "", location.pathname + location.search);
+  const parts = pay.partCollector(S.C);
+  const got = (Array.isArray(texts) ? texts : []).map((t) => parts.add(t)).find((g) => g?.done)?.done;
+  return got ? openPayLink(got) : false;
 }
 
 async function checkBuilt() {

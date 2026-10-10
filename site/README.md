@@ -49,6 +49,10 @@ checked once the parts are together. They are not links: the main page's "Scan a
 paying page checks each signature that came with it against its owner and this transaction, and its
 one send carries the signatures and any votes the Safe holds, so it runs the Safe if that is enough.
 iPhones give pages no QR reader (Safari ships BarcodeDetector disabled), so the page bundles jsQR.
+The wallet page's "Import transactions" scans too: a proposal link's code opens there; an approval's
+parts, or a payment link's code, go to the main page to be paid. The parts go by this tab's
+`sessionStorage` (`sab.scanned`, removed when read) and `#scanned`, and the main page reads them again
+as the camera's would be.
 
 The single-code form below is still read, as a link, but no longer shown. A signed approval's link is
 about 3,600 characters: more than one QR code holds. Its code carried a compact form (`sign-and-burn/approval-qr/v1`, `#aq=` in `src/pay.mjs`). The same fields are

@@ -172,6 +172,7 @@ let done = null;
 for (const t of [parts[2], parts[0], parts[2], ...parts.slice(1)]) { const r = await coll.add(t); if (r?.done) { done = r.done; break; } }
 check("parts: in any order, put together, read as the approval link does, with the signature",
   done?.req && JSON.stringify({ ...done.req, sigs: undefined }) === JSON.stringify({ ...viaLink, sigs: undefined }) && JSON.stringify(done.req.sigs) === JSON.stringify(owSig));
+check("parts: the texts read, as the wallet page hands them to the main page, are the parts", JSON.stringify(coll.texts) === JSON.stringify(parts));
 check("parts: text that isn't one is ignored", (await pay.partCollector(C).add("https://signandburn.app/")) === null);
 const other = pay.approvalParts(C, 8, real, otx, []);
 const mix = pay.partCollector(C);

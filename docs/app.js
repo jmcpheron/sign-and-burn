@@ -22253,6 +22253,10 @@ function partCollector(C2) {
     get total() {
       return total;
     },
+    /** The parts read so far, as they were scanned: to hand to the main page, which reads them again. */
+    get texts() {
+      return [...got].sort((x, y) => x[0] - y[0]).map(([k, chunk]) => `SAB2/${k}/${total}/${id}/${chunk}`);
+    },
     add(text) {
       const m = PART.exec(String(text || "").trim());
       if (!m) return null;
@@ -22409,1058 +22413,6 @@ var init_pay = __esm({
     SAFE_SERVICE = "https://api.safe.global/tx-service/basesep/api/v1";
     safeWalletUrl = (safe) => `${SAFE_SERVICE}/safes/${getAddress(safe)}/multisig-transactions/?executed=false`;
     ZERO_ADDR = "0x0000000000000000000000000000000000000000";
-  }
-});
-
-// src/wallet.mjs
-var wallet_exports = {};
-function keepSafe(a) {
-  if (safes().some((x) => x.toLowerCase() === a.toLowerCase())) return;
-  const all2 = read("sab.safes");
-  all2[safesKey()] = [...all2[safesKey()] || [], getAddress(a)];
-  try {
-    localStorage.setItem("sab.safes", JSON.stringify(all2));
-  } catch {
-  }
-}
-async function addToken() {
-  const a = (S.addToken || "").trim();
-  await guard("Reading the token from the chain…", async () => {
-    if (!isAddress(a)) throw new Error("Add a token: that isn't an address.");
-    if (tokenOf(a)) throw new Error("That token is on the list already.");
-    let t;
-    try {
-      t = await tokenInfo(S.C, a);
-    } catch {
-      throw new Error(`${short(a)} doesn't answer as a token (symbol and decimals). Nothing was added.`);
-    }
-    const all2 = read("sab.tokens");
-    all2[String(S.C.id)] = [...all2[String(S.C.id)] || [], t];
-    try {
-      localStorage.setItem("sab.tokens", JSON.stringify(all2));
-    } catch {
-    }
-    S.addToken = "";
-    S.send.asset = t.address;
-    S.flash = `Added ${t.symbol}. The console doesn't know it, so its review shows raw units: ${t.decimals} decimals make one ${t.symbol}.`;
-    await refresh();
-  });
-}
-function keepProposal(tx) {
-  const all2 = read("sab.proposal"), was = all2[proposalKey()];
-  if (tx) all2[proposalKey()] = { ...txOnly(tx), sigs: tx.sigs || (sameTx(was, tx) ? was.sigs : void 0) };
-  else delete all2[proposalKey()];
-  try {
-    localStorage.setItem("sab.proposal", JSON.stringify(all2));
-  } catch {
-  }
-}
-async function boot2() {
-  try {
-    S.info = await boot();
-    S.cfg = parseCfg(await (await fetch("console/cfg.py")).text());
-    S.C = connect(S.cfg);
-    useChain(S.C);
-  } catch (e) {
-    S.error = `The console didn't start: ${e.message || e}`;
-    return render();
-  }
-  $("#lamp").className = "lamp on";
-  $("#stats").textContent = `The console: MicroPython ${S.info.micropython} in WebAssembly, fingerprint ${S.info.fingerprint.slice(0, 4)}·${S.info.fingerprint.slice(4, 8)}. It reviews every transaction here, and signs only for your seat.`;
-  if (!ledgerKept()) S.warn = "This browser won't keep the console's ledger (private browsing?). The guardrail then lasts only while this tab is open.";
-  S.pk = stored();
-  if (S.pk && S.pk.rpId !== location.hostname) S.pk = null;
-  await reconnectWallet().catch(() => {
-  });
-  await guard("Reading your Safe from the chain…", find);
-  window.addEventListener("hashchange", () => {
-    if (proposalFrom(location.hash, S.C)) guard("Reading the Safe from the chain…", openProposal);
-  });
-  setInterval(() => {
-    if (!S.busy && S.current && document.visibilityState === "visible") refresh().then((changed) => changed && render(), () => {
-    });
-  }, S.C.id === 31337 ? 1500 : 12e3);
-}
-async function find() {
-  if (!S.pk) return;
-  const signer = ask({ op: "signer", x: S.pk.x, y: S.pk.y }).signer;
-  const onChain = (await signerAddress(S.C, S.pk)).toLowerCase();
-  if (onChain !== signer) throw new Error(`the signer factory names ${onChain} for this passkey, the console ${signer}`);
-  let h2 = home();
-  if (!h2?.seat || !await hasCode(S.C, h2.seat)) {
-    const used = (await seatCounts(S.C, (await seatsOf(S.C, signer)).slice(-8))).filter((s) => s.n > 0).pop();
-    h2 = used ? { seat: used.address, safe: await safeAddress(S.C, used.address), found: true } : null;
-  }
-  S.home = h2;
-  if (!h2) return;
-  S.at = h2.safe;
-  if (proposalFrom(location.hash, S.C)) return openProposal();
-  await refresh();
-}
-async function openProposal() {
-  const got = proposalFrom(location.hash, S.C);
-  history.replaceState(null, "", location.pathname + location.search);
-  if (!got) return;
-  if (got.refuse) throw new Error(got.refuse);
-  if (!S.home) throw new Error("This browser has no seat yet. Open the link on the device whose seat is an owner of that Safe.");
-  const safe = await readSafe(S.C, got.req.safe);
-  const owns = (a) => safe.exists && safe.owners.some((o) => same(o, a));
-  if (!owns(S.home.seat) && !owns(S.wallet?.account)) throw new Error(`Neither your seat nor the wallet here is an owner of the Safe ${short(got.req.safe)}. Nothing to approve.`);
-  if (Number(got.req.tx.nonce) < safe.nonce) throw new Error(`The Safe ${short(got.req.safe)} has run its transaction ${got.req.tx.nonce} already. Nothing to approve.`);
-  if (owns(S.home.seat)) keepSafe(got.req.safe);
-  S.at = getAddress(got.req.safe);
-  S.draft = got.req.tx;
-  S.acks = {};
-  S.flash = "";
-  await refresh();
-}
-async function openSafe(a) {
-  S.at = a;
-  S.draft = null;
-  S.acks = {};
-  S.flash = "";
-  S.error = "";
-  await guard("Reading the Safe from the chain…", refresh);
-}
-async function addSafe() {
-  const a = (S.addSafe || "").trim();
-  await guard("Reading the Safe from the chain…", async () => {
-    if (!isAddress(a)) throw new Error("That isn't an address.");
-    const safe = await readSafe(S.C, a);
-    if (!safe.exists || !safe.owners.some((o) => same(o, S.home.seat))) throw new Error(`Your seat isn't an owner of ${short(a)}. Add it there first: on that Safe's own page, add ${S.home.seat} as an owner.`);
-    keepSafe(a);
-    S.addSafe = "";
-    S.at = getAddress(a);
-    S.draft = null;
-    S.acks = {};
-    await refresh();
-  });
-}
-async function refresh() {
-  const H = S.home;
-  if (!H || !await hasCode(S.C, H.seat)) return false;
-  const [seat, safe] = await Promise.all([readSeat(S.C, H.seat), readSafe(S.C, S.at || H.safe)]);
-  S.seat = seat;
-  S.safe = safe;
-  if (!safe.exists) return true;
-  ask({ op: "chain", chainId: S.C.id, seat: H.seat, n: seat.n });
-  S.owners = await Promise.all(safe.owners.map(async (a) => {
-    const yours = same(a, H.seat);
-    const [code, sent] = yours ? [true, 0] : await Promise.all([hasCode(S.C, a), S.C.pc.getTransactionCount({ address: a })]);
-    const isSeat2 = yours || code && await isSeat(S.C, a);
-    return { address: a, yours, isSeat: isSeat2, contract: !isSeat2 && code, sent };
-  }));
-  S.seatOwns = S.owners.some((o) => o.yours);
-  if (S.wallet) S.walletBalance = await S.C.pc.getBalance({ address: S.wallet.account }).catch(() => null);
-  const list = tokens(), bals = await tokenBalances(S.C, safe.address, list);
-  S.tokenBal = new Map(list.map((t, i) => [t.address.toLowerCase(), bals[i]]));
-  const waiting2 = mine().find((e) => e.status !== "landed") || null;
-  S.waiting = waiting2 && same(waiting2.safe, safe.address) ? waiting2 : null;
-  S.waitingElsewhere = waiting2 && !S.waiting ? waiting2 : null;
-  let kept = read("sab.proposal")[proposalKey()] || null;
-  if (S.draft && Number(S.draft.nonce) !== safe.nonce) S.draft = null;
-  if (kept && Number(kept.nonce) < safe.nonce) {
-    keepProposal(null);
-    kept = null;
-  }
-  S.current = S.waiting ? { tx: S.waiting.tx, locked: true } : kept ? { tx: txOnly(kept), kept: true } : S.draft ? { tx: S.draft } : null;
-  S.review = S.current ? ask({ op: "review", chainId: S.C.id, safe: safe.address, tx: S.current.tx }) : null;
-  S.votes = S.review?.ok ? await votesFor(S.C, safe.address, safe.owners, S.review.safeTxHash) : [];
-  S.sigs = (kept && S.current && sameTx(kept, S.current.tx) ? kept.sigs || [] : []).filter((x) => safe.owners.some((o) => same(o, x.owner)) && !S.votes.some((v) => same(v, x.owner)));
-  const was = S.seen;
-  S.seen = JSON.stringify([safe.address, seat.n, safe.nonce, String(safe.balance), safe.owners, safe.threshold, S.votes, S.sigs.length, S.waiting?.n, S.walletBalance === null ? "" : String(S.walletBalance)]);
-  return was !== S.seen;
-}
-async function guard(what, f) {
-  S.busy = what;
-  S.error = "";
-  $("#lamp").className = "lamp busy";
-  render();
-  try {
-    await f();
-  } catch (e) {
-    S.error = plain(e);
-  }
-  S.busy = "";
-  $("#lamp").className = "lamp on";
-  render();
-}
-async function connectWallet() {
-  await guard("Looking for wallets in this browser…", async () => {
-    const found = await findWallets();
-    if (!found.length) throw new Error("No wallet found in this browser. The seat's approvals can still go out from the main page, as a link for a wallet on another device.");
-    if (found.length > 1) {
-      S.choosing = found;
-      return;
-    }
-    await useWallet2(found[0]);
-  });
-}
-async function useWallet2(w, got = null) {
-  S.choosing = null;
-  got ||= await useWallet(S.C, w.provider);
-  S.wallet = { ...got, name: w.info.name, provider: w.provider };
-  try {
-    localStorage.setItem("sab.wallet", walletId(w.info));
-  } catch {
-  }
-  if (w.provider.on && !w.followed) {
-    w.followed = true;
-    w.provider.on("accountsChanged", async (accounts) => {
-      if (S.wallet?.provider !== w.provider) return;
-      S.wallet = accounts?.length ? { ...S.wallet, account: accounts[0] } : null;
-      await refresh().catch(() => {
-      });
-      if (accounts?.length && S.wallet?.account !== accounts[0]) return;
-      render();
-    });
-    w.provider.on("chainChanged", (id) => {
-      if (S.wallet?.provider === w.provider && Number(id) !== S.C.id) {
-        S.wallet = null;
-        S.error = `The wallet moved to another network. Connect it again for ${S.C.chain.name}.`;
-        render();
-      }
-    });
-  }
-  await refresh().catch(() => {
-  });
-}
-async function reconnectWallet() {
-  let id = null;
-  try {
-    id = localStorage.getItem("sab.wallet");
-  } catch {
-  }
-  if (!id) return;
-  const w = (await findWallets()).find((x) => walletId(x.info) === id || x.info.uuid === id);
-  const got = w && await useWallet(S.C, w.provider, { quiet: true }).catch(() => null);
-  if (got) await useWallet2(w, got);
-}
-async function needGas() {
-  S.walletBalance = await S.C.pc.getBalance({ address: S.wallet.account }).catch(() => null);
-  if (S.walletBalance === 0n) throw new Error(`${S.wallet.name}'s account ${short(S.wallet.account)} has no ${S.C.chain.name} ETH to pay the gas. Nothing was sent.`);
-}
-function draft(tx) {
-  S.error = "";
-  S.flash = "";
-  S.acks = {};
-  S.draft = tx;
-  refresh().then(() => {
-    render();
-    $("#act").scrollIntoView({ block: "start", behavior: "smooth" });
-  }, (e) => {
-    S.error = plain(e);
-    render();
-  });
-}
-function draftSend() {
-  const { to, amount, asset } = S.send, t = asset === "ETH" ? null : tokenOf(asset);
-  if (!isAddress(to)) return fail("Send to: that isn't an address.");
-  let value;
-  try {
-    value = t ? parseUnits(amount || "", t.decimals) : parseEther(amount || "");
-  } catch {
-    return fail(`Amount: that isn't a number of ${t ? t.symbol : "ETH"}.`);
-  }
-  if (value <= 0n) return fail("Amount: send more than nothing.");
-  if (t) return draft(tokenTx(t.address, to, value, S.safe.nonce));
-  draft({ to: getAddress(to), value: value.toString(), data: "0x", operation: 0, nonce: String(S.safe.nonce) });
-}
-function draftAdd() {
-  const a = S.add.trim(), t = Number(S.addThreshold);
-  if (!isAddress(a)) return fail("New owner: that isn't an address.");
-  if (isOwner(a)) return fail("That address is an owner already.");
-  if ([zeroAddress, "0x0000000000000000000000000000000000000001", S.safe.address.toLowerCase()].includes(a.toLowerCase())) return fail("A Safe can't have that address as an owner.");
-  draft(ownerTx(S.safe.address, S.safe.nonce, { add: a, threshold: t }));
-  S.add = "";
-}
-function draftRemove(o) {
-  draft(ownerTx(S.safe.address, S.safe.nonce, { remove: o, owners: S.safe.owners, threshold: Math.min(S.safe.threshold, S.safe.owners.length - 1) }));
-}
-function draftThreshold() {
-  const t = Number(S.threshold);
-  if (!(t >= 1 && t <= S.safe.owners.length) || t === S.safe.threshold) return fail("Pick another number of approvals.");
-  draft(ownerTx(S.safe.address, S.safe.nonce, { threshold: t }));
-}
-function fail(why) {
-  S.error = why;
-  S.flash = "";
-  render();
-}
-function discard() {
-  S.draft = null;
-  S.acks = {};
-  S.error = "";
-  if (S.current?.kept) keepProposal(null);
-  refresh().finally(render);
-}
-async function importSafeWallet() {
-  await guard("Checking the transaction from Safe{Wallet}…", async () => {
-    await refresh();
-    if (S.current && !(S.current.tx === S.draft)) throw new Error("Finish or reject the transaction on the card first: the Safe runs one at a time.");
-    const all2 = fromSafeWallet(S.swPaste || "", S.safe.address);
-    const got = all2.find((x) => Number(x.tx.nonce) === S.safe.nonce);
-    if (!got) throw new Error(`Nothing in that is for the Safe's next transaction, nonce ${S.safe.nonce} (it has ${all2.map((x) => x.tx.nonce).join(", ")}). The Safe runs them in order: the one at its nonce first.`);
-    const r = ask({ op: "review", chainId: S.C.id, safe: S.safe.address, tx: got.tx });
-    if (!r.ok) throw new Error(r.refuse);
-    if (r.safeTxHash.toLowerCase() !== got.safeTxHash) throw new Error(`The console works out ${short(r.safeTxHash, 10, 6)} from these fields, and Safe{Wallet} says ${short(got.safeTxHash, 10, 6)}: they aren't the same transaction. Nothing was imported.`);
-    const sigs = [], dropped = [];
-    for (const x of got.sigs) {
-      const who = await signerOf(r.safeTxHash, x.signature);
-      if (who && same(who, x.owner) && isOwner(x.owner)) sigs.push({ owner: getAddress(x.owner), signature: x.signature });
-      else dropped.push(x.owner);
-    }
-    S.draft = null;
-    S.acks = {};
-    S.swPaste = "";
-    keepProposal({ ...got.tx, sigs });
-    await refresh();
-    S.flash = `Imported Safe{Wallet}'s transaction at nonce ${got.tx.nonce}, with ${sigs.length} signature${sigs.length === 1 ? "" : "s"} that check out` + (dropped.length ? `, and ${dropped.length} left out: ${dropped.map((a) => short(a)).join(", ")} (not a signature of this transaction by an owner of this Safe).` : ".");
-  });
-}
-async function voteSeat(tx) {
-  await guard("Reading the seat and the Safe from the chain…", async () => {
-    await refresh();
-    if (!S.seatOwns) throw new Error("Your seat isn't an owner of this Safe. Nothing was signed.");
-    const nonceBefore = S.safe.nonce;
-    if (Number(tx.nonce) >= S.safe.nonce) keepProposal(tx);
-    const others = S.votes.filter((v) => v.toLowerCase() !== S.seat.address.toLowerCase());
-    const got = await approve2({ C: S.C, pk: S.pk, seat: S.seat, safe: S.safe, tx, wallet: canPay() ? S.wallet : null, others, sigs: S.sigs, say });
-    S.draft = null;
-    S.acks = {};
-    await refresh();
-    if (!got.hash) {
-      S.flash = `Key ${got.n} signed it. Now send it from a device with a wallet: copy the link below.`;
-      return;
-    }
-    const ran = await nonceAt(S.C, S.safe.address, got.block) > nonceBefore;
-    S.flash = el("span", {}, `Key ${got.n}: signed, sent, burned. ` + (got.theirs ? "Someone copied the approval and sent it first: it can do only what you signed. " : "") + (ran ? "The Safe ran it. " : Number(tx.nonce) < nonceBefore ? "The Safe had moved past this transaction, so it ran nothing; the seat is at the next key now. " : `The seat's vote is on chain. The Safe runs it once ${S.safe.threshold} owners have approved. `), txLink(got.hash));
-  });
-}
-async function voteWallet(tx, run2) {
-  await guard(run2 ? "Your wallet runs it: its own key is its vote…" : "Your wallet approves it on chain, with its own key…", async () => {
-    await refresh();
-    if (!S.review?.ok || S.review.refuse) throw new Error("The console doesn't approve this transaction. Nothing was sent.");
-    if (Number(tx.nonce) !== S.safe.nonce) throw new Error(`The Safe is at nonce ${S.safe.nonce}, and this is for ${tx.nonce}. Nothing was sent.`);
-    if (!isOwner(S.wallet?.account)) throw new Error("This wallet's account isn't an owner of the Safe. Nothing was sent.");
-    await needGas();
-    keepProposal(tx);
-    const data = run2 ? execData(tx, [...S.votes, S.wallet.account], S.sigs) : approveHashData(S.review.safeTxHash);
-    const hash3 = await sendToSafe(S.C, S.wallet, S.safe.address, data);
-    say("Waiting for the block…");
-    const r = await receipt(S.C, hash3);
-    if (r.status !== "success") throw new Error(`The transaction reverted (${short(hash3, 10, 6)}). Nothing changed.`);
-    S.draft = null;
-    S.acks = {};
-    await refresh();
-    S.flash = el("span", {}, run2 ? "Your wallet ran it. " : `Your wallet's vote is on chain. The Safe runs it once ${S.safe.threshold} owners have approved. `, txLink(hash3));
-  });
-}
-async function run(tx) {
-  await guard("Your wallet runs it. It pays gas, and approves nothing…", async () => {
-    await refresh();
-    await needGas();
-    const hash3 = await sendToSafe(S.C, S.wallet, S.safe.address, execData(tx, S.votes, S.sigs));
-    say("Waiting for the block…");
-    const r = await receipt(S.C, hash3);
-    if (r.status !== "success") throw new Error(`The transaction reverted (${short(hash3, 10, 6)}). Nothing changed.`);
-    await refresh();
-    S.flash = el("span", {}, "The Safe ran it. ", txLink(hash3));
-  });
-}
-function render() {
-  const focus = document.activeElement?.id, pos = document.activeElement?.selectionStart;
-  drawAccount();
-  const flash = $("#flash");
-  flash.replaceChildren(...[
-    S.warn && el("p", { class: "note" }, S.warn),
-    S.busy && el("p", { class: "status" }, el("span", { class: "spin" }), S.busy),
-    S.error && el("p", { class: "note error", role: "alert" }, S.error),
-    S.flash && !S.busy && el("p", { class: "note" }, S.flash)
-  ].filter(Boolean));
-  if (!S.safe?.exists) {
-    for (const id of ["#act", "#send", "#safes", "#owners", "#activity", "#book"]) {
-      $(id).replaceChildren();
-      $(id).hidden = true;
-    }
-    return;
-  }
-  $("#act").hidden = !S.current;
-  $("#act").className = "card";
-  $("#send").hidden = $("#safes").hidden = $("#owners").hidden = $("#activity").hidden = $("#book").hidden = false;
-  const fill = (id, parts) => $(id).replaceChildren(...parts.filter(Boolean));
-  fill("#act", S.current ? approvalCard() : []);
-  fill("#send", sendCard());
-  fill("#safes", safesCard());
-  fill("#book", bookCard());
-  fill("#owners", ownersCard());
-  fill("#activity", activityCard());
-  if (focus) {
-    const again = document.getElementById(focus);
-    again?.focus();
-    try {
-      again?.setSelectionRange(pos, pos);
-    } catch {
-    }
-  }
-}
-function drawAccount() {
-  const box = $("#account");
-  if (!S.C) return box.replaceChildren(el("p", { class: S.error ? "note error" : "muted" }, S.error || "Starting the console…"));
-  const main = el("p", {}, el("a", { href: "./" }, "Go to the main page"), ": it makes a passkey, your first one-time key, and builds your shielded Safe.");
-  if (!S.pk) return box.replaceChildren(el("h1", {}, "No passkey here yet"), main);
-  if (!S.safe && S.busy) return box.replaceChildren(el("p", { class: "muted" }, "Reading your Safe from the chain…"));
-  if (!S.safe?.exists) return box.replaceChildren(el("h1", {}, "Your Safe isn't built yet"), main);
-  const a = S.safe.address, name = nameOf(a), shortA = short(a, 6, 4);
-  const c = drawBlockie(el("canvas", { width: 8, height: 8, class: "wallet-blockie", "aria-hidden": "true" }), a);
-  const where = S.C.explorer ? el("a", { class: "mono", href: `${S.C.explorer}/address/${a}`, target: "_blank", rel: "noopener noreferrer", title: a }, shortA) : el("span", { class: "mono", title: a }, shortA);
-  box.replaceChildren(
-    el(
-      "div",
-      { class: "safe-box" },
-      c,
-      el(
-        "div",
-        { class: "safe-id" },
-        el("p", { class: "eyebrow" }, same(a, S.home.safe) ? "Your shielded Safe" : S.seatOwns ? "A Safe your seat is in" : "A Safe your wallet is in"),
-        name ? el("b", { class: "safe-name" }, name) : null,
-        el("div", { class: "safe-addr" }, where, copyButton(a))
-      ),
-      safesPicker()
-    ),
-    el(
-      "div",
-      { class: "safe-money" },
-      el("div", { class: "balance" }, eth(S.safe.balance)),
-      el(
-        "div",
-        { class: "wallet-sub" },
-        el("span", { class: "chip" }, `${S.safe.threshold} of ${S.safe.owners.length} to approve`),
-        el("span", { class: "chip" }, `seat at key ${S.seat.n}`),
-        el("span", { class: "chip" }, `nonce ${S.safe.nonce}`)
-      ),
-      tokens().some((t) => S.tokenBal?.get(t.address.toLowerCase())) ? el(
-        "div",
-        { class: "wallet-sub tokens" },
-        ...tokens().filter((t) => S.tokenBal?.get(t.address.toLowerCase())).map((t) => el("span", { class: "chip token", title: t.address }, units(S.tokenBal.get(t.address.toLowerCase()), t)))
-      ) : null
-    ),
-    el(
-      "div",
-      { class: "wallet-who" },
-      S.wallet ? el(
-        "span",
-        {},
-        el("span", { class: "small" }, `${S.wallet.name}: `),
-        addr(S.wallet.account, { copy: true }),
-        el("span", { class: "small" }, ` ${S.walletBalance != null ? eth(S.walletBalance) : ""} · ${isOwner(S.wallet.account) ? "an owner" : "pays gas only"}`)
-      ) : el("button", { type: "button", disabled: !!S.busy, onclick: connectWallet }, "Connect a wallet"),
-      S.choosing ? el("div", { class: "chooser" }, el("p", {}, "Which wallet?"), el(
-        "div",
-        { class: "actions" },
-        ...S.choosing.map((w) => el("button", { type: "button", onclick: () => guard(`Asking ${w.info.name} for an account…`, () => useWallet2(w)) }, w.info.name || "A wallet")),
-        el("button", { class: "link", type: "button", onclick: () => {
-          S.choosing = null;
-          render();
-        } }, "Cancel")
-      )) : null
-    )
-  );
-}
-function ownersCard() {
-  const disabled = !!S.busy || !!S.current;
-  const t = S.safe.threshold;
-  const out = [el("h2", {}, "Owners"), el("p", { class: "small" }, `${t} of ${S.owners.length} must approve each transaction.`)];
-  out.push(el("ul", { class: "owners" }, ...S.owners.map((o) => {
-    const [cls, name, what] = kindOf(o);
-    return el(
-      "li",
-      { class: `owner ${cls}` },
-      el(
-        "div",
-        { class: "h" },
-        addr(o.address, { copy: true }),
-        el("span", { class: "badge" }, name),
-        o.yours ? el("span", { class: "badge you" }, "your seat") : null,
-        S.wallet && same(o.address, S.wallet.account) ? el("span", { class: "badge you" }, "this wallet") : null
-      ),
-      el("div", { class: "small" }, o.yours ? `Key ${S.seat.n} now. ${what}` : !o.isSeat && !o.contract && o.sent ? `Sent ${o.sent} transaction${o.sent === 1 ? "" : "s"}. ${what}` : what),
-      el(
-        "div",
-        { class: "actions" },
-        nameLink(o.address),
-        o.yours ? null : el("button", { class: "link", type: "button", disabled, onclick: () => draftRemove(o.address) }, "Remove")
-      )
-    );
-  })));
-  const ordinary = S.owners.filter((o) => !o.isSeat), others = S.owners.filter((o) => !o.yours);
-  const exposed = ordinary.length >= t, backup = S.seatOwns && others.length >= t;
-  out.push(el(
-    "div",
-    { class: `verdict ${exposed ? "bad" : "ok"}` },
-    el("b", {}, exposed ? "Ordinary keys can approve without a seat" : "Every approval needs a seat"),
-    el("p", { class: "small" }, exposed ? `${ordinary.length === 1 ? "One ordinary owner" : `${t} of the ${ordinary.length} ordinary owners`} can approve with no seat at all. Someone who can forge curve signatures could sign as them and take the Safe.` : ordinary.length ? `The ordinary owners can't reach ${t} without a seat, so a broken curve isn't enough to take the Safe.` : "Every owner is a seat. A broken curve isn't enough to take the Safe.")
-  ));
-  if (S.seatOwns) out.push(el(
-    "div",
-    { class: `verdict ${backup ? "ok" : "warn"}` },
-    el("b", {}, backup ? "A backup if your passkey is lost" : "No backup if your passkey is lost"),
-    el("p", { class: "small" }, backup ? `The other owners can reach ${t} without your seat, and run the Safe or replace your seat.` : `The other owners can't reach ${t} without your seat. If your passkey is lost, the Safe is stuck.`)
-  ));
-  out.push(el(
-    "details",
-    { class: "small" },
-    el("summary", {}, "1 of 2, 2 of 2, or 2 of 3?"),
-    el("p", {}, el("b", {}, "Your seat and your wallet, 1 of 2"), ": either can approve alone. Your wallet is a backup, and a way to get used to a multisig. But your wallet's key rests on a curve, and once it has signed anything its public key is public. If curves break, the seats no longer protect this Safe."),
-    el("p", {}, el("b", {}, "2 of 2"), ": both must approve. A broken curve can forge your wallet's vote, never the seat's, so the protection holds. There is no backup: lose either key and the Safe is stuck."),
-    el("p", {}, el("b", {}, "Two seats and your wallet, 2 of 3"), ": any two. Your wallet can never approve alone, so every approval needs a one-time key, and if one passkey is lost the other seat and your wallet still reach 2. The other seat is another passkey's, made on the main page of another browser or device. Add its seat address here as an owner, then share each transaction with its device as a link.")
-  ));
-  const sel = (id, value, max, on) => el("select", { id, onchange: (e) => on(e.target.value) }, ...Array.from({ length: max }, (_, i) => el("option", { value: String(i + 1), selected: String(i + 1) === value }, String(i + 1))));
-  out.push(
-    el("h3", {}, "Add an owner"),
-    el(
-      "div",
-      { class: "form owner-form owner-add" },
-      el("label", {}, "Address", el("input", { id: "add-owner", class: "mono", value: S.add, placeholder: "0x…", spellcheck: "false", autocomplete: "off", oninput: (e) => {
-        S.add = e.target.value;
-      } })),
-      el("label", {}, "Then approvals needed", sel("add-threshold", S.addThreshold, S.owners.length + 1, (v) => {
-        S.addThreshold = v;
-      }))
-    ),
-    el(
-      "div",
-      { class: "actions owner-add" },
-      S.wallet && !isOwner(S.wallet.account) ? el("button", { type: "button", disabled, onclick: () => {
-        S.add = S.wallet.account;
-        S.addThreshold = String(t);
-        render();
-      } }, "Use my wallet's address") : null,
-      el("button", { class: "go", type: "button", disabled, onclick: draftAdd }, "Review")
-    )
-  );
-  if (S.owners.length > 1) {
-    S.threshold ||= String(t);
-    out.push(el("h3", {}, "Approvals needed"), el(
-      "div",
-      { class: "actions threshold-row" },
-      sel("threshold", S.threshold, S.owners.length, (v) => {
-        S.threshold = v;
-      }),
-      el("span", { class: "small" }, `of ${S.owners.length}`),
-      el("button", { type: "button", disabled, onclick: draftThreshold }, "Review")
-    ));
-  }
-  if (S.current) out.push(el("p", { class: "small" }, "One transaction at a time: finish or reject the one above first."));
-  return out;
-}
-function safesCard() {
-  const list = safes();
-  if (!list.some((a) => same(a, S.safe.address))) list.push(S.safe.address);
-  return [
-    el("h2", {}, "Safes"),
-    el("ul", { class: "safes" }, ...list.map((a) => el(
-      "li",
-      {},
-      addr(a, { copy: true }),
-      same(a, S.home.safe) ? el("span", { class: "badge" }, "yours") : null,
-      same(a, S.safe.address) ? el("span", { class: "badge you" }, "open") : el("button", { class: "link", type: "button", disabled: !!S.busy, onclick: () => openSafe(a) }, "Open"),
-      nameLink(a)
-    ))),
-    el("p", { class: "small" }, "Your seat's address. Another Safe adds this as an owner, and then your passkey can approve for it too:"),
-    el("input", { class: "mono share-link", readonly: true, value: S.home.seat, "aria-label": "Your seat's address", onfocus: (e) => e.target.select() }),
-    el("div", { class: "actions" }, el("button", { type: "button", onclick: () => copy(S.home.seat, "Copied your seat's address.") }, "Copy your seat's address")),
-    qrToggle(S.home.seat),
-    el(
-      "details",
-      {},
-      el("summary", { class: "small" }, "Open another Safe your seat is in"),
-      el(
-        "div",
-        { class: "actions" },
-        el("input", { id: "add-safe", class: "mono", value: S.addSafe || "", placeholder: "0x…", spellcheck: "false", autocomplete: "off", "aria-label": "The Safe's address", oninput: (e) => {
-          S.addSafe = e.target.value;
-        } }),
-        el("button", { type: "button", disabled: !!S.busy, onclick: addSafe }, "Open it")
-      ),
-      el("p", { class: "small" }, "A link from another owner's device opens its Safe here by itself.")
-    )
-  ];
-}
-function saveName() {
-  const a = (S.bookAddr || "").trim();
-  if (!isAddress(a)) return fail("Address book: that isn't an address.");
-  const c = cleanName(S.bookName);
-  if (c.why) return fail("Address book: " + c.why);
-  setName(S.C.id, a, c.name);
-  S.bookAddr = S.bookName = "";
-  S.error = "";
-  S.flash = `Named ${short(a)} “${c.name}”.`;
-  render();
-}
-function exportNames() {
-  const url = URL.createObjectURL(new Blob([exportBook(S.C.id)], { type: "application/json" }));
-  const a = el("a", { href: url, download: "sign-and-burn-address-book.json" });
-  document.body.append(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1e3);
-  S.flash = `Exported ${Object.keys(all()).length} names. The file holds names and addresses, nothing secret.`;
-  S.error = "";
-  render();
-}
-function importNames(text) {
-  try {
-    const { added, replaced } = importBook(text, S.C.id);
-    S.flash = `Imported: ${added} new name${added === 1 ? "" : "s"}, ${replaced} renamed.`;
-    S.error = "";
-    S.bookPaste = "";
-  } catch (e) {
-    S.error = "Address book: " + e.message;
-    S.flash = "";
-  }
-  render();
-}
-function bookCard() {
-  const entries = Object.entries(all()).sort((x, y) => x[1].localeCompare(y[1]));
-  return [
-    el("h2", {}, "Address book"),
-    el("p", { class: "small" }, "Your names for Safes, seats and wallets, kept in this browser. A name always shows beside its address, and the console never sees them."),
-    entries.length ? el("ul", { class: "book" }, ...entries.map(([a]) => el(
-      "li",
-      {},
-      addr(a, { copy: true }),
-      nameLink(a),
-      el("button", { class: "link", type: "button", onclick: () => {
-        setName(S.C.id, a, "");
-        render();
-      } }, "Remove")
-    ))) : el("p", { class: "muted" }, "No names yet. “Name it” beside an owner or a Safe starts one."),
-    el(
-      "div",
-      { class: "form book-form" },
-      el("label", {}, "Address", el("input", { id: "book-addr", class: "mono", value: S.bookAddr || "", placeholder: "0x…", spellcheck: "false", autocomplete: "off", oninput: (e) => {
-        S.bookAddr = e.target.value;
-      } })),
-      el("label", {}, "Name", el("input", { id: "book-name", value: S.bookName || "", maxlength: String(MAX_NAME), autocomplete: "off", oninput: (e) => {
-        S.bookName = e.target.value;
-      } }))
-    ),
-    el("div", { class: "actions" }, el("button", { class: "go", type: "button", onclick: saveName }, "Save name")),
-    el("h3", {}, "To another browser"),
-    el(
-      "div",
-      { class: "actions" },
-      el("button", { type: "button", onclick: exportNames }, "Export JSON"),
-      el("label", { class: "btn file" }, "Import JSON", el("input", { id: "book-file", type: "file", accept: "application/json,.json", onchange: async (e) => {
-        const f = e.target.files?.[0];
-        if (f) importNames(f.size > 2e5 ? "" : await f.text());
-      } }))
-    ),
-    el(
-      "details",
-      keepOpen("book-paste"),
-      el("summary", { class: "small" }, "Or paste it"),
-      el("textarea", { id: "book-paste", class: "mono", rows: "4", spellcheck: "false", oninput: (e) => {
-        S.bookPaste = e.target.value;
-      } }, S.bookPaste || ""),
-      el("div", { class: "actions" }, el("button", { type: "button", onclick: () => importNames(S.bookPaste || "") }, "Import"))
-    ),
-    el("p", { class: "small" }, "Importing adds names, and replaces yours for the same addresses. A file is checked whole: one bad entry, and nothing is imported.")
-  ];
-}
-async function copy(text, said) {
-  try {
-    await navigator.clipboard.writeText(text);
-    S.flash = said;
-    S.error = "";
-  } catch {
-    S.error = "This browser wouldn't copy. Select the text shown and copy it yourself.";
-  }
-  render();
-}
-function toPreview() {
-  const a = S.send.to;
-  if (!a) return el("span", { class: "small" }, "");
-  if (!isAddress(a)) return el("span", { class: "small" }, "Not an address yet.");
-  return el("span", { class: "small" }, label(getAddress(a)), nameOf(a) ? "" : " not in your address book");
-}
-function contacts() {
-  const out = [], add2 = (address, note) => {
-    if (!same(address, S.safe.address) && !out.some((x) => same(x.address, address))) out.push({ address: getAddress(address), note });
-  };
-  for (const a of safes()) add2(a, "your Safe");
-  if (S.wallet) add2(S.wallet.account, "the wallet here");
-  const book = Object.entries(all()).sort((x, y) => x[1].localeCompare(y[1]));
-  for (const [a] of book) add2(a, "");
-  return out;
-}
-function safesPicker() {
-  const list = safes();
-  if (!list.some((a) => same(a, S.safe.address))) list.push(S.safe.address);
-  return picker(
-    "safes",
-    "Switch Safe",
-    list.map((a) => ({ address: a, on: same(a, S.safe.address), note: same(a, S.home.safe) ? "yours" : same(a, S.safe.address) ? "open" : "" })),
-    (a) => {
-      if (!same(a, S.safe.address)) openSafe(a);
-    },
-    { footer: el("button", { type: "button", class: "link", onclick: () => $("#safes").scrollIntoView({ block: "start", behavior: "smooth" }) }, "Open another Safe your seat is in…") }
-  );
-}
-function sendCard() {
-  const disabled = !!S.busy || !!S.current, list = tokens(), t = S.send.asset === "ETH" ? null : tokenOf(S.send.asset);
-  const preview = el("div", { class: "to-preview" }, toPreview());
-  if (S.send.asset !== "ETH" && !t) S.send.asset = "ETH";
-  const bal = t ? S.tokenBal?.get(t.address.toLowerCase()) : S.safe.balance;
-  return [
-    el("h2", {}, "Send"),
-    el(
-      "div",
-      { class: "form send-form" },
-      el(
-        "div",
-        { class: "to-field" },
-        el("label", { for: "send-to" }, "To"),
-        el(
-          "div",
-          { class: "to-row" },
-          el("input", {
-            id: "send-to",
-            class: "mono",
-            value: S.send.to,
-            placeholder: "0x…, or pick one",
-            spellcheck: "false",
-            autocomplete: "off",
-            oninput: (e) => {
-              S.send.to = e.target.value.trim();
-              preview.replaceChildren(toPreview());
-            }
-          }),
-          picker(
-            "send-to",
-            "Your Safes and contacts",
-            contacts(),
-            (a) => {
-              S.send.to = a;
-              render();
-            },
-            { footer: el("span", { class: "small" }, "Add contacts in the Address book, below.") }
-          )
-        ),
-        preview
-      ),
-      el("label", {}, "Asset", el(
-        "select",
-        { id: "send-asset", onchange: (e) => {
-          S.send.asset = e.target.value;
-          render();
-        } },
-        el("option", { value: "ETH", selected: !t }, "ETH"),
-        ...list.map((x) => el("option", { value: x.address, selected: !!t && same(t.address, x.address) }, x.pinned ? x.symbol : `${x.symbol} (added here)`))
-      )),
-      el("label", {}, `Amount (${t ? t.symbol : "ETH"})`, el("input", { id: "send-amount", value: S.send.amount, inputmode: "decimal", oninput: (e) => {
-        S.send.amount = e.target.value.trim();
-      } }))
-    ),
-    el("p", { class: "small" }, `The Safe holds ${bal == null ? "an amount this page couldn't read" : t ? units(bal, t) : eth(bal)}.` + (t && !t.pinned ? ` The console doesn't know ${t.symbol}: its review shows the amount in raw units (${t.decimals} decimals).` : "")),
-    // A share of what the Safe holds, worked out exactly in its smallest units. Max is all of it: the
-    // Safe pays no gas of its own (the wallet that sends the approval does).
-    el("div", { class: "actions quick" }, ...[[25, "25%"], [50, "50%"], [100, "Max"]].map(([pct, name]) => el("button", {
-      type: "button",
-      disabled: disabled || !bal,
-      "aria-label": pct === 100 ? "All of it" : `${name} of it`,
-      onclick: () => {
-        S.send.amount = formatUnits(bal * BigInt(pct) / 100n, t ? t.decimals : 18);
-        render();
-      }
-    }, name))),
-    el("div", { class: "actions" }, el("button", { class: "go", type: "button", disabled, onclick: draftSend }, "Review")),
-    S.current ? el("p", { class: "small" }, "One transaction at a time: finish or reject the one above first.") : null,
-    el(
-      "details",
-      keepOpen("add-token"),
-      el("summary", { class: "small" }, "Add a token"),
-      el(
-        "div",
-        { class: "actions" },
-        el("input", { id: "add-token", class: "mono", value: S.addToken || "", placeholder: "The token's address, 0x…", spellcheck: "false", autocomplete: "off", "aria-label": "The token's address", oninput: (e) => {
-          S.addToken = e.target.value;
-        } }),
-        el("button", { type: "button", disabled: !!S.busy, onclick: addToken }, "Add it")
-      ),
-      el("p", { class: "small" }, `The console knows ${pinnedTokens(S.C).map((x) => x.symbol).join(", ") || "no tokens"} on this chain. Any other ERC-20 works too; the console reviews it as a token it doesn't know, with the amount in raw units.`)
-    ),
-    el(
-      "details",
-      keepOpen("safe-wallet"),
-      el("summary", { class: "small" }, "A transaction from Safe{Wallet}"),
-      el("p", { class: "small" }, "Safe{Wallet} keeps a transaction it proposes, and its owners' signatures, on Safe's server, not on chain. This page reaches only the chain, so bring it here: open this link, copy everything it shows, and paste it below."),
-      S.C.id === 84532 ? el("a", { class: "mono small sw-link", href: safeWalletUrl(S.safe.address), target: "_blank", rel: "noopener noreferrer" }, "Safe's transaction service: this Safe's waiting transactions") : el("p", { class: "small" }, "(On a test chain of your own, Safe's service has nothing: paste the same JSON by hand.)"),
-      el("textarea", { id: "sw-paste", class: "mono", rows: "4", spellcheck: "false", placeholder: '{"count": 1, "results": [ … ] }', oninput: (e) => {
-        S.swPaste = e.target.value;
-      } }, S.swPaste || ""),
-      el("div", { class: "actions" }, el("button", { type: "button", disabled: !!S.busy, onclick: importSafeWallet }, "Import it")),
-      el("p", { class: "small" }, "The console works out the hash from the fields, and it must match Safe{Wallet}'s. Each signature must be an owner's, of this transaction. Then your seat's press adds its vote, and runs it with theirs if that makes enough.")
-    )
-  ];
-}
-function approvalCard() {
-  const tx = S.current.tx, r = S.review, n = S.seat.n, w = S.waiting;
-  const card = $("#act");
-  card.className = "card approval";
-  if (!r.ok) return [el("h2", {}, "Approve"), el("p", { class: "refuse" }, r.refuse), rejectButton()];
-  const red = r.level === "red";
-  if (red) card.className = "card approval red";
-  const out = [el("h2", {}, `Approve: ${r.summary}`)];
-  out.push(...reviewParts(r, S.safe.address, tx, "Safe transaction hash, worked out by the console"));
-  if (r.refuse) {
-    out.push(el("p", { class: "refuse" }, "The console refuses: " + r.refuse), rejectButton());
-    return out;
-  }
-  const overtaken = Number(tx.nonce) < S.safe.nonce;
-  const seatVoted = S.votes.some((v) => v.toLowerCase() === S.seat.address.toLowerCase());
-  const t = S.safe.threshold, count = S.votes.length + S.sigs.length;
-  const signed = (a) => S.sigs.some((x) => same(x.owner, a));
-  out.push(
-    el("h3", {}, overtaken ? "Overtaken" : `Votes: ${count} of ${t}`),
-    el("ul", { class: "votes" }, ...S.owners.map((o) => {
-      const voted = S.votes.some((v) => v.toLowerCase() === o.address.toLowerCase()) || signed(o.address);
-      const said = signed(o.address) ? "signed in Safe{Wallet}" : voted ? "approved" : o.yours && w ? `key ${w.n} signed it; not on chain yet` : "not yet";
-      return el("li", { class: voted ? "yes" : "" }, el("span", { class: "mark", "aria-hidden": "true" }, voted ? "✓" : "○"), addr(o.address), el("span", { class: "small" }, ` ${kindOf(o)[1]} · ${said}`));
-    }))
-  );
-  if (overtaken) {
-    out.push(el("p", { class: "note" }, `The Safe ran another transaction at nonce ${tx.nonce}, so it will never run this one. But key ${w.n} signed it, and a key signs once, ever: this approval is the only thing key ${w.n} will ever send. Send it to move the seat on to key ${w.n + 1}; it runs nothing.`));
-  }
-  const acks = S.acks, gates = [];
-  const ts = tokenSendOf(tx), tk = ts && tokenOf(ts.token), tb = tk ? S.tokenBal?.get(tk.address.toLowerCase()) : null;
-  const tooMuch = !w && (BigInt(tx.value || 0) > S.safe.balance || tb != null && ts.amount > tb);
-  if (tooMuch) out.push(el("p", { class: "note" }, (tk && tb != null && ts.amount > tb ? `The Safe has ${units(tb, tk)}, and this sends ${units(ts.amount, tk)}. ` : `The Safe has ${eth(S.safe.balance)}, and this sends ${eth(BigInt(tx.value))}. `) + "Approving it now would spend a vote, and for the seat a key, on a transaction the Safe can't run."));
-  const elsewhere = S.home.found && !mine().length;
-  const wElse = S.waitingElsewhere;
-  if (wElse && !seatVoted && S.seatOwns) out.push(el("p", { class: "note" }, `Key ${n} signed an approval for another Safe (${short(wElse.safe)}), and it hasn't landed. One signature per key, ever: send that one first, then key ${n + 1} can approve this. `, el("button", { class: "link", type: "button", disabled: !!S.busy, onclick: () => openSafe(getAddress(wElse.safe)) }, "Open that Safe")));
-  const ack = (k, text) => el("label", { class: "small ack" }, el("input", { type: "checkbox", checked: !!acks[k], onchange: (e) => {
-    acks[k] = e.target.checked;
-    gates.forEach((g) => g());
-  } }), text);
-  const buttons = [];
-  const gated = (b, needs) => {
-    const g = () => {
-      b.disabled = !!S.busy || tooMuch || needs.some((k) => !acks[k]);
-    };
-    g();
-    gates.push(g);
-    return b;
-  };
-  const needRed = red ? ["red"] : [];
-  if ((!seatVoted || overtaken) && S.seatOwns && !wElse) {
-    const label2 = w ? `Hold to send approval ${w.n} again` : `Hold to approve with key ${n}`;
-    if (canPay() || !w) buttons.push(gated(holdButton(label2, () => voteSeat(tx), { red }), [...needRed, ...elsewhere && !w ? ["elsewhere"] : []]));
-    if (S.wallet && !canPay()) buttons.push(el("span", { class: "small" }, `${S.wallet.name}'s account has no ETH for gas.`));
-  }
-  const mineToo = S.wallet && isOwner(S.wallet.account) && !S.votes.some((v) => v.toLowerCase() === S.wallet.account.toLowerCase()) && !signed(S.wallet.account);
-  if (mineToo && !overtaken && !w && count < t) {
-    const runs = count + 1 >= t;
-    buttons.push(gated(el("button", { type: "button", onclick: () => voteWallet(tx, runs) }, runs ? "Run it with my wallet" : "Approve with my wallet"), needRed));
-  }
-  if (count >= t && !overtaken && S.wallet) buttons.push(gated(el("button", { class: "go", type: "button", onclick: () => run(tx) }, "Run it"), []));
-  out.push(el(
-    "div",
-    { class: "actions" },
-    ...buttons,
-    red ? ack("red", "I read the red page") : null,
-    elsewhere && !w && !seatVoted ? ack("elsewhere", `Nothing signed with key ${n} is waiting on another device`) : null,
-    rejectButton()
-  ));
-  if (elsewhere && !w && !seatVoted) out.push(el("p", { class: "note" }, `Another device made this seat, and this browser has no record of what its keys signed. If that device signed with key ${n} and its transaction is still pending, signing here would be key ${n}'s second signature: enough to forge a third. Check there first, and use one device per seat.`));
-  const mine_ = (S.seatOwns && !seatVoted && !wElse ? 1 : 0) + (mineToo && !w ? 1 : 0);
-  const askable = S.owners.some((o) => !o.yours && !same(o.address, S.wallet?.account) && !S.votes.some((v) => same(v, o.address)) && !signed(o.address));
-  if (w) out.push(approvalShare(w, overtaken));
-  if (!overtaken && count < t && askable) {
-    const link = proposalLink(S.C, S.safe.address, tx, location.origin + location.pathname);
-    out.push(el(
-      "div",
-      { class: "share" },
-      el("h4", {}, count + mine_ >= t ? "Or ask another owner" : "Ask another owner"),
-      el("p", { class: "small" }, `Send this link to another owner's device: a seat's, or a wallet's. Its console works out the hash itself, and its code should read ${r.verify}. It sees the votes cast so far on chain. The link holds the transaction, and nothing signed.`),
-      el("input", { class: "mono share-link", readonly: true, value: link, "aria-label": "The link", onfocus: (e) => e.target.select() }),
-      el("div", { class: "actions" }, el("button", { type: "button", disabled: !!S.busy, onclick: () => copy(link, "Link copied. This page shows the new votes as they land.") }, "Copy link")),
-      qrToggle(link)
-    ));
-  }
-  if (w && !overtaken) out.push(el("p", { class: "small" }, `Key ${w.n} already signed this approval. One signature per key, ever: the console will only send this same one again. No tap needed.`));
-  else if (!seatVoted && !overtaken && S.seatOwns && !wElse) out.push(
-    el("p", { class: "small" }, `Holding asks your passkey once. The console signs with key ${n}, burns it and names key ${n + 1}. ` + (canPay() ? "Your wallet pays the gas." : `${S.wallet ? "No gas in that wallet" : "No wallet here"}: you then share the approval as a link, and a wallet on another device sends it. It pays the gas and approves nothing.`)),
-    S.wallet ? null : el("div", { class: "actions" }, el("button", { class: "link", type: "button", disabled: !!S.busy, onclick: connectWallet }, "I have a wallet in this browser"))
-  );
-  if (mineToo && !overtaken && !w && count < t) out.push(el("p", { class: "small" }, "Your wallet votes with its own key, the curve key a broken curve would forge. It shows that key's public half on chain, if it wasn't already."));
-  return out;
-}
-function approvalShare(w, overtaken) {
-  const link = approvalLink(S.C, w.n, w.approval, w.tx, new URL("./", location.href).href);
-  return el(
-    "div",
-    { class: "share" },
-    el("h4", {}, canPay() ? "Or send it from another device" : `Approval ${w.n} is signed. Send it from another device`),
-    el("p", { class: "small" }, `Copy this link to a device with a wallet on ${S.C.chain.name} and a little ETH for gas. It opens on the main page, which works out the hash itself (its code should read ${S.review.verify}), asks the seat, and sends it. ${overtaken ? "It will run nothing, and moves the seat to the next key. " : ""}This page moves on once it lands. Until then key ${w.n} sends nothing else.`),
-    el("input", { class: "mono share-link", readonly: true, value: link, "aria-label": "The link", onfocus: (e) => e.target.select() }),
-    el("div", { class: "actions" }, el("button", { class: canPay() ? "" : "go", type: "button", disabled: !!S.busy, onclick: () => copy(link, "Link copied. This page moves on once the approval lands.") }, "Copy link")),
-    qrToggle(approvalParts(S.C, w.n, w.approval, w.tx, sameTx(w.tx, S.current?.tx) ? S.sigs : keptSigs(S.C.id, w.safe, w.tx)))
-  );
-}
-function rejectButton() {
-  if (S.current?.locked) return null;
-  return el("button", { class: "reject", type: "button", disabled: !!S.busy, onclick: discard }, S.current?.kept ? "Reject: forget it here" : "Reject");
-}
-function activityCard() {
-  const es = mine().slice().reverse();
-  return [
-    el("h2", {}, "Your seat's approvals"),
-    rows([["Seat", addr(S.home.seat, { copy: true })], ["Key now", el("span", { class: "mono", title: S.seat.current }, `${S.seat.n}: ${short(S.seat.current, 10, 6)}`)]]),
-    es.length ? el("ul", { class: "history" }, ...es.map((e) => el(
-      "li",
-      {},
-      el("div", { class: "h" }, el("span", {}, `#${e.n} · ${e.summary}${same(e.safe, S.safe.address) ? "" : ` · Safe ${short(e.safe)}`}`), el("span", { class: `badge ${e.status}` }, e.status)),
-      el("div", { class: "s" }, `verify ${e.verify} · `, e.txHash ? txLink(e.txHash) : e.status === "landed" ? "sent from another device" : "not sent yet")
-    ))) : el("p", { class: "muted" }, "This browser's console hasn't approved anything for this seat yet."),
-    el("p", { class: "small" }, "Votes by other owners aren't listed here: the Safe's own history on the explorer has them.")
-  ];
-}
-var S, log, read, home, proposalKey, safesKey, safes, same, opened, keepOpen, tokens, tokenOf, units, sameTx, txOnly, ledger, mine, say, walletId, isOwner, canPay, KIND, kindOf, nameLink;
-var init_wallet2 = __esm({
-  "src/wallet.mjs"() {
-    init_esm();
-    init_console();
-    init_passkey();
-    init_chain2();
-    init_approve2();
-    init_pay();
-    init_names();
-    init_ui();
-    refuseFrames();
-    S = { busy: "", error: "", flash: "", send: { to: "", amount: "0.0001", asset: "ETH" }, add: "", addThreshold: "1", threshold: "", draft: null, acks: {} };
-    log = $("#log");
-    onLine((dir, line) => {
-      const tag = dir === "in" ? "page → console  " : dir === "out" ? "console → page  " : "console says    ";
-      log.append(el("div", { class: dir === "out" && line.includes('"ok": false') ? "bad" : dir }, tag + line));
-      while (log.childElementCount > 200) log.firstChild.remove();
-    });
-    read = (k) => {
-      try {
-        return JSON.parse(localStorage.getItem(k)) || {};
-      } catch {
-        return {};
-      }
-    };
-    home = () => read("sab.home")[`${S.C.id}:${S.pk.id}`] || null;
-    proposalKey = () => `${S.C.id}:${S.safe.address.toLowerCase()}`;
-    safesKey = () => `${S.C.id}:${S.home.seat.toLowerCase()}`;
-    safes = () => [S.home.safe, ...read("sab.safes")[safesKey()] || []];
-    same = (a, b) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
-    opened = /* @__PURE__ */ new Set();
-    keepOpen = (key) => ({ open: opened.has(key), ontoggle: (e) => {
-      if (e.target.open) opened.add(key);
-      else opened.delete(key);
-    } });
-    tokens = () => [...pinnedTokens(S.C), ...(read("sab.tokens")[String(S.C.id)] || []).filter((t) => !pinnedTokens(S.C).some((p) => same(p.address, t.address)))];
-    tokenOf = (a) => tokens().find((t) => same(t.address, a)) || null;
-    units = (v, t) => `${Number(formatUnits(v, t.decimals)).toLocaleString("en-US", { maximumFractionDigits: Math.min(t.decimals, 6) })} ${t.symbol}`;
-    sameTx = (a, b) => !!a && !!b && ["to", "value", "data", "operation", "nonce"].every((k) => String(a[k] ?? "").toLowerCase() === String(b[k] ?? "").toLowerCase());
-    txOnly = ({ sigs, ...tx }) => tx;
-    ledger = () => ask({ op: "ledger" }).entries || [];
-    mine = () => ledger().filter((e) => e.chainId === S.C.id && e.seat === S.home.seat.toLowerCase());
-    say = (t) => {
-      S.busy = t;
-      render();
-    };
-    walletId = (info) => info.rdns || info.uuid;
-    isOwner = (a) => !!a && !!S.safe?.owners?.some((o) => o.toLowerCase() === a.toLowerCase());
-    canPay = () => !!S.wallet && S.walletBalance !== 0n;
-    KIND = {
-      seat: ["seat", "Sign and Burn seat", "A passkey and a one-time key. The key changes after every approval, so a broken curve isn't enough."],
-      other: ["seat", "Sign and Burn seat", "Another passkey's seat, made by the SeatFactory. It changes its key after every approval too. Its device holds its own ledger."],
-      contract: ["contract", "A contract", "Not a seat the SeatFactory made: a smart account, perhaps. This page can't tell what it checks."],
-      exposed: ["exposed", "Ordinary key", "Its public key is on chain: it has signed transactions. Anyone who can forge curve signatures could sign as it."],
-      fresh: ["fresh", "Ordinary key", "It has sent no transactions, so only its address, a hash of its key, is on chain. Its first signature shows its public key."]
-    };
-    kindOf = (o) => KIND[o.yours ? "seat" : o.isSeat ? "other" : o.contract ? "contract" : o.sent ? "exposed" : "fresh"];
-    nameLink = (a) => el("button", { class: "link", type: "button", onclick: () => {
-      S.bookAddr = a;
-      S.bookName = nameOf(a);
-      render();
-      $("#book").scrollIntoView({ block: "start", behavior: "smooth" });
-      $("#book-name")?.focus();
-    } }, nameOf(a) ? "Rename" : "Name it");
-    boot2();
-  }
-});
-
-// src/wots.mjs
-function u(value, size5) {
-  let v = BigInt(value);
-  const b = new Uint8Array(size5);
-  for (let i = size5 - 1; i >= 0; i--, v >>= 8n) b[i] = Number(v & 255n);
-  return b;
-}
-function advance(pub, n, j, x, start, stop) {
-  for (let s = start; s < stop; s++) x = step(pub, n, j, s, x);
-  return x;
-}
-function digits(m) {
-  const d = [];
-  for (const byte of m) d.push(byte >> 4, byte & 15);
-  const c = d.reduce((a, x) => a + STEPS - x, 0);
-  return d.concat([c >> 8, c >> 4 & 15, c & 15]);
-}
-function recover(pub, n, m, sig) {
-  const d = digits(m);
-  return fingerprintOfEnds(pub, n, sig.map((x, j) => advance(pub, n, j, x, d[j], STEPS)));
-}
-function lowest(sigs, ms) {
-  const ds = ms.map(digits);
-  return Array.from({ length: CHAINS }, (_, j) => {
-    let best = 0;
-    for (let i = 1; i < sigs.length; i++) if (ds[i][j] < ds[best][j]) best = i;
-    return { at: ds[best][j], value: sigs[best][j] };
-  });
-}
-function chance(low) {
-  return low.slice(0, 64).reduce((p, { at }) => p * (16 - at) / 16, 1);
-}
-function forge(pub, n, low, makeMessage, limit = 2e6) {
-  for (let t = 1; t <= limit; t++) {
-    const m = makeMessage(t);
-    const d = digits(m);
-    if (d.every((x, j) => x >= low[j].at)) return { tries: t, m, sig: d.map((x, j) => advance(pub, n, j, low[j].value, low[j].at, x)) };
-  }
-  return null;
-}
-var STEPS, CHAINS, enc, cat, h, bytes, hex2, pubSeed, secret, step, fingerprintOfEnds, keyFingerprint, sign;
-var init_wots = __esm({
-  "src/wots.mjs"() {
-    init_esm();
-    STEPS = 15;
-    CHAINS = 67;
-    enc = new TextEncoder();
-    cat = (...parts) => {
-      const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
-      let i = 0;
-      for (const p of parts) {
-        out.set(p, i);
-        i += p.length;
-      }
-      return out;
-    };
-    h = (...parts) => sha2563(cat(...parts), "bytes");
-    bytes = (hex3) => Uint8Array.from((hex3.startsWith("0x") ? hex3.slice(2) : hex3).match(/../g) || [], (x) => parseInt(x, 16));
-    hex2 = (b) => "0x" + [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
-    pubSeed = (chainId, curveSigner, seatNumber) => h(enc.encode("sign-and-burn/seed/v1"), u(chainId, 32), bytes(curveSigner), u(seatNumber, 4));
-    secret = (seed, j) => h(enc.encode("sign-and-burn/sk/v1"), seed, u(j, 1));
-    step = (pub, n, j, s, x) => h(pub, u(n, 8), u(j, 1), u(s, 1), x);
-    fingerprintOfEnds = (pub, n, ends) => h(pub, u(n, 8), ...ends);
-    keyFingerprint = (pub, n, seed) => fingerprintOfEnds(pub, n, Array.from({ length: CHAINS }, (_, j) => advance(pub, n, j, secret(seed, j), 0, STEPS)));
-    sign = (pub, n, seed, m) => digits(m).map((d, j) => advance(pub, n, j, secret(seed, j), 0, d));
   }
 });
 
@@ -33529,6 +32481,1115 @@ var init_scan = __esm({
   }
 });
 
+// src/wallet.mjs
+var wallet_exports = {};
+function keepSafe(a) {
+  if (safes().some((x) => x.toLowerCase() === a.toLowerCase())) return;
+  const all2 = read("sab.safes");
+  all2[safesKey()] = [...all2[safesKey()] || [], getAddress(a)];
+  try {
+    localStorage.setItem("sab.safes", JSON.stringify(all2));
+  } catch {
+  }
+}
+async function addToken() {
+  const a = (S.addToken || "").trim();
+  await guard("Reading the token from the chain…", async () => {
+    if (!isAddress(a)) throw new Error("Add a token: that isn't an address.");
+    if (tokenOf(a)) throw new Error("That token is on the list already.");
+    let t;
+    try {
+      t = await tokenInfo(S.C, a);
+    } catch {
+      throw new Error(`${short(a)} doesn't answer as a token (symbol and decimals). Nothing was added.`);
+    }
+    const all2 = read("sab.tokens");
+    all2[String(S.C.id)] = [...all2[String(S.C.id)] || [], t];
+    try {
+      localStorage.setItem("sab.tokens", JSON.stringify(all2));
+    } catch {
+    }
+    S.addToken = "";
+    S.send.asset = t.address;
+    S.flash = `Added ${t.symbol}. The console doesn't know it, so its review shows raw units: ${t.decimals} decimals make one ${t.symbol}.`;
+    await refresh();
+  });
+}
+function keepProposal(tx) {
+  const all2 = read("sab.proposal"), was = all2[proposalKey()];
+  if (tx) all2[proposalKey()] = { ...txOnly(tx), sigs: tx.sigs || (sameTx(was, tx) ? was.sigs : void 0) };
+  else delete all2[proposalKey()];
+  try {
+    localStorage.setItem("sab.proposal", JSON.stringify(all2));
+  } catch {
+  }
+}
+async function boot2() {
+  try {
+    S.info = await boot();
+    S.cfg = parseCfg(await (await fetch("console/cfg.py")).text());
+    S.C = connect(S.cfg);
+    useChain(S.C);
+  } catch (e) {
+    S.error = `The console didn't start: ${e.message || e}`;
+    return render();
+  }
+  $("#lamp").className = "lamp on";
+  $("#stats").textContent = `The console: MicroPython ${S.info.micropython} in WebAssembly, fingerprint ${S.info.fingerprint.slice(0, 4)}·${S.info.fingerprint.slice(4, 8)}. It reviews every transaction here, and signs only for your seat.`;
+  if (!ledgerKept()) S.warn = "This browser won't keep the console's ledger (private browsing?). The guardrail then lasts only while this tab is open.";
+  S.pk = stored();
+  if (S.pk && S.pk.rpId !== location.hostname) S.pk = null;
+  $("#scan-start").addEventListener("click", importScan);
+  $("#scan-stop").addEventListener("click", () => stopScan(""));
+  $("#scan-start").disabled = !canScan();
+  await reconnectWallet().catch(() => {
+  });
+  await guard("Reading your Safe from the chain…", find);
+  window.addEventListener("hashchange", () => {
+    if (proposalFrom(location.hash, S.C)) guard("Reading the Safe from the chain…", openProposal);
+  });
+  setInterval(() => {
+    if (!S.busy && S.current && document.visibilityState === "visible") refresh().then((changed) => changed && render(), () => {
+    });
+  }, S.C.id === 31337 ? 1500 : 12e3);
+}
+async function find() {
+  if (!S.pk) return;
+  const signer = ask({ op: "signer", x: S.pk.x, y: S.pk.y }).signer;
+  const onChain = (await signerAddress(S.C, S.pk)).toLowerCase();
+  if (onChain !== signer) throw new Error(`the signer factory names ${onChain} for this passkey, the console ${signer}`);
+  let h2 = home();
+  if (!h2?.seat || !await hasCode(S.C, h2.seat)) {
+    const used = (await seatCounts(S.C, (await seatsOf(S.C, signer)).slice(-8))).filter((s) => s.n > 0).pop();
+    h2 = used ? { seat: used.address, safe: await safeAddress(S.C, used.address), found: true } : null;
+  }
+  S.home = h2;
+  if (!h2) return;
+  S.at = h2.safe;
+  if (proposalFrom(location.hash, S.C)) return openProposal();
+  await refresh();
+}
+async function openProposal() {
+  const got = proposalFrom(location.hash, S.C);
+  history.replaceState(null, "", location.pathname + location.search);
+  if (!got) return;
+  if (got.refuse) throw new Error(got.refuse);
+  if (!S.home) throw new Error("This browser has no seat yet. Open the link on the device whose seat is an owner of that Safe.");
+  const safe = await readSafe(S.C, got.req.safe);
+  const owns = (a) => safe.exists && safe.owners.some((o) => same(o, a));
+  if (!owns(S.home.seat) && !owns(S.wallet?.account)) throw new Error(`Neither your seat nor the wallet here is an owner of the Safe ${short(got.req.safe)}. Nothing to approve.`);
+  if (Number(got.req.tx.nonce) < safe.nonce) throw new Error(`The Safe ${short(got.req.safe)} has run its transaction ${got.req.tx.nonce} already. Nothing to approve.`);
+  if (owns(S.home.seat)) keepSafe(got.req.safe);
+  S.at = getAddress(got.req.safe);
+  S.draft = got.req.tx;
+  S.acks = {};
+  S.flash = "";
+  await refresh();
+}
+function stopScan(said) {
+  stopCamera?.();
+  stopCamera = null;
+  $("#scan-start").hidden = false;
+  $("#scan-stop").hidden = true;
+  $("#scan-status").textContent = said;
+}
+async function importScan() {
+  const status = $("#scan-status"), parts = partCollector(S.C);
+  status.textContent = "Starting the camera…";
+  try {
+    stopCamera = await startScan($("#scan-box"), async (text) => {
+      const got = parts.add(text);
+      if (got?.done?.refuse) {
+        status.textContent = got.done.refuse;
+        return;
+      }
+      if (got?.done) {
+        try {
+          sessionStorage.setItem("sab.scanned", JSON.stringify(parts.texts));
+        } catch {
+        }
+        stopScan("An approval to send: the main page pays for it. Opening it…");
+        location.assign(new URL("./#scanned", location.href).href);
+        return;
+      }
+      if (got) {
+        status.textContent = `Read code ${got.part} of ${got.parts}: ${parts.have} of ${parts.total}. Keep the camera on them.`;
+        return;
+      }
+      let url = null;
+      try {
+        url = new URL(text);
+      } catch {
+      }
+      if (!url || !["https:", "http:"].includes(url.protocol)) url = null;
+      if (url && proposalFrom(url.hash, S.C)) {
+        stopScan("");
+        history.replaceState(null, "", location.pathname + location.search + url.hash);
+        await guard("Reading the Safe from the chain…", openProposal);
+      } else if (url && fromLink(url.hash, S.C)) {
+        stopScan("A request to pay for: opening it on the main page…");
+        location.assign(new URL("./" + url.hash, location.href).href);
+      } else status.textContent = "That code isn't a Sign and Burn transaction. Keep looking.";
+    });
+    $("#scan-start").hidden = true;
+    $("#scan-stop").hidden = false;
+    status.textContent = "Point the camera at the codes on the other device.";
+  } catch (e) {
+    stopScan(e?.name === "NotAllowedError" ? "The camera wasn't allowed. Allow it for this site, or open the link." : `The camera didn't start: ${e?.message || e}`);
+  }
+}
+async function openSafe(a) {
+  S.at = a;
+  S.draft = null;
+  S.acks = {};
+  S.flash = "";
+  S.error = "";
+  await guard("Reading the Safe from the chain…", refresh);
+}
+async function addSafe() {
+  const a = (S.addSafe || "").trim();
+  await guard("Reading the Safe from the chain…", async () => {
+    if (!isAddress(a)) throw new Error("That isn't an address.");
+    const safe = await readSafe(S.C, a);
+    if (!safe.exists || !safe.owners.some((o) => same(o, S.home.seat))) throw new Error(`Your seat isn't an owner of ${short(a)}. Add it there first: on that Safe's own page, add ${S.home.seat} as an owner.`);
+    keepSafe(a);
+    S.addSafe = "";
+    S.at = getAddress(a);
+    S.draft = null;
+    S.acks = {};
+    await refresh();
+  });
+}
+async function refresh() {
+  const H = S.home;
+  if (!H || !await hasCode(S.C, H.seat)) return false;
+  const [seat, safe] = await Promise.all([readSeat(S.C, H.seat), readSafe(S.C, S.at || H.safe)]);
+  S.seat = seat;
+  S.safe = safe;
+  if (!safe.exists) return true;
+  ask({ op: "chain", chainId: S.C.id, seat: H.seat, n: seat.n });
+  S.owners = await Promise.all(safe.owners.map(async (a) => {
+    const yours = same(a, H.seat);
+    const [code, sent] = yours ? [true, 0] : await Promise.all([hasCode(S.C, a), S.C.pc.getTransactionCount({ address: a })]);
+    const isSeat2 = yours || code && await isSeat(S.C, a);
+    return { address: a, yours, isSeat: isSeat2, contract: !isSeat2 && code, sent };
+  }));
+  S.seatOwns = S.owners.some((o) => o.yours);
+  if (S.wallet) S.walletBalance = await S.C.pc.getBalance({ address: S.wallet.account }).catch(() => null);
+  const list = tokens(), bals = await tokenBalances(S.C, safe.address, list);
+  S.tokenBal = new Map(list.map((t, i) => [t.address.toLowerCase(), bals[i]]));
+  const waiting2 = mine().find((e) => e.status !== "landed") || null;
+  S.waiting = waiting2 && same(waiting2.safe, safe.address) ? waiting2 : null;
+  S.waitingElsewhere = waiting2 && !S.waiting ? waiting2 : null;
+  let kept = read("sab.proposal")[proposalKey()] || null;
+  if (S.draft && Number(S.draft.nonce) !== safe.nonce) S.draft = null;
+  if (kept && Number(kept.nonce) < safe.nonce) {
+    keepProposal(null);
+    kept = null;
+  }
+  S.current = S.waiting ? { tx: S.waiting.tx, locked: true } : kept ? { tx: txOnly(kept), kept: true } : S.draft ? { tx: S.draft } : null;
+  S.review = S.current ? ask({ op: "review", chainId: S.C.id, safe: safe.address, tx: S.current.tx }) : null;
+  S.votes = S.review?.ok ? await votesFor(S.C, safe.address, safe.owners, S.review.safeTxHash) : [];
+  S.sigs = (kept && S.current && sameTx(kept, S.current.tx) ? kept.sigs || [] : []).filter((x) => safe.owners.some((o) => same(o, x.owner)) && !S.votes.some((v) => same(v, x.owner)));
+  const was = S.seen;
+  S.seen = JSON.stringify([safe.address, seat.n, safe.nonce, String(safe.balance), safe.owners, safe.threshold, S.votes, S.sigs.length, S.waiting?.n, S.walletBalance === null ? "" : String(S.walletBalance)]);
+  return was !== S.seen;
+}
+async function guard(what, f) {
+  S.busy = what;
+  S.error = "";
+  $("#lamp").className = "lamp busy";
+  render();
+  try {
+    await f();
+  } catch (e) {
+    S.error = plain(e);
+  }
+  S.busy = "";
+  $("#lamp").className = "lamp on";
+  render();
+}
+async function connectWallet() {
+  await guard("Looking for wallets in this browser…", async () => {
+    const found = await findWallets();
+    if (!found.length) throw new Error("No wallet found in this browser. The seat's approvals can still go out from the main page, as a link for a wallet on another device.");
+    if (found.length > 1) {
+      S.choosing = found;
+      return;
+    }
+    await useWallet2(found[0]);
+  });
+}
+async function useWallet2(w, got = null) {
+  S.choosing = null;
+  got ||= await useWallet(S.C, w.provider);
+  S.wallet = { ...got, name: w.info.name, provider: w.provider };
+  try {
+    localStorage.setItem("sab.wallet", walletId(w.info));
+  } catch {
+  }
+  if (w.provider.on && !w.followed) {
+    w.followed = true;
+    w.provider.on("accountsChanged", async (accounts) => {
+      if (S.wallet?.provider !== w.provider) return;
+      S.wallet = accounts?.length ? { ...S.wallet, account: accounts[0] } : null;
+      await refresh().catch(() => {
+      });
+      if (accounts?.length && S.wallet?.account !== accounts[0]) return;
+      render();
+    });
+    w.provider.on("chainChanged", (id) => {
+      if (S.wallet?.provider === w.provider && Number(id) !== S.C.id) {
+        S.wallet = null;
+        S.error = `The wallet moved to another network. Connect it again for ${S.C.chain.name}.`;
+        render();
+      }
+    });
+  }
+  await refresh().catch(() => {
+  });
+}
+async function reconnectWallet() {
+  let id = null;
+  try {
+    id = localStorage.getItem("sab.wallet");
+  } catch {
+  }
+  if (!id) return;
+  const w = (await findWallets()).find((x) => walletId(x.info) === id || x.info.uuid === id);
+  const got = w && await useWallet(S.C, w.provider, { quiet: true }).catch(() => null);
+  if (got) await useWallet2(w, got);
+}
+async function needGas() {
+  S.walletBalance = await S.C.pc.getBalance({ address: S.wallet.account }).catch(() => null);
+  if (S.walletBalance === 0n) throw new Error(`${S.wallet.name}'s account ${short(S.wallet.account)} has no ${S.C.chain.name} ETH to pay the gas. Nothing was sent.`);
+}
+function draft(tx) {
+  S.error = "";
+  S.flash = "";
+  S.acks = {};
+  S.draft = tx;
+  refresh().then(() => {
+    render();
+    $("#act").scrollIntoView({ block: "start", behavior: "smooth" });
+  }, (e) => {
+    S.error = plain(e);
+    render();
+  });
+}
+function draftSend() {
+  const { to, amount, asset } = S.send, t = asset === "ETH" ? null : tokenOf(asset);
+  if (!isAddress(to)) return fail("Send to: that isn't an address.");
+  let value;
+  try {
+    value = t ? parseUnits(amount || "", t.decimals) : parseEther(amount || "");
+  } catch {
+    return fail(`Amount: that isn't a number of ${t ? t.symbol : "ETH"}.`);
+  }
+  if (value <= 0n) return fail("Amount: send more than nothing.");
+  if (t) return draft(tokenTx(t.address, to, value, S.safe.nonce));
+  draft({ to: getAddress(to), value: value.toString(), data: "0x", operation: 0, nonce: String(S.safe.nonce) });
+}
+function draftAdd() {
+  const a = S.add.trim(), t = Number(S.addThreshold);
+  if (!isAddress(a)) return fail("New owner: that isn't an address.");
+  if (isOwner(a)) return fail("That address is an owner already.");
+  if ([zeroAddress, "0x0000000000000000000000000000000000000001", S.safe.address.toLowerCase()].includes(a.toLowerCase())) return fail("A Safe can't have that address as an owner.");
+  draft(ownerTx(S.safe.address, S.safe.nonce, { add: a, threshold: t }));
+  S.add = "";
+}
+function draftRemove(o) {
+  draft(ownerTx(S.safe.address, S.safe.nonce, { remove: o, owners: S.safe.owners, threshold: Math.min(S.safe.threshold, S.safe.owners.length - 1) }));
+}
+function draftThreshold() {
+  const t = Number(S.threshold);
+  if (!(t >= 1 && t <= S.safe.owners.length) || t === S.safe.threshold) return fail("Pick another number of approvals.");
+  draft(ownerTx(S.safe.address, S.safe.nonce, { threshold: t }));
+}
+function fail(why) {
+  S.error = why;
+  S.flash = "";
+  render();
+}
+function discard() {
+  S.draft = null;
+  S.acks = {};
+  S.error = "";
+  if (S.current?.kept) keepProposal(null);
+  refresh().finally(render);
+}
+async function importSafeWallet() {
+  await guard("Checking the transaction from Safe{Wallet}…", async () => {
+    await refresh();
+    if (S.current && !(S.current.tx === S.draft)) throw new Error("Finish or reject the transaction on the card first: the Safe runs one at a time.");
+    const all2 = fromSafeWallet(S.swPaste || "", S.safe.address);
+    const got = all2.find((x) => Number(x.tx.nonce) === S.safe.nonce);
+    if (!got) throw new Error(`Nothing in that is for the Safe's next transaction, nonce ${S.safe.nonce} (it has ${all2.map((x) => x.tx.nonce).join(", ")}). The Safe runs them in order: the one at its nonce first.`);
+    const r = ask({ op: "review", chainId: S.C.id, safe: S.safe.address, tx: got.tx });
+    if (!r.ok) throw new Error(r.refuse);
+    if (r.safeTxHash.toLowerCase() !== got.safeTxHash) throw new Error(`The console works out ${short(r.safeTxHash, 10, 6)} from these fields, and Safe{Wallet} says ${short(got.safeTxHash, 10, 6)}: they aren't the same transaction. Nothing was imported.`);
+    const sigs = [], dropped = [];
+    for (const x of got.sigs) {
+      const who = await signerOf(r.safeTxHash, x.signature);
+      if (who && same(who, x.owner) && isOwner(x.owner)) sigs.push({ owner: getAddress(x.owner), signature: x.signature });
+      else dropped.push(x.owner);
+    }
+    S.draft = null;
+    S.acks = {};
+    S.swPaste = "";
+    keepProposal({ ...got.tx, sigs });
+    await refresh();
+    S.flash = `Imported Safe{Wallet}'s transaction at nonce ${got.tx.nonce}, with ${sigs.length} signature${sigs.length === 1 ? "" : "s"} that check out` + (dropped.length ? `, and ${dropped.length} left out: ${dropped.map((a) => short(a)).join(", ")} (not a signature of this transaction by an owner of this Safe).` : ".");
+  });
+}
+async function voteSeat(tx) {
+  await guard("Reading the seat and the Safe from the chain…", async () => {
+    await refresh();
+    if (!S.seatOwns) throw new Error("Your seat isn't an owner of this Safe. Nothing was signed.");
+    const nonceBefore = S.safe.nonce;
+    if (Number(tx.nonce) >= S.safe.nonce) keepProposal(tx);
+    const others = S.votes.filter((v) => v.toLowerCase() !== S.seat.address.toLowerCase());
+    const got = await approve2({ C: S.C, pk: S.pk, seat: S.seat, safe: S.safe, tx, wallet: canPay() ? S.wallet : null, others, sigs: S.sigs, say });
+    S.draft = null;
+    S.acks = {};
+    await refresh();
+    if (!got.hash) {
+      S.flash = `Key ${got.n} signed it. Now send it from a device with a wallet: copy the link below.`;
+      return;
+    }
+    const ran = await nonceAt(S.C, S.safe.address, got.block) > nonceBefore;
+    S.flash = el("span", {}, `Key ${got.n}: signed, sent, burned. ` + (got.theirs ? "Someone copied the approval and sent it first: it can do only what you signed. " : "") + (ran ? "The Safe ran it. " : Number(tx.nonce) < nonceBefore ? "The Safe had moved past this transaction, so it ran nothing; the seat is at the next key now. " : `The seat's vote is on chain. The Safe runs it once ${S.safe.threshold} owners have approved. `), txLink(got.hash));
+  });
+}
+async function voteWallet(tx, run2) {
+  await guard(run2 ? "Your wallet runs it: its own key is its vote…" : "Your wallet approves it on chain, with its own key…", async () => {
+    await refresh();
+    if (!S.review?.ok || S.review.refuse) throw new Error("The console doesn't approve this transaction. Nothing was sent.");
+    if (Number(tx.nonce) !== S.safe.nonce) throw new Error(`The Safe is at nonce ${S.safe.nonce}, and this is for ${tx.nonce}. Nothing was sent.`);
+    if (!isOwner(S.wallet?.account)) throw new Error("This wallet's account isn't an owner of the Safe. Nothing was sent.");
+    await needGas();
+    keepProposal(tx);
+    const data = run2 ? execData(tx, [...S.votes, S.wallet.account], S.sigs) : approveHashData(S.review.safeTxHash);
+    const hash3 = await sendToSafe(S.C, S.wallet, S.safe.address, data);
+    say("Waiting for the block…");
+    const r = await receipt(S.C, hash3);
+    if (r.status !== "success") throw new Error(`The transaction reverted (${short(hash3, 10, 6)}). Nothing changed.`);
+    S.draft = null;
+    S.acks = {};
+    await refresh();
+    S.flash = el("span", {}, run2 ? "Your wallet ran it. " : `Your wallet's vote is on chain. The Safe runs it once ${S.safe.threshold} owners have approved. `, txLink(hash3));
+  });
+}
+async function run(tx) {
+  await guard("Your wallet runs it. It pays gas, and approves nothing…", async () => {
+    await refresh();
+    await needGas();
+    const hash3 = await sendToSafe(S.C, S.wallet, S.safe.address, execData(tx, S.votes, S.sigs));
+    say("Waiting for the block…");
+    const r = await receipt(S.C, hash3);
+    if (r.status !== "success") throw new Error(`The transaction reverted (${short(hash3, 10, 6)}). Nothing changed.`);
+    await refresh();
+    S.flash = el("span", {}, "The Safe ran it. ", txLink(hash3));
+  });
+}
+function render() {
+  const focus = document.activeElement?.id, pos = document.activeElement?.selectionStart;
+  drawAccount();
+  const flash = $("#flash");
+  flash.replaceChildren(...[
+    S.warn && el("p", { class: "note" }, S.warn),
+    S.busy && el("p", { class: "status" }, el("span", { class: "spin" }), S.busy),
+    S.error && el("p", { class: "note error", role: "alert" }, S.error),
+    S.flash && !S.busy && el("p", { class: "note" }, S.flash)
+  ].filter(Boolean));
+  if (!S.safe?.exists) {
+    for (const id of ["#act", "#send", "#safes", "#owners", "#activity", "#book"]) {
+      $(id).replaceChildren();
+      $(id).hidden = true;
+    }
+    return;
+  }
+  $("#act").hidden = !S.current;
+  $("#act").className = "card";
+  $("#send").hidden = $("#safes").hidden = $("#owners").hidden = $("#activity").hidden = $("#book").hidden = false;
+  const fill = (id, parts) => $(id).replaceChildren(...parts.filter(Boolean));
+  fill("#act", S.current ? approvalCard() : []);
+  fill("#send", sendCard());
+  fill("#safes", safesCard());
+  fill("#book", bookCard());
+  fill("#owners", ownersCard());
+  fill("#activity", activityCard());
+  if (focus) {
+    const again = document.getElementById(focus);
+    again?.focus();
+    try {
+      again?.setSelectionRange(pos, pos);
+    } catch {
+    }
+  }
+}
+function drawAccount() {
+  const box = $("#account");
+  if (!S.C) return box.replaceChildren(el("p", { class: S.error ? "note error" : "muted" }, S.error || "Starting the console…"));
+  const main = el("p", {}, el("a", { href: "./" }, "Go to the main page"), ": it makes a passkey, your first one-time key, and builds your shielded Safe.");
+  if (!S.pk) return box.replaceChildren(el("h1", {}, "No passkey here yet"), main);
+  if (!S.safe && S.busy) return box.replaceChildren(el("p", { class: "muted" }, "Reading your Safe from the chain…"));
+  if (!S.safe?.exists) return box.replaceChildren(el("h1", {}, "Your Safe isn't built yet"), main);
+  const a = S.safe.address, name = nameOf(a), shortA = short(a, 6, 4);
+  const c = drawBlockie(el("canvas", { width: 8, height: 8, class: "wallet-blockie", "aria-hidden": "true" }), a);
+  const where = S.C.explorer ? el("a", { class: "mono", href: `${S.C.explorer}/address/${a}`, target: "_blank", rel: "noopener noreferrer", title: a }, shortA) : el("span", { class: "mono", title: a }, shortA);
+  box.replaceChildren(
+    el(
+      "div",
+      { class: "safe-box" },
+      c,
+      el(
+        "div",
+        { class: "safe-id" },
+        el("p", { class: "eyebrow" }, same(a, S.home.safe) ? "Your shielded Safe" : S.seatOwns ? "A Safe your seat is in" : "A Safe your wallet is in"),
+        name ? el("b", { class: "safe-name" }, name) : null,
+        el("div", { class: "safe-addr" }, where, copyButton(a))
+      ),
+      safesPicker()
+    ),
+    el(
+      "div",
+      { class: "safe-money" },
+      el("div", { class: "balance" }, eth(S.safe.balance)),
+      el(
+        "div",
+        { class: "wallet-sub" },
+        el("span", { class: "chip" }, `${S.safe.threshold} of ${S.safe.owners.length} to approve`),
+        el("span", { class: "chip" }, `seat at key ${S.seat.n}`),
+        el("span", { class: "chip" }, `nonce ${S.safe.nonce}`)
+      ),
+      tokens().some((t) => S.tokenBal?.get(t.address.toLowerCase())) ? el(
+        "div",
+        { class: "wallet-sub tokens" },
+        ...tokens().filter((t) => S.tokenBal?.get(t.address.toLowerCase())).map((t) => el("span", { class: "chip token", title: t.address }, units(S.tokenBal.get(t.address.toLowerCase()), t)))
+      ) : null
+    ),
+    el(
+      "div",
+      { class: "wallet-who" },
+      S.wallet ? el(
+        "span",
+        {},
+        el("span", { class: "small" }, `${S.wallet.name}: `),
+        addr(S.wallet.account, { copy: true }),
+        el("span", { class: "small" }, ` ${S.walletBalance != null ? eth(S.walletBalance) : ""} · ${isOwner(S.wallet.account) ? "an owner" : "pays gas only"}`)
+      ) : el("button", { type: "button", disabled: !!S.busy, onclick: connectWallet }, "Connect a wallet"),
+      S.choosing ? el("div", { class: "chooser" }, el("p", {}, "Which wallet?"), el(
+        "div",
+        { class: "actions" },
+        ...S.choosing.map((w) => el("button", { type: "button", onclick: () => guard(`Asking ${w.info.name} for an account…`, () => useWallet2(w)) }, w.info.name || "A wallet")),
+        el("button", { class: "link", type: "button", onclick: () => {
+          S.choosing = null;
+          render();
+        } }, "Cancel")
+      )) : null
+    )
+  );
+}
+function ownersCard() {
+  const disabled = !!S.busy || !!S.current;
+  const t = S.safe.threshold;
+  const out = [el("h2", {}, "Owners"), el("p", { class: "small" }, `${t} of ${S.owners.length} must approve each transaction.`)];
+  out.push(el("ul", { class: "owners" }, ...S.owners.map((o) => {
+    const [cls, name, what] = kindOf(o);
+    return el(
+      "li",
+      { class: `owner ${cls}` },
+      el(
+        "div",
+        { class: "h" },
+        addr(o.address, { copy: true }),
+        el("span", { class: "badge" }, name),
+        o.yours ? el("span", { class: "badge you" }, "your seat") : null,
+        S.wallet && same(o.address, S.wallet.account) ? el("span", { class: "badge you" }, "this wallet") : null
+      ),
+      el("div", { class: "small" }, o.yours ? `Key ${S.seat.n} now. ${what}` : !o.isSeat && !o.contract && o.sent ? `Sent ${o.sent} transaction${o.sent === 1 ? "" : "s"}. ${what}` : what),
+      el(
+        "div",
+        { class: "actions" },
+        nameLink(o.address),
+        o.yours ? null : el("button", { class: "link", type: "button", disabled, onclick: () => draftRemove(o.address) }, "Remove")
+      )
+    );
+  })));
+  const ordinary = S.owners.filter((o) => !o.isSeat), others = S.owners.filter((o) => !o.yours);
+  const exposed = ordinary.length >= t, backup = S.seatOwns && others.length >= t;
+  out.push(el(
+    "div",
+    { class: `verdict ${exposed ? "bad" : "ok"}` },
+    el("b", {}, exposed ? "Ordinary keys can approve without a seat" : "Every approval needs a seat"),
+    el("p", { class: "small" }, exposed ? `${ordinary.length === 1 ? "One ordinary owner" : `${t} of the ${ordinary.length} ordinary owners`} can approve with no seat at all. Someone who can forge curve signatures could sign as them and take the Safe.` : ordinary.length ? `The ordinary owners can't reach ${t} without a seat, so a broken curve isn't enough to take the Safe.` : "Every owner is a seat. A broken curve isn't enough to take the Safe.")
+  ));
+  if (S.seatOwns) out.push(el(
+    "div",
+    { class: `verdict ${backup ? "ok" : "warn"}` },
+    el("b", {}, backup ? "A backup if your passkey is lost" : "No backup if your passkey is lost"),
+    el("p", { class: "small" }, backup ? `The other owners can reach ${t} without your seat, and run the Safe or replace your seat.` : `The other owners can't reach ${t} without your seat. If your passkey is lost, the Safe is stuck.`)
+  ));
+  out.push(el(
+    "details",
+    { class: "small" },
+    el("summary", {}, "1 of 2, 2 of 2, or 2 of 3?"),
+    el("p", {}, el("b", {}, "Your seat and your wallet, 1 of 2"), ": either can approve alone. Your wallet is a backup, and a way to get used to a multisig. But your wallet's key rests on a curve, and once it has signed anything its public key is public. If curves break, the seats no longer protect this Safe."),
+    el("p", {}, el("b", {}, "2 of 2"), ": both must approve. A broken curve can forge your wallet's vote, never the seat's, so the protection holds. There is no backup: lose either key and the Safe is stuck."),
+    el("p", {}, el("b", {}, "Two seats and your wallet, 2 of 3"), ": any two. Your wallet can never approve alone, so every approval needs a one-time key, and if one passkey is lost the other seat and your wallet still reach 2. The other seat is another passkey's, made on the main page of another browser or device. Add its seat address here as an owner, then share each transaction with its device as a link.")
+  ));
+  const sel = (id, value, max, on) => el("select", { id, onchange: (e) => on(e.target.value) }, ...Array.from({ length: max }, (_, i) => el("option", { value: String(i + 1), selected: String(i + 1) === value }, String(i + 1))));
+  out.push(
+    el("h3", {}, "Add an owner"),
+    el(
+      "div",
+      { class: "form owner-form owner-add" },
+      el("label", {}, "Address", el("input", { id: "add-owner", class: "mono", value: S.add, placeholder: "0x…", spellcheck: "false", autocomplete: "off", oninput: (e) => {
+        S.add = e.target.value;
+      } })),
+      el("label", {}, "Then approvals needed", sel("add-threshold", S.addThreshold, S.owners.length + 1, (v) => {
+        S.addThreshold = v;
+      }))
+    ),
+    el(
+      "div",
+      { class: "actions owner-add" },
+      S.wallet && !isOwner(S.wallet.account) ? el("button", { type: "button", disabled, onclick: () => {
+        S.add = S.wallet.account;
+        S.addThreshold = String(t);
+        render();
+      } }, "Use my wallet's address") : null,
+      el("button", { class: "go", type: "button", disabled, onclick: draftAdd }, "Review")
+    )
+  );
+  if (S.owners.length > 1) {
+    S.threshold ||= String(t);
+    out.push(el("h3", {}, "Approvals needed"), el(
+      "div",
+      { class: "actions threshold-row" },
+      sel("threshold", S.threshold, S.owners.length, (v) => {
+        S.threshold = v;
+      }),
+      el("span", { class: "small" }, `of ${S.owners.length}`),
+      el("button", { type: "button", disabled, onclick: draftThreshold }, "Review")
+    ));
+  }
+  if (S.current) out.push(el("p", { class: "small" }, "One transaction at a time: finish or reject the one above first."));
+  return out;
+}
+function safesCard() {
+  const list = safes();
+  if (!list.some((a) => same(a, S.safe.address))) list.push(S.safe.address);
+  return [
+    el("h2", {}, "Safes"),
+    el("ul", { class: "safes" }, ...list.map((a) => el(
+      "li",
+      {},
+      addr(a, { copy: true }),
+      same(a, S.home.safe) ? el("span", { class: "badge" }, "yours") : null,
+      same(a, S.safe.address) ? el("span", { class: "badge you" }, "open") : el("button", { class: "link", type: "button", disabled: !!S.busy, onclick: () => openSafe(a) }, "Open"),
+      nameLink(a)
+    ))),
+    el("p", { class: "small" }, "Your seat's address. Another Safe adds this as an owner, and then your passkey can approve for it too:"),
+    el("input", { class: "mono share-link", readonly: true, value: S.home.seat, "aria-label": "Your seat's address", onfocus: (e) => e.target.select() }),
+    el("div", { class: "actions" }, el("button", { type: "button", onclick: () => copy(S.home.seat, "Copied your seat's address.") }, "Copy your seat's address")),
+    qrToggle(S.home.seat),
+    el(
+      "details",
+      {},
+      el("summary", { class: "small" }, "Open another Safe your seat is in"),
+      el(
+        "div",
+        { class: "actions" },
+        el("input", { id: "add-safe", class: "mono", value: S.addSafe || "", placeholder: "0x…", spellcheck: "false", autocomplete: "off", "aria-label": "The Safe's address", oninput: (e) => {
+          S.addSafe = e.target.value;
+        } }),
+        el("button", { type: "button", disabled: !!S.busy, onclick: addSafe }, "Open it")
+      ),
+      el("p", { class: "small" }, "A link from another owner's device opens its Safe here by itself.")
+    )
+  ];
+}
+function saveName() {
+  const a = (S.bookAddr || "").trim();
+  if (!isAddress(a)) return fail("Address book: that isn't an address.");
+  const c = cleanName(S.bookName);
+  if (c.why) return fail("Address book: " + c.why);
+  setName(S.C.id, a, c.name);
+  S.bookAddr = S.bookName = "";
+  S.error = "";
+  S.flash = `Named ${short(a)} “${c.name}”.`;
+  render();
+}
+function exportNames() {
+  const url = URL.createObjectURL(new Blob([exportBook(S.C.id)], { type: "application/json" }));
+  const a = el("a", { href: url, download: "sign-and-burn-address-book.json" });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1e3);
+  S.flash = `Exported ${Object.keys(all()).length} names. The file holds names and addresses, nothing secret.`;
+  S.error = "";
+  render();
+}
+function importNames(text) {
+  try {
+    const { added, replaced } = importBook(text, S.C.id);
+    S.flash = `Imported: ${added} new name${added === 1 ? "" : "s"}, ${replaced} renamed.`;
+    S.error = "";
+    S.bookPaste = "";
+  } catch (e) {
+    S.error = "Address book: " + e.message;
+    S.flash = "";
+  }
+  render();
+}
+function bookCard() {
+  const entries = Object.entries(all()).sort((x, y) => x[1].localeCompare(y[1]));
+  return [
+    el("h2", {}, "Address book"),
+    el("p", { class: "small" }, "Your names for Safes, seats and wallets, kept in this browser. A name always shows beside its address, and the console never sees them."),
+    entries.length ? el("ul", { class: "book" }, ...entries.map(([a]) => el(
+      "li",
+      {},
+      addr(a, { copy: true }),
+      nameLink(a),
+      el("button", { class: "link", type: "button", onclick: () => {
+        setName(S.C.id, a, "");
+        render();
+      } }, "Remove")
+    ))) : el("p", { class: "muted" }, "No names yet. “Name it” beside an owner or a Safe starts one."),
+    el(
+      "div",
+      { class: "form book-form" },
+      el("label", {}, "Address", el("input", { id: "book-addr", class: "mono", value: S.bookAddr || "", placeholder: "0x…", spellcheck: "false", autocomplete: "off", oninput: (e) => {
+        S.bookAddr = e.target.value;
+      } })),
+      el("label", {}, "Name", el("input", { id: "book-name", value: S.bookName || "", maxlength: String(MAX_NAME), autocomplete: "off", oninput: (e) => {
+        S.bookName = e.target.value;
+      } }))
+    ),
+    el("div", { class: "actions" }, el("button", { class: "go", type: "button", onclick: saveName }, "Save name")),
+    el("h3", {}, "To another browser"),
+    el(
+      "div",
+      { class: "actions" },
+      el("button", { type: "button", onclick: exportNames }, "Export JSON"),
+      el("label", { class: "btn file" }, "Import JSON", el("input", { id: "book-file", type: "file", accept: "application/json,.json", onchange: async (e) => {
+        const f = e.target.files?.[0];
+        if (f) importNames(f.size > 2e5 ? "" : await f.text());
+      } }))
+    ),
+    el(
+      "details",
+      keepOpen("book-paste"),
+      el("summary", { class: "small" }, "Or paste it"),
+      el("textarea", { id: "book-paste", class: "mono", rows: "4", spellcheck: "false", oninput: (e) => {
+        S.bookPaste = e.target.value;
+      } }, S.bookPaste || ""),
+      el("div", { class: "actions" }, el("button", { type: "button", onclick: () => importNames(S.bookPaste || "") }, "Import"))
+    ),
+    el("p", { class: "small" }, "Importing adds names, and replaces yours for the same addresses. A file is checked whole: one bad entry, and nothing is imported.")
+  ];
+}
+async function copy(text, said) {
+  try {
+    await navigator.clipboard.writeText(text);
+    S.flash = said;
+    S.error = "";
+  } catch {
+    S.error = "This browser wouldn't copy. Select the text shown and copy it yourself.";
+  }
+  render();
+}
+function toPreview() {
+  const a = S.send.to;
+  if (!a) return el("span", { class: "small" }, "");
+  if (!isAddress(a)) return el("span", { class: "small" }, "Not an address yet.");
+  return el("span", { class: "small" }, label(getAddress(a)), nameOf(a) ? "" : " not in your address book");
+}
+function contacts() {
+  const out = [], add2 = (address, note) => {
+    if (!same(address, S.safe.address) && !out.some((x) => same(x.address, address))) out.push({ address: getAddress(address), note });
+  };
+  for (const a of safes()) add2(a, "your Safe");
+  if (S.wallet) add2(S.wallet.account, "the wallet here");
+  const book = Object.entries(all()).sort((x, y) => x[1].localeCompare(y[1]));
+  for (const [a] of book) add2(a, "");
+  return out;
+}
+function safesPicker() {
+  const list = safes();
+  if (!list.some((a) => same(a, S.safe.address))) list.push(S.safe.address);
+  return picker(
+    "safes",
+    "Switch Safe",
+    list.map((a) => ({ address: a, on: same(a, S.safe.address), note: same(a, S.home.safe) ? "yours" : same(a, S.safe.address) ? "open" : "" })),
+    (a) => {
+      if (!same(a, S.safe.address)) openSafe(a);
+    },
+    { footer: el("button", { type: "button", class: "link", onclick: () => $("#safes").scrollIntoView({ block: "start", behavior: "smooth" }) }, "Open another Safe your seat is in…") }
+  );
+}
+function sendCard() {
+  const disabled = !!S.busy || !!S.current, list = tokens(), t = S.send.asset === "ETH" ? null : tokenOf(S.send.asset);
+  const preview = el("div", { class: "to-preview" }, toPreview());
+  if (S.send.asset !== "ETH" && !t) S.send.asset = "ETH";
+  const bal = t ? S.tokenBal?.get(t.address.toLowerCase()) : S.safe.balance;
+  return [
+    el("h2", {}, "Send"),
+    el(
+      "div",
+      { class: "form send-form" },
+      el(
+        "div",
+        { class: "to-field" },
+        el("label", { for: "send-to" }, "To"),
+        el(
+          "div",
+          { class: "to-row" },
+          el("input", {
+            id: "send-to",
+            class: "mono",
+            value: S.send.to,
+            placeholder: "0x…, or pick one",
+            spellcheck: "false",
+            autocomplete: "off",
+            oninput: (e) => {
+              S.send.to = e.target.value.trim();
+              preview.replaceChildren(toPreview());
+            }
+          }),
+          picker(
+            "send-to",
+            "Your Safes and contacts",
+            contacts(),
+            (a) => {
+              S.send.to = a;
+              render();
+            },
+            { footer: el("span", { class: "small" }, "Add contacts in the Address book, below.") }
+          )
+        ),
+        preview
+      ),
+      el("label", {}, "Asset", el(
+        "select",
+        { id: "send-asset", onchange: (e) => {
+          S.send.asset = e.target.value;
+          render();
+        } },
+        el("option", { value: "ETH", selected: !t }, "ETH"),
+        ...list.map((x) => el("option", { value: x.address, selected: !!t && same(t.address, x.address) }, x.pinned ? x.symbol : `${x.symbol} (added here)`))
+      )),
+      el("label", {}, `Amount (${t ? t.symbol : "ETH"})`, el("input", { id: "send-amount", value: S.send.amount, inputmode: "decimal", oninput: (e) => {
+        S.send.amount = e.target.value.trim();
+      } }))
+    ),
+    el("p", { class: "small" }, `The Safe holds ${bal == null ? "an amount this page couldn't read" : t ? units(bal, t) : eth(bal)}.` + (t && !t.pinned ? ` The console doesn't know ${t.symbol}: its review shows the amount in raw units (${t.decimals} decimals).` : "")),
+    // A share of what the Safe holds, worked out exactly in its smallest units. Max is all of it: the
+    // Safe pays no gas of its own (the wallet that sends the approval does).
+    el("div", { class: "actions quick" }, ...[[25, "25%"], [50, "50%"], [100, "Max"]].map(([pct, name]) => el("button", {
+      type: "button",
+      disabled: disabled || !bal,
+      "aria-label": pct === 100 ? "All of it" : `${name} of it`,
+      onclick: () => {
+        S.send.amount = formatUnits(bal * BigInt(pct) / 100n, t ? t.decimals : 18);
+        render();
+      }
+    }, name))),
+    el("div", { class: "actions" }, el("button", { class: "go", type: "button", disabled, onclick: draftSend }, "Review")),
+    S.current ? el("p", { class: "small" }, "One transaction at a time: finish or reject the one above first.") : null,
+    el(
+      "details",
+      keepOpen("add-token"),
+      el("summary", { class: "small" }, "Add a token"),
+      el(
+        "div",
+        { class: "actions" },
+        el("input", { id: "add-token", class: "mono", value: S.addToken || "", placeholder: "The token's address, 0x…", spellcheck: "false", autocomplete: "off", "aria-label": "The token's address", oninput: (e) => {
+          S.addToken = e.target.value;
+        } }),
+        el("button", { type: "button", disabled: !!S.busy, onclick: addToken }, "Add it")
+      ),
+      el("p", { class: "small" }, `The console knows ${pinnedTokens(S.C).map((x) => x.symbol).join(", ") || "no tokens"} on this chain. Any other ERC-20 works too; the console reviews it as a token it doesn't know, with the amount in raw units.`)
+    ),
+    el(
+      "details",
+      keepOpen("safe-wallet"),
+      el("summary", { class: "small" }, "A transaction from Safe{Wallet}"),
+      el("p", { class: "small" }, "Safe{Wallet} keeps a transaction it proposes, and its owners' signatures, on Safe's server, not on chain. This page reaches only the chain, so bring it here: open this link, copy everything it shows, and paste it below."),
+      S.C.id === 84532 ? el("a", { class: "mono small sw-link", href: safeWalletUrl(S.safe.address), target: "_blank", rel: "noopener noreferrer" }, "Safe's transaction service: this Safe's waiting transactions") : el("p", { class: "small" }, "(On a test chain of your own, Safe's service has nothing: paste the same JSON by hand.)"),
+      el("textarea", { id: "sw-paste", class: "mono", rows: "4", spellcheck: "false", placeholder: '{"count": 1, "results": [ … ] }', oninput: (e) => {
+        S.swPaste = e.target.value;
+      } }, S.swPaste || ""),
+      el("div", { class: "actions" }, el("button", { type: "button", disabled: !!S.busy, onclick: importSafeWallet }, "Import it")),
+      el("p", { class: "small" }, "The console works out the hash from the fields, and it must match Safe{Wallet}'s. Each signature must be an owner's, of this transaction. Then your seat's press adds its vote, and runs it with theirs if that makes enough.")
+    )
+  ];
+}
+function approvalCard() {
+  const tx = S.current.tx, r = S.review, n = S.seat.n, w = S.waiting;
+  const card = $("#act");
+  card.className = "card approval";
+  if (!r.ok) return [el("h2", {}, "Approve"), el("p", { class: "refuse" }, r.refuse), rejectButton()];
+  const red = r.level === "red";
+  if (red) card.className = "card approval red";
+  const out = [el("h2", {}, `Approve: ${r.summary}`)];
+  out.push(...reviewParts(r, S.safe.address, tx, "Safe transaction hash, worked out by the console"));
+  if (r.refuse) {
+    out.push(el("p", { class: "refuse" }, "The console refuses: " + r.refuse), rejectButton());
+    return out;
+  }
+  const overtaken = Number(tx.nonce) < S.safe.nonce;
+  const seatVoted = S.votes.some((v) => v.toLowerCase() === S.seat.address.toLowerCase());
+  const t = S.safe.threshold, count = S.votes.length + S.sigs.length;
+  const signed = (a) => S.sigs.some((x) => same(x.owner, a));
+  out.push(
+    el("h3", {}, overtaken ? "Overtaken" : `Votes: ${count} of ${t}`),
+    el("ul", { class: "votes" }, ...S.owners.map((o) => {
+      const voted = S.votes.some((v) => v.toLowerCase() === o.address.toLowerCase()) || signed(o.address);
+      const said = signed(o.address) ? "signed in Safe{Wallet}" : voted ? "approved" : o.yours && w ? `key ${w.n} signed it; not on chain yet` : "not yet";
+      return el("li", { class: voted ? "yes" : "" }, el("span", { class: "mark", "aria-hidden": "true" }, voted ? "✓" : "○"), addr(o.address), el("span", { class: "small" }, ` ${kindOf(o)[1]} · ${said}`));
+    }))
+  );
+  if (overtaken) {
+    out.push(el("p", { class: "note" }, `The Safe ran another transaction at nonce ${tx.nonce}, so it will never run this one. But key ${w.n} signed it, and a key signs once, ever: this approval is the only thing key ${w.n} will ever send. Send it to move the seat on to key ${w.n + 1}; it runs nothing.`));
+  }
+  const acks = S.acks, gates = [];
+  const ts = tokenSendOf(tx), tk = ts && tokenOf(ts.token), tb = tk ? S.tokenBal?.get(tk.address.toLowerCase()) : null;
+  const tooMuch = !w && (BigInt(tx.value || 0) > S.safe.balance || tb != null && ts.amount > tb);
+  if (tooMuch) out.push(el("p", { class: "note" }, (tk && tb != null && ts.amount > tb ? `The Safe has ${units(tb, tk)}, and this sends ${units(ts.amount, tk)}. ` : `The Safe has ${eth(S.safe.balance)}, and this sends ${eth(BigInt(tx.value))}. `) + "Approving it now would spend a vote, and for the seat a key, on a transaction the Safe can't run."));
+  const elsewhere = S.home.found && !mine().length;
+  const wElse = S.waitingElsewhere;
+  if (wElse && !seatVoted && S.seatOwns) out.push(el("p", { class: "note" }, `Key ${n} signed an approval for another Safe (${short(wElse.safe)}), and it hasn't landed. One signature per key, ever: send that one first, then key ${n + 1} can approve this. `, el("button", { class: "link", type: "button", disabled: !!S.busy, onclick: () => openSafe(getAddress(wElse.safe)) }, "Open that Safe")));
+  const ack = (k, text) => el("label", { class: "small ack" }, el("input", { type: "checkbox", checked: !!acks[k], onchange: (e) => {
+    acks[k] = e.target.checked;
+    gates.forEach((g) => g());
+  } }), text);
+  const buttons = [];
+  const gated = (b, needs) => {
+    const g = () => {
+      b.disabled = !!S.busy || tooMuch || needs.some((k) => !acks[k]);
+    };
+    g();
+    gates.push(g);
+    return b;
+  };
+  const needRed = red ? ["red"] : [];
+  if ((!seatVoted || overtaken) && S.seatOwns && !wElse) {
+    const label2 = w ? `Hold to send approval ${w.n} again` : `Hold to approve with key ${n}`;
+    if (canPay() || !w) buttons.push(gated(holdButton(label2, () => voteSeat(tx), { red }), [...needRed, ...elsewhere && !w ? ["elsewhere"] : []]));
+    if (S.wallet && !canPay()) buttons.push(el("span", { class: "small" }, `${S.wallet.name}'s account has no ETH for gas.`));
+  }
+  const mineToo = S.wallet && isOwner(S.wallet.account) && !S.votes.some((v) => v.toLowerCase() === S.wallet.account.toLowerCase()) && !signed(S.wallet.account);
+  if (mineToo && !overtaken && !w && count < t) {
+    const runs = count + 1 >= t;
+    buttons.push(gated(el("button", { type: "button", onclick: () => voteWallet(tx, runs) }, runs ? "Run it with my wallet" : "Approve with my wallet"), needRed));
+  }
+  if (count >= t && !overtaken && S.wallet) buttons.push(gated(el("button", { class: "go", type: "button", onclick: () => run(tx) }, "Run it"), []));
+  out.push(el(
+    "div",
+    { class: "actions" },
+    ...buttons,
+    red ? ack("red", "I read the red page") : null,
+    elsewhere && !w && !seatVoted ? ack("elsewhere", `Nothing signed with key ${n} is waiting on another device`) : null,
+    rejectButton()
+  ));
+  if (elsewhere && !w && !seatVoted) out.push(el("p", { class: "note" }, `Another device made this seat, and this browser has no record of what its keys signed. If that device signed with key ${n} and its transaction is still pending, signing here would be key ${n}'s second signature: enough to forge a third. Check there first, and use one device per seat.`));
+  const mine_ = (S.seatOwns && !seatVoted && !wElse ? 1 : 0) + (mineToo && !w ? 1 : 0);
+  const askable = S.owners.some((o) => !o.yours && !same(o.address, S.wallet?.account) && !S.votes.some((v) => same(v, o.address)) && !signed(o.address));
+  if (w) out.push(approvalShare(w, overtaken));
+  if (!overtaken && count < t && askable) {
+    const link = proposalLink(S.C, S.safe.address, tx, location.origin + location.pathname);
+    out.push(el(
+      "div",
+      { class: "share" },
+      el("h4", {}, count + mine_ >= t ? "Or ask another owner" : "Ask another owner"),
+      el("p", { class: "small" }, `Send this link to another owner's device: a seat's, or a wallet's. Its console works out the hash itself, and its code should read ${r.verify}. It sees the votes cast so far on chain. The link holds the transaction, and nothing signed.`),
+      el("input", { class: "mono share-link", readonly: true, value: link, "aria-label": "The link", onfocus: (e) => e.target.select() }),
+      el("div", { class: "actions" }, el("button", { type: "button", disabled: !!S.busy, onclick: () => copy(link, "Link copied. This page shows the new votes as they land.") }, "Copy link")),
+      qrToggle(link)
+    ));
+  }
+  if (w && !overtaken) out.push(el("p", { class: "small" }, `Key ${w.n} already signed this approval. One signature per key, ever: the console will only send this same one again. No tap needed.`));
+  else if (!seatVoted && !overtaken && S.seatOwns && !wElse) out.push(
+    el("p", { class: "small" }, `Holding asks your passkey once. The console signs with key ${n}, burns it and names key ${n + 1}. ` + (canPay() ? "Your wallet pays the gas." : `${S.wallet ? "No gas in that wallet" : "No wallet here"}: you then share the approval as a link, and a wallet on another device sends it. It pays the gas and approves nothing.`)),
+    S.wallet ? null : el("div", { class: "actions" }, el("button", { class: "link", type: "button", disabled: !!S.busy, onclick: connectWallet }, "I have a wallet in this browser"))
+  );
+  if (mineToo && !overtaken && !w && count < t) out.push(el("p", { class: "small" }, "Your wallet votes with its own key, the curve key a broken curve would forge. It shows that key's public half on chain, if it wasn't already."));
+  return out;
+}
+function approvalShare(w, overtaken) {
+  const link = approvalLink(S.C, w.n, w.approval, w.tx, new URL("./", location.href).href);
+  return el(
+    "div",
+    { class: "share" },
+    el("h4", {}, canPay() ? "Or send it from another device" : `Approval ${w.n} is signed. Send it from another device`),
+    el("p", { class: "small" }, `Copy this link to a device with a wallet on ${S.C.chain.name} and a little ETH for gas. It opens on the main page, which works out the hash itself (its code should read ${S.review.verify}), asks the seat, and sends it. ${overtaken ? "It will run nothing, and moves the seat to the next key. " : ""}This page moves on once it lands. Until then key ${w.n} sends nothing else.`),
+    el("input", { class: "mono share-link", readonly: true, value: link, "aria-label": "The link", onfocus: (e) => e.target.select() }),
+    el("div", { class: "actions" }, el("button", { class: canPay() ? "" : "go", type: "button", disabled: !!S.busy, onclick: () => copy(link, "Link copied. This page moves on once the approval lands.") }, "Copy link")),
+    qrToggle(approvalParts(S.C, w.n, w.approval, w.tx, sameTx(w.tx, S.current?.tx) ? S.sigs : keptSigs(S.C.id, w.safe, w.tx)))
+  );
+}
+function rejectButton() {
+  if (S.current?.locked) return null;
+  return el("button", { class: "reject", type: "button", disabled: !!S.busy, onclick: discard }, S.current?.kept ? "Reject: forget it here" : "Reject");
+}
+function activityCard() {
+  const es = mine().slice().reverse();
+  return [
+    el("h2", {}, "Your seat's approvals"),
+    rows([["Seat", addr(S.home.seat, { copy: true })], ["Key now", el("span", { class: "mono", title: S.seat.current }, `${S.seat.n}: ${short(S.seat.current, 10, 6)}`)]]),
+    es.length ? el("ul", { class: "history" }, ...es.map((e) => el(
+      "li",
+      {},
+      el("div", { class: "h" }, el("span", {}, `#${e.n} · ${e.summary}${same(e.safe, S.safe.address) ? "" : ` · Safe ${short(e.safe)}`}`), el("span", { class: `badge ${e.status}` }, e.status)),
+      el("div", { class: "s" }, `verify ${e.verify} · `, e.txHash ? txLink(e.txHash) : e.status === "landed" ? "sent from another device" : "not sent yet")
+    ))) : el("p", { class: "muted" }, "This browser's console hasn't approved anything for this seat yet."),
+    el("p", { class: "small" }, "Votes by other owners aren't listed here: the Safe's own history on the explorer has them.")
+  ];
+}
+var S, log, read, home, proposalKey, safesKey, safes, same, opened, keepOpen, tokens, tokenOf, units, sameTx, txOnly, ledger, mine, stopCamera, say, walletId, isOwner, canPay, KIND, kindOf, nameLink;
+var init_wallet2 = __esm({
+  "src/wallet.mjs"() {
+    init_esm();
+    init_console();
+    init_passkey();
+    init_chain2();
+    init_approve2();
+    init_pay();
+    init_names();
+    init_scan();
+    init_ui();
+    refuseFrames();
+    S = { busy: "", error: "", flash: "", send: { to: "", amount: "0.0001", asset: "ETH" }, add: "", addThreshold: "1", threshold: "", draft: null, acks: {} };
+    log = $("#log");
+    onLine((dir, line) => {
+      const tag = dir === "in" ? "page → console  " : dir === "out" ? "console → page  " : "console says    ";
+      log.append(el("div", { class: dir === "out" && line.includes('"ok": false') ? "bad" : dir }, tag + line));
+      while (log.childElementCount > 200) log.firstChild.remove();
+    });
+    read = (k) => {
+      try {
+        return JSON.parse(localStorage.getItem(k)) || {};
+      } catch {
+        return {};
+      }
+    };
+    home = () => read("sab.home")[`${S.C.id}:${S.pk.id}`] || null;
+    proposalKey = () => `${S.C.id}:${S.safe.address.toLowerCase()}`;
+    safesKey = () => `${S.C.id}:${S.home.seat.toLowerCase()}`;
+    safes = () => [S.home.safe, ...read("sab.safes")[safesKey()] || []];
+    same = (a, b) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
+    opened = /* @__PURE__ */ new Set();
+    keepOpen = (key) => ({ open: opened.has(key), ontoggle: (e) => {
+      if (e.target.open) opened.add(key);
+      else opened.delete(key);
+    } });
+    tokens = () => [...pinnedTokens(S.C), ...(read("sab.tokens")[String(S.C.id)] || []).filter((t) => !pinnedTokens(S.C).some((p) => same(p.address, t.address)))];
+    tokenOf = (a) => tokens().find((t) => same(t.address, a)) || null;
+    units = (v, t) => `${Number(formatUnits(v, t.decimals)).toLocaleString("en-US", { maximumFractionDigits: Math.min(t.decimals, 6) })} ${t.symbol}`;
+    sameTx = (a, b) => !!a && !!b && ["to", "value", "data", "operation", "nonce"].every((k) => String(a[k] ?? "").toLowerCase() === String(b[k] ?? "").toLowerCase());
+    txOnly = ({ sigs, ...tx }) => tx;
+    ledger = () => ask({ op: "ledger" }).entries || [];
+    mine = () => ledger().filter((e) => e.chainId === S.C.id && e.seat === S.home.seat.toLowerCase());
+    stopCamera = null;
+    say = (t) => {
+      S.busy = t;
+      render();
+    };
+    walletId = (info) => info.rdns || info.uuid;
+    isOwner = (a) => !!a && !!S.safe?.owners?.some((o) => o.toLowerCase() === a.toLowerCase());
+    canPay = () => !!S.wallet && S.walletBalance !== 0n;
+    KIND = {
+      seat: ["seat", "Sign and Burn seat", "A passkey and a one-time key. The key changes after every approval, so a broken curve isn't enough."],
+      other: ["seat", "Sign and Burn seat", "Another passkey's seat, made by the SeatFactory. It changes its key after every approval too. Its device holds its own ledger."],
+      contract: ["contract", "A contract", "Not a seat the SeatFactory made: a smart account, perhaps. This page can't tell what it checks."],
+      exposed: ["exposed", "Ordinary key", "Its public key is on chain: it has signed transactions. Anyone who can forge curve signatures could sign as it."],
+      fresh: ["fresh", "Ordinary key", "It has sent no transactions, so only its address, a hash of its key, is on chain. Its first signature shows its public key."]
+    };
+    kindOf = (o) => KIND[o.yours ? "seat" : o.isSeat ? "other" : o.contract ? "contract" : o.sent ? "exposed" : "fresh"];
+    nameLink = (a) => el("button", { class: "link", type: "button", onclick: () => {
+      S.bookAddr = a;
+      S.bookName = nameOf(a);
+      render();
+      $("#book").scrollIntoView({ block: "start", behavior: "smooth" });
+      $("#book-name")?.focus();
+    } }, nameOf(a) ? "Rename" : "Name it");
+    boot2();
+  }
+});
+
+// src/wots.mjs
+function u(value, size5) {
+  let v = BigInt(value);
+  const b = new Uint8Array(size5);
+  for (let i = size5 - 1; i >= 0; i--, v >>= 8n) b[i] = Number(v & 255n);
+  return b;
+}
+function advance(pub, n, j, x, start, stop) {
+  for (let s = start; s < stop; s++) x = step(pub, n, j, s, x);
+  return x;
+}
+function digits(m) {
+  const d = [];
+  for (const byte of m) d.push(byte >> 4, byte & 15);
+  const c = d.reduce((a, x) => a + STEPS - x, 0);
+  return d.concat([c >> 8, c >> 4 & 15, c & 15]);
+}
+function recover(pub, n, m, sig) {
+  const d = digits(m);
+  return fingerprintOfEnds(pub, n, sig.map((x, j) => advance(pub, n, j, x, d[j], STEPS)));
+}
+function lowest(sigs, ms) {
+  const ds = ms.map(digits);
+  return Array.from({ length: CHAINS }, (_, j) => {
+    let best = 0;
+    for (let i = 1; i < sigs.length; i++) if (ds[i][j] < ds[best][j]) best = i;
+    return { at: ds[best][j], value: sigs[best][j] };
+  });
+}
+function chance(low) {
+  return low.slice(0, 64).reduce((p, { at }) => p * (16 - at) / 16, 1);
+}
+function forge(pub, n, low, makeMessage, limit = 2e6) {
+  for (let t = 1; t <= limit; t++) {
+    const m = makeMessage(t);
+    const d = digits(m);
+    if (d.every((x, j) => x >= low[j].at)) return { tries: t, m, sig: d.map((x, j) => advance(pub, n, j, low[j].value, low[j].at, x)) };
+  }
+  return null;
+}
+var STEPS, CHAINS, enc, cat, h, bytes, hex2, pubSeed, secret, step, fingerprintOfEnds, keyFingerprint, sign;
+var init_wots = __esm({
+  "src/wots.mjs"() {
+    init_esm();
+    STEPS = 15;
+    CHAINS = 67;
+    enc = new TextEncoder();
+    cat = (...parts) => {
+      const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+      let i = 0;
+      for (const p of parts) {
+        out.set(p, i);
+        i += p.length;
+      }
+      return out;
+    };
+    h = (...parts) => sha2563(cat(...parts), "bytes");
+    bytes = (hex3) => Uint8Array.from((hex3.startsWith("0x") ? hex3.slice(2) : hex3).match(/../g) || [], (x) => parseInt(x, 16));
+    hex2 = (b) => "0x" + [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
+    pubSeed = (chainId, curveSigner, seatNumber) => h(enc.encode("sign-and-burn/seed/v1"), u(chainId, 32), bytes(curveSigner), u(seatNumber, 4));
+    secret = (seed, j) => h(enc.encode("sign-and-burn/sk/v1"), seed, u(j, 1));
+    step = (pub, n, j, s, x) => h(pub, u(n, 8), u(j, 1), u(s, 1), x);
+    fingerprintOfEnds = (pub, n, ends) => h(pub, u(n, 8), ...ends);
+    keyFingerprint = (pub, n, seed) => fingerprintOfEnds(pub, n, Array.from({ length: CHAINS }, (_, j) => advance(pub, n, j, secret(seed, j), 0, STEPS)));
+    sign = (pub, n, seed, m) => digits(m).map((d, j) => advance(pub, n, j, secret(seed, j), 0, d));
+  }
+});
+
 // src/main.mjs
 var main_exports = {};
 function saveHome(h2) {
@@ -33561,7 +33622,7 @@ async function boot3() {
   if (S2.pk && S2.pk.rpId !== location.hostname) S2.pk = null;
   $("#pay-request").addEventListener("submit", reviewRequest);
   $("#scan-start").addEventListener("click", scan);
-  $("#scan-stop").addEventListener("click", () => stopScan(""));
+  $("#scan-stop").addEventListener("click", () => stopScan2(""));
   $("#scan-start").disabled = !canScan();
   $("#review-request").disabled = false;
   await reconnectWallet2();
@@ -33569,6 +33630,7 @@ async function boot3() {
     if (fromLink(location.hash, S2.C)) openPayLink();
   });
   if (S2.step === "pay") return render2();
+  if (await openScanned()) return;
   if (await openPayLink()) return;
   await settle();
 }
@@ -33811,9 +33873,9 @@ async function reviewRequest(e) {
     status.textContent = "Paste a complete Sign and Burn payment link. Nothing was sent.";
   }
 }
-function stopScan(said) {
-  stopCamera?.();
-  stopCamera = null;
+function stopScan2(said) {
+  stopCamera2?.();
+  stopCamera2 = null;
   $("#scan-start").hidden = false;
   $("#scan-stop").hidden = true;
   $("#scan-status").textContent = said;
@@ -33822,10 +33884,10 @@ async function scan() {
   const status = $("#scan-status"), parts = partCollector(S2.C);
   status.textContent = "Starting the camera…";
   try {
-    stopCamera = await startScan($("#scan-box"), async (text) => {
+    stopCamera2 = await startScan($("#scan-box"), async (text) => {
       const got = parts.add(text);
       if (got?.done) {
-        stopScan("");
+        stopScan2("");
         await guard2("Reviewing the approval…", () => openPayLink(got.done));
         $("#screen").scrollIntoView({ block: "start" });
         return;
@@ -33841,12 +33903,12 @@ async function scan() {
       }
       const link = url && ["https:", "http:"].includes(url.protocol) ? fromLink(url.hash, S2.C) : null;
       if (link) {
-        stopScan("");
+        stopScan2("");
         history.replaceState(null, "", location.pathname + location.search + url.hash);
         await guard2("Reviewing the request…", () => openPayLink());
         $("#screen").scrollIntoView({ block: "start" });
       } else if (url && proposalFrom(url.hash, S2.C)) {
-        stopScan("A transaction for a Safe's owners: opening it on the wallet page…");
+        stopScan2("A transaction for a Safe's owners: opening it on the wallet page…");
         location.assign(new URL("wallet.html" + url.hash, location.href).href);
       } else status.textContent = "That code isn't a Sign and Burn request. Keep looking.";
     });
@@ -33854,8 +33916,21 @@ async function scan() {
     $("#scan-stop").hidden = false;
     status.textContent = "Point the camera at the codes on the signing device.";
   } catch (e) {
-    stopScan(e?.name === "NotAllowedError" ? "The camera wasn't allowed. Allow it for this site, or paste the link." : `The camera didn't start: ${e?.message || e}`);
+    stopScan2(e?.name === "NotAllowedError" ? "The camera wasn't allowed. Allow it for this site, or paste the link." : `The camera didn't start: ${e?.message || e}`);
   }
+}
+async function openScanned() {
+  if (location.hash !== "#scanned") return false;
+  let texts = [];
+  try {
+    texts = JSON.parse(sessionStorage.getItem("sab.scanned")) || [];
+    sessionStorage.removeItem("sab.scanned");
+  } catch {
+  }
+  history.replaceState(null, "", location.pathname + location.search);
+  const parts = partCollector(S2.C);
+  const got = (Array.isArray(texts) ? texts : []).map((t) => parts.add(t)).find((g) => g?.done)?.done;
+  return got ? openPayLink(got) : false;
 }
 async function checkBuilt() {
   await guard2("Looking for your Safe on chain…", async () => {
@@ -34691,7 +34766,7 @@ function drawOnceDemo(k = 2) {
   );
   if (refocus) box.querySelector(`.choices button[aria-pressed="true"]`).focus();
 }
-var S2, log2, HOME, homes, homeKey, ledger2, mine2, waiting, RECENT, recentSeats, HARDWARE, walletId2, followed, connectButton, sendTestEth, buildLink, linkField, stopCamera, seatN, watching, canPay2, STEPS2, faucets, redrawing, WHY, ATTACKS, rand32, PIC;
+var S2, log2, HOME, homes, homeKey, ledger2, mine2, waiting, RECENT, recentSeats, HARDWARE, walletId2, followed, connectButton, sendTestEth, buildLink, linkField, stopCamera2, seatN, watching, canPay2, STEPS2, faucets, redrawing, WHY, ATTACKS, rand32, PIC;
 var init_main = __esm({
   "src/main.mjs"() {
     init_esm();
@@ -34750,7 +34825,7 @@ var init_main = __esm({
       "aria-label": "The link",
       onfocus: (e) => e.target.select()
     });
-    stopCamera = null;
+    stopCamera2 = null;
     seatN = async () => Number(await S2.C.pc.readContract({ address: S2.home.seat, abi: SEAT_ABI, functionName: "n" }));
     watching = 0;
     canPay2 = () => !!S2.wallet && S2.walletBalance !== 0n;
