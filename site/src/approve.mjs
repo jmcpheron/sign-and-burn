@@ -45,11 +45,12 @@ export async function approve({ C, pk, seat, safe, tx, wallet, others = [], say 
   // The receipt doesn't say whether the approval landed; the seat does. Anyone could copy the approve
   // call from the mempool and send it first (it can only do what was signed): then this transaction
   // reverts, and approval n is on chain in theirs. A smart-account wallet's wrapper may also hide a
-  // revert behind a success. So ask the seat where approval n landed, if it did.
-  const landed = await ch.approvalOnChain(C, a.seat, n);
+  // revert behind a success. So ask the seat where approval n landed, if it did, as of the receipt's
+  // block: a node that is behind would say it hadn't (chain.readAt).
+  const landed = await ch.approvalOnChain(C, a.seat, n, r.blockNumber);
   if (!landed) throw new Error(`The transaction ${r.status === "reverted" ? "reverted" : "went through"} (${short(hash, 10, 6)}), but approval ${n} didn't land: ` +
     `the seat is still at key ${n}. The console keeps the approval, and will only ever send this one for key ${n}.`);
   const theirs = !!landed.txHash && landed.txHash.toLowerCase() !== hash.toLowerCase();
   if (theirs) consoleCore.ask({ op: "sent", chainId: C.id, seat: a.seat, n, txHash: landed.txHash });
-  return { ...out, hash: landed.txHash || hash, theirs };
+  return { ...out, hash: landed.txHash || hash, theirs, block: r.blockNumber };
 }

@@ -117,7 +117,9 @@ in a **2 of 3** with two seats and your wallet, the wallet never approves alone,
 the wallet still reaches 2. A transaction waiting for votes goes to the other device as a link, or a
 QR code. The
 page says whether ordinary keys can approve without a seat, and whether there is a backup if your
-passkey is lost. It shares the main page's passkey and ledger, so the guardrail is the same one.
+passkey is lost. Its address book keeps your names for Safes, seats and wallets in the browser, and
+moves them to another browser as a JSON file. It shares the main page's passkey and ledger, so the
+guardrail is the same one.
 
 **On your own computer**, with nothing on a real chain:
 

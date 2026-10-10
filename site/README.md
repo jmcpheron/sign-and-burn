@@ -19,6 +19,7 @@ npm run e2e       # the whole flow in Chromium against the local chain (needs an
 | `src/wallet.mjs` | the wallet page: send, the owners, add or remove one, the threshold, and each owner's vote |
 | `src/approve.mjs` | one press, for both pages: the console, one tap, the seat asked by simulation, the wallet, the block |
 | `src/ui.mjs` | what both pages draw with: addresses, the hold button, the console's review, "Show QR code" |
+| `src/names.mjs` | your names for addresses (`sab.names`), and the JSON file that moves them: `sign-and-burn/address-book/v1` |
 | `src/qr.mjs` | QR codes, written here: byte and alphanumeric modes, versions 1 to 40. `test.mjs` checks it against `qr-vectors.json`, made by an independent encoder (`tools/qr-vectors.py`) |
 | `src/console.mjs` | MicroPython 1.26 in the page, the console's files, the ledger kept in localStorage, the serial log (seeds never shown) |
 | `src/passkey.mjs` | make a passkey; one tap that signs `c` and answers two PRF salts; find a passkey made elsewhere |
@@ -72,6 +73,13 @@ no hash. That device's console works out the hash and shows the same check code;
 on chain. The link opens only on a device whose seat, or wallet, is an owner of that Safe. Key `n` is
 bound to whatever it signed: while an approval for one Safe waits, the seat approves nothing for
 another, and the main page offers only that approval too.
+
+**Names.** "Name it" beside an owner or a Safe, and the Address book card, keep your names for
+addresses in `sab.names`. Every address the pages draw shows its name beside it, never instead of it,
+and the console never sees them. Export JSON writes `{tag: "sign-and-burn/address-book/v1", chain,
+names: {address: name}}`; Import JSON, or a paste, checks every entry (an address, a name of 1 to 40
+characters with nothing invisible: no control, zero-width or direction characters) and refuses the
+whole file if one is bad. Imported names are added, and replace yours for the same addresses.
 
 **The verdict.** An owner is a seat if it names a passkey signer (`curveSigner()`) and the SeatFactory
 lists it among that signer's seats (`chain.isSeat`). The owners card says two things: whether the

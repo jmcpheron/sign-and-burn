@@ -3,6 +3,7 @@
 import { formatEther } from "viem";
 import { blockie, blockieSrc, rgb } from "./blockies.mjs";
 import * as qr from "./qr.mjs";
+import { nameOf } from "./names.mjs";
 
 let C = null;
 /** The chain the page is on, for explorer links and the review's fields. */
@@ -32,9 +33,13 @@ export function refuseFrames() {
   throw new Error("framed");
 }
 
+/** An address: its blockie, your name for it if you gave one (src/names.mjs), and the address itself,
+ * always: a name is a label you chose, never instead of the address. */
 export function addr(a, { link = true } = {}) {
   if (!a) return el("span", { class: "muted" }, "—");
-  const kids = [el("img", { src: blockieSrc(a), alt: "" }), el("span", { title: a }, short(a, 8, 6))];
+  const name = nameOf(a);
+  const kids = [el("img", { src: blockieSrc(a), alt: "" }), name ? el("b", { class: "name", title: "Your name for it, kept in this browser" }, name) : null,
+    el("span", { title: a }, short(a, 8, 6))];
   const url = link && C?.explorer ? `${C.explorer}/address/${a}` : null;
   return url ? el("a", { class: "addr", href: url, target: "_blank", rel: "noopener noreferrer" }, ...kids) : el("span", { class: "addr" }, ...kids);
 }

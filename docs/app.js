@@ -8,9 +8,9 @@ var __esm = (fn, res, err) => function __init() {
     throw err = [e], e;
   }
 };
-var __export = (target, all) => {
-  for (var name in all)
-    __defProp(target, name, { get: all[name], enumerable: true });
+var __export = (target, all2) => {
+  for (var name in all2)
+    __defProp(target, name, { get: all2[name], enumerable: true });
 };
 
 // node_modules/abitype/dist/esm/version.js
@@ -11782,10 +11782,10 @@ var init_poll = __esm({
 
 // node_modules/viem/_esm/utils/promise/withCache.js
 function getCache(cacheKey2) {
-  const buildCache = (cacheKey3, cache2) => ({
-    clear: () => cache2.delete(cacheKey3),
-    get: () => cache2.get(cacheKey3),
-    set: (data) => cache2.set(cacheKey3, data)
+  const buildCache = (cacheKey3, cache3) => ({
+    clear: () => cache3.delete(cacheKey3),
+    get: () => cache3.get(cacheKey3),
+    set: (data) => cache3.set(cacheKey3, data)
   });
   const promise = buildCache(cacheKey2, promiseCache);
   const response = buildCache(cacheKey2, responseCache);
@@ -11799,24 +11799,24 @@ function getCache(cacheKey2) {
   };
 }
 async function withCache(fn, { cacheKey: cacheKey2, cacheTime = Number.POSITIVE_INFINITY }) {
-  const cache2 = getCache(cacheKey2);
-  const response = cache2.response.get();
+  const cache3 = getCache(cacheKey2);
+  const response = cache3.response.get();
   if (response && cacheTime > 0) {
     const age = Date.now() - response.created.getTime();
     if (age < cacheTime)
       return response.data;
   }
-  let promise = cache2.promise.get();
+  let promise = cache3.promise.get();
   if (!promise) {
     promise = fn();
-    cache2.promise.set(promise);
+    cache3.promise.set(promise);
   }
   try {
     const data = await promise;
-    cache2.response.set({ created: /* @__PURE__ */ new Date(), data });
+    cache3.response.set({ created: /* @__PURE__ */ new Date(), data });
     return data;
   } finally {
-    cache2.promise.clear();
+    cache3.promise.clear();
   }
 }
 var promiseCache, responseCache;
@@ -21012,8 +21012,19 @@ async function readSafe(C2, address) {
   ]);
   return { address, exists: true, owners, threshold: Number(threshold), nonce: Number(nonce), version: version4, balance };
 }
-async function approvalOnChain(C2, seat, k) {
-  const block = await C2.pc.readContract({ address: seat, abi: SEAT_ABI, functionName: "approvedIn", args: [BigInt(k)] });
+async function readAt(C2, at, read2) {
+  for (let i = 0; ; i++) {
+    try {
+      return await read2(at);
+    } catch (e) {
+      if (i >= 20) throw e;
+      await new Promise((r) => setTimeout(r, C2.id === 31337 ? 250 : 1e3));
+    }
+  }
+}
+async function approvalOnChain(C2, seat, k, at) {
+  const ask2 = (blockNumber) => C2.pc.readContract({ address: seat, abi: SEAT_ABI, functionName: "approvedIn", args: [BigInt(k)], ...blockNumber ? { blockNumber } : {} });
+  const block = at ? await readAt(C2, at, ask2) : await ask2();
   if (!block) return null;
   const event = SEAT_ABI.find((x) => x.type === "event" && x.name === "Approved");
   const [log3] = await C2.pc.getLogs({ address: seat, event, args: { n: BigInt(k) }, fromBlock: block, toBlock: block });
@@ -21139,7 +21150,7 @@ async function trySeat(C2, seat, args, from16) {
     return r?.data?.errorName || r?.reason || r?.shortMessage || e.shortMessage || String(e.message || e);
   }
 }
-var SEAT_ABI, FACTORY_ABI, SAFE_ABI, SENTINEL, PROXY_FACTORY_ABI, SIGNER_FACTORY_ABI, MULTICALL_ABI, hasCode, receipt, APPROVE, creationCode, deployFactory, approveHashData;
+var SEAT_ABI, FACTORY_ABI, SAFE_ABI, SENTINEL, PROXY_FACTORY_ABI, SIGNER_FACTORY_ABI, MULTICALL_ABI, hasCode, receipt, nonceAt, APPROVE, creationCode, deployFactory, approveHashData;
 var init_chain2 = __esm({
   "src/chain.mjs"() {
     init_esm();
@@ -21176,6 +21187,7 @@ var init_chain2 = __esm({
     ]);
     hasCode = async (C2, address) => (await C2.pc.getCode({ address }) || "0x") !== "0x";
     receipt = (C2, hash3) => C2.pc.waitForTransactionReceipt({ hash: hash3, pollingInterval: C2.id === 31337 ? 250 : 2e3 });
+    nonceAt = (C2, safe, at) => readAt(C2, at, async (blockNumber) => Number(await C2.pc.readContract({ address: safe, abi: SAFE_ABI, functionName: "nonce", blockNumber })));
     APPROVE = toFunctionSelector(SEAT_ABI.find((x) => x.type === "function" && x.name === "approve")).slice(2);
     creationCode = null;
     deployFactory = (C2) => ({ target: C2.cfg.create2Deployer, allowFailure: false, callData: concat([deployment_default.salt, deployment_default.SeatFactory.initCode]) });
@@ -21513,6 +21525,88 @@ var init_qr = __esm({
   }
 });
 
+// src/names.mjs
+function load() {
+  if (cache2) return cache2;
+  try {
+    cache2 = JSON.parse(localStorage.getItem(KEY2))?.names || {};
+  } catch {
+    cache2 = {};
+  }
+  return cache2;
+}
+function save(chain, names) {
+  cache2 = names;
+  try {
+    localStorage.setItem(KEY2, JSON.stringify({ tag: BOOK_TAG, chain, names }));
+  } catch {
+  }
+}
+function cleanName(s) {
+  const t = String(s ?? "").trim();
+  if (!t) return { why: "A name can't be empty." };
+  if ([...t].length > MAX_NAME) return { why: `A name has at most ${MAX_NAME} characters.` };
+  if (/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]/.test(t)) return { why: "A name can't have control or invisible characters." };
+  return { name: t };
+}
+function setName(chain, a, name) {
+  const names = all();
+  if (name) names[a.toLowerCase()] = name;
+  else delete names[a.toLowerCase()];
+  save(chain, names);
+}
+function parseBook(text, chain) {
+  let o;
+  try {
+    o = JSON.parse(text);
+  } catch {
+    throw new Error("That isn't JSON.");
+  }
+  if (!o || typeof o !== "object" || o.tag !== BOOK_TAG) throw new Error(`That isn't a Sign and Burn address book (${BOOK_TAG}).`);
+  if (o.chain !== chain) throw new Error(`That address book is for chain ${String(o.chain).slice(0, 12)}, not this one (${chain}).`);
+  if (!o.names || typeof o.names !== "object" || Array.isArray(o.names)) throw new Error("That address book has no names.");
+  const entries = Object.entries(o.names);
+  if (entries.length > MAX_ENTRIES) throw new Error(`That address book has more than ${MAX_ENTRIES} names.`);
+  const names = {};
+  for (const [a, n] of entries) {
+    if (!/^0x[0-9a-fA-F]{40}$/.test(a)) throw new Error(`"${String(a).slice(0, 44)}" isn't an address. Nothing was imported.`);
+    const c = cleanName(n);
+    if (c.why || typeof n !== "string") throw new Error(`The name for ${a.slice(0, 10)}…: ${c.why || "not text."} Nothing was imported.`);
+    names[a.toLowerCase()] = c.name;
+  }
+  return { names };
+}
+function importBook(text, chain) {
+  const { names } = parseBook(text, chain), mine3 = all();
+  let added = 0, replaced = 0;
+  for (const [a, n] of Object.entries(names)) {
+    if (!(a in mine3)) added++;
+    else if (mine3[a] !== n) replaced++;
+    mine3[a] = n;
+  }
+  save(chain, mine3);
+  return { added, replaced };
+}
+var BOOK_TAG, KEY2, MAX_NAME, MAX_ENTRIES, cache2, nameOf, all, exportBook;
+var init_names = __esm({
+  "src/names.mjs"() {
+    BOOK_TAG = "sign-and-burn/address-book/v1";
+    KEY2 = "sab.names";
+    MAX_NAME = 40;
+    MAX_ENTRIES = 500;
+    cache2 = null;
+    try {
+      addEventListener("storage", (e) => {
+        if (e.key === KEY2) cache2 = null;
+      });
+    } catch {
+    }
+    nameOf = (a) => a ? load()[a.toLowerCase()] || "" : "";
+    all = () => ({ ...load() });
+    exportBook = (chain) => JSON.stringify({ tag: BOOK_TAG, chain, names: all() }, null, 2) + "\n";
+  }
+});
+
 // src/ui.mjs
 function el(tag, props = {}, ...kids) {
   const e = document.createElement(tag);
@@ -21532,7 +21626,12 @@ function refuseFrames() {
 }
 function addr(a, { link = true } = {}) {
   if (!a) return el("span", { class: "muted" }, "—");
-  const kids = [el("img", { src: blockieSrc(a), alt: "" }), el("span", { title: a }, short(a, 8, 6))];
+  const name = nameOf(a);
+  const kids = [
+    el("img", { src: blockieSrc(a), alt: "" }),
+    name ? el("b", { class: "name", title: "Your name for it, kept in this browser" }, name) : null,
+    el("span", { title: a }, short(a, 8, 6))
+  ];
   const url = link && C?.explorer ? `${C.explorer}/address/${a}` : null;
   return url ? el("a", { class: "addr", href: url, target: "_blank", rel: "noopener noreferrer" }, ...kids) : el("span", { class: "addr" }, ...kids);
 }
@@ -21665,6 +21764,7 @@ var init_ui = __esm({
     init_esm();
     init_blockies();
     init_qr();
+    init_names();
     C = null;
     useChain = (c) => {
       C = c;
@@ -21711,11 +21811,11 @@ async function approve2({ C: C2, pk, seat, safe, tx, wallet, others = [], say: s
   ask({ op: "sent", chainId: C2.id, seat: a.seat, n, txHash: hash3 });
   say2("Waiting for the block…");
   const r = await receipt(C2, hash3);
-  const landed = await approvalOnChain(C2, a.seat, n);
+  const landed = await approvalOnChain(C2, a.seat, n, r.blockNumber);
   if (!landed) throw new Error(`The transaction ${r.status === "reverted" ? "reverted" : "went through"} (${short(hash3, 10, 6)}), but approval ${n} didn't land: the seat is still at key ${n}. The console keeps the approval, and will only ever send this one for key ${n}.`);
   const theirs = !!landed.txHash && landed.txHash.toLowerCase() !== hash3.toLowerCase();
   if (theirs) ask({ op: "sent", chainId: C2.id, seat: a.seat, n, txHash: landed.txHash });
-  return { ...out, hash: landed.txHash || hash3, theirs };
+  return { ...out, hash: landed.txHash || hash3, theirs, block: r.blockNumber };
 }
 var init_approve2 = __esm({
   "src/approve.mjs"() {
@@ -21991,19 +22091,19 @@ var init_pay = __esm({
 var wallet_exports = {};
 function keepSafe(a) {
   if (safes().some((x) => x.toLowerCase() === a.toLowerCase())) return;
-  const all = read("sab.safes");
-  all[safesKey()] = [...all[safesKey()] || [], getAddress(a)];
+  const all2 = read("sab.safes");
+  all2[safesKey()] = [...all2[safesKey()] || [], getAddress(a)];
   try {
-    localStorage.setItem("sab.safes", JSON.stringify(all));
+    localStorage.setItem("sab.safes", JSON.stringify(all2));
   } catch {
   }
 }
 function keepProposal(tx) {
-  const all = read("sab.proposal");
-  if (tx) all[proposalKey()] = tx;
-  else delete all[proposalKey()];
+  const all2 = read("sab.proposal");
+  if (tx) all2[proposalKey()] = tx;
+  else delete all2[proposalKey()];
   try {
-    localStorage.setItem("sab.proposal", JSON.stringify(all));
+    localStorage.setItem("sab.proposal", JSON.stringify(all2));
   } catch {
   }
 }
@@ -22257,7 +22357,7 @@ async function voteSeat(tx) {
       S.flash = `Key ${got.n} signed it. Now send it from a device with a wallet: copy the link below.`;
       return;
     }
-    const ran = S.safe.nonce > nonceBefore;
+    const ran = await nonceAt(S.C, S.safe.address, got.block) > nonceBefore;
     S.flash = el("span", {}, `Key ${got.n}: signed, sent, burned. ` + (got.theirs ? "Someone copied the approval and sent it first: it can do only what you signed. " : "") + (ran ? "The Safe ran it. " : Number(tx.nonce) < nonceBefore ? "The Safe had moved past this transaction, so it ran nothing; the seat is at the next key now. " : `The seat's vote is on chain. The Safe runs it once ${S.safe.threshold} owners have approved. `), txLink(got.hash));
   });
 }
@@ -22303,7 +22403,7 @@ function render() {
     S.flash && !S.busy && el("p", { class: "note" }, S.flash)
   ].filter(Boolean));
   if (!S.safe?.exists) {
-    for (const id of ["#act", "#send", "#safes", "#owners", "#activity"]) {
+    for (const id of ["#act", "#send", "#safes", "#owners", "#activity", "#book"]) {
       $(id).replaceChildren();
       $(id).hidden = true;
     }
@@ -22311,11 +22411,12 @@ function render() {
   }
   $("#act").hidden = !S.current;
   $("#act").className = "card";
-  $("#send").hidden = $("#safes").hidden = $("#owners").hidden = $("#activity").hidden = false;
+  $("#send").hidden = $("#safes").hidden = $("#owners").hidden = $("#activity").hidden = $("#book").hidden = false;
   const fill = (id, parts) => $(id).replaceChildren(...parts.filter(Boolean));
   fill("#act", S.current ? approvalCard() : []);
   fill("#send", sendCard());
   fill("#safes", safesCard());
+  fill("#book", bookCard());
   fill("#owners", ownersCard());
   fill("#activity", activityCard());
   if (focus) {
@@ -22391,7 +22492,12 @@ function ownersCard() {
         S.wallet && same(o.address, S.wallet.account) ? el("span", { class: "badge you" }, "this wallet") : null
       ),
       el("div", { class: "small" }, o.yours ? `Key ${S.seat.n} now. ${what}` : !o.isSeat && !o.contract && o.sent ? `Sent ${o.sent} transaction${o.sent === 1 ? "" : "s"}. ${what}` : what),
-      o.yours ? null : el("div", { class: "actions" }, el("button", { class: "link", type: "button", disabled, onclick: () => draftRemove(o.address) }, "Remove"))
+      el(
+        "div",
+        { class: "actions" },
+        nameLink(o.address),
+        o.yours ? null : el("button", { class: "link", type: "button", disabled, onclick: () => draftRemove(o.address) }, "Remove")
+      )
     );
   })));
   const ordinary = S.owners.filter((o) => !o.isSeat), others = S.owners.filter((o) => !o.yours);
@@ -22465,7 +22571,8 @@ function safesCard() {
       {},
       addr(a),
       same(a, S.home.safe) ? el("span", { class: "badge" }, "yours") : null,
-      same(a, S.safe.address) ? el("span", { class: "badge you" }, "open") : el("button", { class: "link", type: "button", disabled: !!S.busy, onclick: () => openSafe(a) }, "Open")
+      same(a, S.safe.address) ? el("span", { class: "badge you" }, "open") : el("button", { class: "link", type: "button", disabled: !!S.busy, onclick: () => openSafe(a) }, "Open"),
+      nameLink(a)
     ))),
     el("p", { class: "small" }, "Your seat's address. Another Safe adds this as an owner, and then your passkey can approve for it too:"),
     el("input", { class: "mono share-link", readonly: true, value: S.home.seat, "aria-label": "Your seat's address", onfocus: (e) => e.target.select() }),
@@ -22485,6 +22592,88 @@ function safesCard() {
       ),
       el("p", { class: "small" }, "A link from another owner's device opens its Safe here by itself.")
     )
+  ];
+}
+function saveName() {
+  const a = (S.bookAddr || "").trim();
+  if (!isAddress(a)) return fail("Address book: that isn't an address.");
+  const c = cleanName(S.bookName);
+  if (c.why) return fail("Address book: " + c.why);
+  setName(S.C.id, a, c.name);
+  S.bookAddr = S.bookName = "";
+  S.error = "";
+  S.flash = `Named ${short(a)} “${c.name}”.`;
+  render();
+}
+function exportNames() {
+  const url = URL.createObjectURL(new Blob([exportBook(S.C.id)], { type: "application/json" }));
+  const a = el("a", { href: url, download: "sign-and-burn-address-book.json" });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1e3);
+  S.flash = `Exported ${Object.keys(all()).length} names. The file holds names and addresses, nothing secret.`;
+  S.error = "";
+  render();
+}
+function importNames(text) {
+  try {
+    const { added, replaced } = importBook(text, S.C.id);
+    S.flash = `Imported: ${added} new name${added === 1 ? "" : "s"}, ${replaced} renamed.`;
+    S.error = "";
+    S.bookPaste = "";
+  } catch (e) {
+    S.error = "Address book: " + e.message;
+    S.flash = "";
+  }
+  render();
+}
+function bookCard() {
+  const entries = Object.entries(all()).sort((x, y) => x[1].localeCompare(y[1]));
+  return [
+    el("h2", {}, "Address book"),
+    el("p", { class: "small" }, "Your names for Safes, seats and wallets, kept in this browser. A name always shows beside its address, and the console never sees them."),
+    entries.length ? el("ul", { class: "book" }, ...entries.map(([a]) => el(
+      "li",
+      {},
+      addr(a),
+      nameLink(a),
+      el("button", { class: "link", type: "button", onclick: () => {
+        setName(S.C.id, a, "");
+        render();
+      } }, "Remove")
+    ))) : el("p", { class: "muted" }, "No names yet. “Name it” beside an owner or a Safe starts one."),
+    el(
+      "div",
+      { class: "form book-form" },
+      el("label", {}, "Address", el("input", { id: "book-addr", class: "mono", value: S.bookAddr || "", placeholder: "0x…", spellcheck: "false", autocomplete: "off", oninput: (e) => {
+        S.bookAddr = e.target.value;
+      } })),
+      el("label", {}, "Name", el("input", { id: "book-name", value: S.bookName || "", maxlength: String(MAX_NAME), autocomplete: "off", oninput: (e) => {
+        S.bookName = e.target.value;
+      } }))
+    ),
+    el("div", { class: "actions" }, el("button", { class: "go", type: "button", onclick: saveName }, "Save name")),
+    el("h3", {}, "To another browser"),
+    el(
+      "div",
+      { class: "actions" },
+      el("button", { type: "button", onclick: exportNames }, "Export JSON"),
+      el("label", { class: "btn file" }, "Import JSON", el("input", { id: "book-file", type: "file", accept: "application/json,.json", onchange: async (e) => {
+        const f = e.target.files?.[0];
+        if (f) importNames(f.size > 2e5 ? "" : await f.text());
+      } }))
+    ),
+    el(
+      "details",
+      {},
+      el("summary", { class: "small" }, "Or paste it"),
+      el("textarea", { id: "book-paste", class: "mono", rows: "4", spellcheck: "false", oninput: (e) => {
+        S.bookPaste = e.target.value;
+      } }, S.bookPaste || ""),
+      el("div", { class: "actions" }, el("button", { type: "button", onclick: () => importNames(S.bookPaste || "") }, "Import"))
+    ),
+    el("p", { class: "small" }, "Importing adds names, and replaces yours for the same addresses. A file is checked whole: one bad entry, and nothing is imported.")
   ];
 }
 async function copy(text, said) {
@@ -22635,7 +22824,7 @@ function activityCard() {
     el("p", { class: "small" }, "Votes by other owners aren't listed here: the Safe's own history on the explorer has them.")
   ];
 }
-var S, log, read, home, proposalKey, safesKey, safes, same, ledger, mine, say, walletId, isOwner, canPay, KIND, kindOf;
+var S, log, read, home, proposalKey, safesKey, safes, same, ledger, mine, say, walletId, isOwner, canPay, KIND, kindOf, nameLink;
 var init_wallet2 = __esm({
   "src/wallet.mjs"() {
     init_esm();
@@ -22644,6 +22833,7 @@ var init_wallet2 = __esm({
     init_chain2();
     init_approve2();
     init_pay();
+    init_names();
     init_ui();
     refuseFrames();
     S = { busy: "", error: "", flash: "", send: { to: "", amount: "0.0001" }, add: "", addThreshold: "1", threshold: "", draft: null, acks: {} };
@@ -22682,6 +22872,13 @@ var init_wallet2 = __esm({
       fresh: ["fresh", "Ordinary key", "It has sent no transactions, so only its address, a hash of its key, is on chain. Its first signature shows its public key."]
     };
     kindOf = (o) => KIND[o.yours ? "seat" : o.isSeat ? "other" : o.contract ? "contract" : o.sent ? "exposed" : "fresh"];
+    nameLink = (a) => el("button", { class: "link", type: "button", onclick: () => {
+      S.bookAddr = a;
+      S.bookName = nameOf(a);
+      render();
+      $("#book").scrollIntoView({ block: "start", behavior: "smooth" });
+      $("#book-name")?.focus();
+    } }, nameOf(a) ? "Rename" : "Name it");
     boot2();
   }
 });
@@ -22759,9 +22956,9 @@ var main_exports = {};
 function saveHome(h2) {
   S2.home = h2;
   try {
-    const all = homes();
-    all[homeKey()] = h2;
-    localStorage.setItem(HOME, JSON.stringify(all));
+    const all2 = homes();
+    all2[homeKey()] = h2;
+    localStorage.setItem(HOME, JSON.stringify(all2));
   } catch {
   }
 }
@@ -23161,11 +23358,11 @@ async function payApproval() {
     const hash3 = await send(S2.C, S2.wallet, approveCalls(W.a, P2.req.tx));
     S2.busy = "Waiting for the block…";
     render2();
-    await receipt(S2.C, hash3);
-    const landed = await approvalOnChain(S2.C, P2.req.seat, P2.req.n);
+    const rc = await receipt(S2.C, hash3);
+    const landed = await approvalOnChain(S2.C, P2.req.seat, P2.req.n, rc.blockNumber);
     if (!landed) throw new Error(`The transaction went through (${short(hash3, 10, 6)}), but approval ${P2.req.n} didn't land: the seat is still at key ${P2.req.n}.`);
     P2.hash = landed.txHash || hash3;
-    P2.ran = (await readSafe(S2.C, P2.req.safe)).nonce > W.safe.nonce;
+    P2.ran = await nonceAt(S2.C, P2.req.safe, rc.blockNumber) > W.safe.nonce;
     P2.what = { ...W, landed };
   });
 }
@@ -23216,7 +23413,8 @@ async function press(tx) {
       return;
     }
     await refresh2();
-    S2.last = { n: got.n, a: got.a, hash: got.hash, theirs: got.theirs, ran: S2.safe.nonce > nonceBefore, m: got.signed?.m, summary: got.review.summary };
+    const ran = await nonceAt(S2.C, S2.safe.address, got.block) > nonceBefore;
+    S2.last = { n: got.n, a: got.a, hash: got.hash, theirs: got.theirs, ran, m: got.signed?.m, summary: got.review.summary };
     S2.step = "done";
   });
   if (S2.error || S2.step === "working") S2.step = "ready";

@@ -151,10 +151,31 @@ export async function readSafe(C, address) {
   return { address, exists: true, owners, threshold: Number(threshold), nonce: Number(nonce), version, balance };
 }
 
+/** A read as of block `at`, typically a receipt's. A public RPC spreads its requests over several
+ * nodes, and the one that answers a read may be a block or two behind the one that gave the receipt:
+ * read at "latest", it would say the transaction changed nothing (found on Base Sepolia). Read at
+ * the receipt's block, a node that doesn't have it yet says so, and the read waits and asks again. */
+export async function readAt(C, at, read) {
+  for (let i = 0; ; i++) {
+    try {
+      return await read(at);
+    } catch (e) {
+      if (i >= 20) throw e;
+      await new Promise((r) => setTimeout(r, C.id === 31337 ? 250 : 1000));
+    }
+  }
+}
+
+/** The Safe's nonce as of block `at`: how many transactions it had run by then. */
+export const nonceAt = (C, safe, at) => readAt(C, at, async (blockNumber) =>
+  Number(await C.pc.readContract({ address: safe, abi: SAFE_ABI, functionName: "nonce", blockNumber })));
+
 /** Where approval k landed, and what it put on chain: the Approved event, and the transaction that
- * carried it, decoded. This is what anyone can read: the revealed one-time signature among it. */
-export async function approvalOnChain(C, seat, k) {
-  const block = await C.pc.readContract({ address: seat, abi: SEAT_ABI, functionName: "approvedIn", args: [BigInt(k)] });
+ * carried it, decoded. This is what anyone can read: the revealed one-time signature among it.
+ * at: a receipt's block, after a transaction that should have landed it (readAt). */
+export async function approvalOnChain(C, seat, k, at) {
+  const ask = (blockNumber) => C.pc.readContract({ address: seat, abi: SEAT_ABI, functionName: "approvedIn", args: [BigInt(k)], ...(blockNumber ? { blockNumber } : {}) });
+  const block = at ? await readAt(C, at, ask) : await ask();
   if (!block) return null;
   const event = SEAT_ABI.find((x) => x.type === "event" && x.name === "Approved");
   const [log] = await C.pc.getLogs({ address: seat, event, args: { n: BigInt(k) }, fromBlock: block, toBlock: block });

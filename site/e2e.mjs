@@ -33,9 +33,48 @@ const check = (ok, what) => { console.log(`${ok ? "pass" : "FAIL"}  ${what}`); i
 // ---- the development build, the chain, and a server for the folder
 const b = spawnSync(process.execPath, ["build.mjs", "--dev"], { cwd: SITE, encoding: "utf8" });
 if (b.status) throw new Error(b.stderr || b.stdout);
-const chain = await startChain({ port: 8545 });
+const chain = await startChain({ port: 8546 });
 const pc = createPublicClient({ transport: http(chain.url) });
 const DEV = join(SITE, "dev");
+
+// The page's RPC (port 8545, as the development build names it) is a proxy in front of the chain. With
+// lag.on, it plays a public endpoint whose nodes trail each other, as sepolia.base.org's did: receipts
+// come back at once, but state is served as of a block that appeared at least LAG ms ago, and a read at
+// a newer block is refused as a lagging node refuses it ("header not found"). Block numbers and
+// receipts come from an up-to-date node, so a wallet's receipt arrives before the state behind it.
+const lag = { on: false, ms: 2500, seen: new Map() };
+const BLOCK_PARAM = { eth_call: 1, eth_getBalance: 1, eth_getCode: 1, eth_getTransactionCount: 1, eth_estimateGas: 1, eth_getStorageAt: 2 };
+async function visibleHead() {
+  const head = parseInt((await rpcRaw("eth_blockNumber", [])).result, 16), now = Date.now();
+  for (let b = 0; b <= head; b++) if (!lag.seen.has(b)) lag.seen.set(b, now);
+  let v = head;
+  while (v > 0 && now - lag.seen.get(v) < lag.ms) v--;
+  return v;
+}
+async function rpcRaw(method, params) {
+  return (await fetch(chain.url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) })).json();
+}
+const proxy = createServer(async (req, res) => {
+  let body = "";
+  for await (const c of req) body += c;
+  const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "content-type", "content-type": "application/json" };
+  if (req.method === "OPTIONS") { res.writeHead(204, cors); return res.end(); }
+  const msg = JSON.parse(body);
+  let out;
+  const v = await visibleHead();   // every request, lagging or not, notes when each block first appeared
+  if (lag.on) {
+    const hex = "0x" + v.toString(16), i = BLOCK_PARAM[msg.method];
+    if (i !== undefined) {
+      const tag = msg.params[i];
+      if (typeof tag === "string" && tag.startsWith("0x") && parseInt(tag, 16) > v) out = { jsonrpc: "2.0", id: msg.id, error: { code: -32000, message: "header not found" } };
+      else if (tag === undefined || tag === "latest" || tag === "pending") { msg.params = [...msg.params]; msg.params[i] = hex; }
+    }
+  }
+  if (!out) out = { ...(await rpcRaw(msg.method, msg.params)), id: msg.id };
+  res.writeHead(200, cors);
+  res.end(JSON.stringify(out));
+});
+await new Promise((r) => proxy.listen(8545, "127.0.0.1", r));
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".wasm": "application/wasm",
   ".json": "application/json", ".svg": "image/svg+xml", ".py": "text/plain; charset=utf-8" };
 const server = createServer((req, res) => {
@@ -283,8 +322,15 @@ try {
   await shot("3-review");
   for (const k of [0, 1]) {
     const before = await signCount();
+    // the second press against an RPC whose nodes lag: the page must still see its approval land, and
+    // the Safe run it
+    if (k === 1) { await page.waitForTimeout(lag.ms); lag.on = true; }
     await hold();
     check(await waitFor(new RegExp(`Key ${k}: signed, sent, burned`), 60000), `press ${k + 1}: one tap, key ${k} signs and burns`);
+    if (k === 1) {
+      check(/The Safe ran it/.test(await screen()), "…with the RPC's nodes lagging: the page reads as of the receipt's block, and sees the approval land and the Safe run it");
+      lag.on = false;
+    }
     check((await signCount()) === before + 1, `press ${k + 1}: exactly one passkey signature`);
     check(Number(await pc.readContract({ address: H.seat, abi: SEAT_ABI, functionName: "n" })) === k + 1, `on chain: the seat is at key ${k + 1}`);
     check(Number(await pc.readContract({ address: H.safe, abi: SAFE_ABI, functionName: "nonce" })) === k + 1, `on chain: the Safe ran transaction ${k}`);
@@ -422,8 +468,12 @@ try {
     "the real link: the seat accepts it, and the hash worked out there shows the code this browser shows");
   await payer.screenshot({ path: join(SHOTS, "8-send-approval.png"), fullPage: true });
   const safeNonce = Number(await pc.readContract({ address: H.safe, abi: SAFE_ABI, functionName: "nonce" }));
+  // sent against lagging nodes, as on Base Sepolia, where the page said this landed approval hadn't
+  await payer.waitForTimeout(lag.ms);
+  lag.on = true;
   await click("Send it: one transaction", payer);
-  check(await waitFor(/Sent\. Approval 5 landed[\s\S]*The Safe ran the transaction/, 60000, payer), "the other browser's wallet sends it, and the Safe runs it");
+  check(await waitFor(/Sent\. Approval 5 landed[\s\S]*The Safe ran the transaction/, 60000, payer), "the other browser's wallet sends it, and the Safe runs it, though the RPC's nodes lag");
+  lag.on = false;
   check(Number(await pc.readContract({ address: H.seat, abi: SEAT_ABI, functionName: "n" })) === 6 &&
     Number(await pc.readContract({ address: H.safe, abi: SAFE_ABI, functionName: "nonce" })) === safeNonce + 1, "on chain: the seat is at key 6, and the Safe ran it");
   check(await waitFor(/Key 5: signed, sent, burned[\s\S]*A wallet on another device sent approval 5/, 30000), "this browser sees approval 5 land by itself, and says who sent it");
@@ -641,6 +691,29 @@ try {
   check((await onChain()).nonce === nonce4 + 1 && formatEther(await pc.getBalance({ address: TO4 })) === "0.0001" &&
     Number(await pc.readContract({ address: H2.seat, abi: SEAT_ABI, functionName: "n" })) === 1, "on chain: the Safe ran it, and the second seat is at key 1");
   check(await page.locator("#act").waitFor({ state: "hidden", timeout: 15000 }).then(() => true, () => false), "the first browser sees it run, by itself");
+  // e. names: the first browser names the second seat and the shared Safe, exports its address book,
+  // and the second browser imports the file. A bad paste is refused, and changes nothing.
+  await page.locator("#owners li.owner", { hasText: H2.seat.slice(-6) }).getByRole("button", { name: "Name it" }).click();
+  await page.locator("#book-name").fill("Phone seat");
+  await page.getByRole("button", { name: "Save name" }).click();
+  await page.locator("#safes li", { hasText: H.safe.slice(-6) }).getByRole("button", { name: "Name it" }).click();
+  await page.locator("#book-name").fill("Shared Safe");
+  await page.getByRole("button", { name: "Save name" }).click();
+  check(/Phone seat[\s\S]*Another passkey's seat/.test(await page.locator("#owners").innerText()) && /Shared Safe/.test(await page.locator("#account").innerText()),
+    "names: the second seat and the Safe, shown beside their addresses wherever they appear");
+  const [dl] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Export JSON" }).click()]);
+  const bookFile = await dl.path(), exported = JSON.parse(readFileSync(bookFile, "utf8"));
+  check(exported.tag === "sign-and-burn/address-book/v1" && exported.names[H2.seat.toLowerCase()] === "Phone seat" && exported.names[H.safe.toLowerCase()] === "Shared Safe",
+    "Export JSON: the address book, tagged, names and addresses only");
+  await second.locator("#book-file").setInputFiles(bookFile);
+  check(await see(/Imported: 2 new names/, 10000, second) && /Shared Safe/.test(await second.locator("#safes").innerText()) && /Phone seat/.test(await second.locator("#owners").innerText()),
+    "the second browser imports the file: the same names there");
+  await second.locator("#book summary").click();
+  await second.locator("#book-paste").fill('{"tag":"sign-and-burn/address-book/v1","chain":31337,"names":{"0x12":"x"}}');
+  await second.locator("#book").getByRole("button", { name: "Import", exact: true }).click();
+  check(await see(/Address book: "0x12" isn't an address\. Nothing was imported\./, 10000, second) && /Phone seat/.test(await second.locator("#owners").innerText()),
+    "a bad file is refused whole, and says why");
+
   // d. a phone with no wallet, as on a real one: the second browser adds the first seat to its own
   // Safe, 1 of 2. Holding signs; nobody else is asked (its seat's vote is enough); the approval goes
   // out as a link, and the first browser's wallet sends it from the main page.
@@ -685,6 +758,7 @@ try {
 } finally {
   await browser.close();
   server.close();
+  proxy.close();
   chain.stop();
 }
 console.log(fails ? `FAILED: ${fails}` : "all pass");

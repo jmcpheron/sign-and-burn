@@ -25,6 +25,7 @@ import * as P from "./passkey.mjs";
 import * as ch from "./chain.mjs";
 import { approve } from "./approve.mjs";
 import * as pay from "./pay.mjs";
+import * as names from "./names.mjs";
 import { $, addr, drawBlockie, el, eth, holdButton, plain, qrToggle, refuseFrames, reviewParts, rows, short, txLink, useChain } from "./ui.mjs";
 
 refuseFrames();
@@ -287,7 +288,7 @@ async function voteSeat(tx) {
     S.draft = null; S.acks = {};
     await refresh();
     if (!got.hash) { S.flash = `Key ${got.n} signed it. Now send it from a device with a wallet: copy the link below.`; return; }
-    const ran = S.safe.nonce > nonceBefore;
+    const ran = (await ch.nonceAt(S.C, S.safe.address, got.block)) > nonceBefore;
     S.flash = el("span", {}, `Key ${got.n}: signed, sent, burned. ` + (got.theirs ? "Someone copied the approval and sent it first: it can do only what you signed. " : "") +
       (ran ? "The Safe ran it. " : Number(tx.nonce) < nonceBefore ? "The Safe had moved past this transaction, so it ran nothing; the seat is at the next key now. " :
         `The seat's vote is on chain. The Safe runs it once ${S.safe.threshold} owners have approved. `), txLink(got.hash));
@@ -338,16 +339,17 @@ function render() {
   flash.replaceChildren(...[S.warn && el("p", { class: "note" }, S.warn), S.busy && el("p", { class: "status" }, el("span", { class: "spin" }), S.busy),
     S.error && el("p", { class: "note error", role: "alert" }, S.error), S.flash && !S.busy && el("p", { class: "note" }, S.flash)].filter(Boolean));
   if (!S.safe?.exists) {
-    for (const id of ["#act", "#send", "#safes", "#owners", "#activity"]) { $(id).replaceChildren(); $(id).hidden = true; }
+    for (const id of ["#act", "#send", "#safes", "#owners", "#activity", "#book"]) { $(id).replaceChildren(); $(id).hidden = true; }
     return;
   }
   $("#act").hidden = !S.current;
   $("#act").className = "card";
-  $("#send").hidden = $("#safes").hidden = $("#owners").hidden = $("#activity").hidden = false;
+  $("#send").hidden = $("#safes").hidden = $("#owners").hidden = $("#activity").hidden = $("#book").hidden = false;
   const fill = (id, parts) => $(id).replaceChildren(...parts.filter(Boolean));
   fill("#act", S.current ? approvalCard() : []);
   fill("#send", sendCard());
   fill("#safes", safesCard());
+  fill("#book", bookCard());
   fill("#owners", ownersCard());
   fill("#activity", activityCard());
   if (focus) { const again = document.getElementById(focus); again?.focus(); try { again?.setSelectionRange(pos, pos); } catch {} }
@@ -397,7 +399,8 @@ function ownersCard() {
         o.yours ? el("span", { class: "badge you" }, "your seat") : null,
         S.wallet && same(o.address, S.wallet.account) ? el("span", { class: "badge you" }, "this wallet") : null),
       el("div", { class: "small" }, o.yours ? `Key ${S.seat.n} now. ${what}` : !o.isSeat && !o.contract && o.sent ? `Sent ${o.sent} transaction${o.sent === 1 ? "" : "s"}. ${what}` : what),
-      o.yours ? null : el("div", { class: "actions" }, el("button", { class: "link", type: "button", disabled, onclick: () => draftRemove(o.address) }, "Remove")));
+      el("div", { class: "actions" }, nameLink(o.address),
+        o.yours ? null : el("button", { class: "link", type: "button", disabled, onclick: () => draftRemove(o.address) }, "Remove")));
   })));
   // A seat protects a Safe only if no set of ordinary owners reaches the threshold (research.md,
   // question 5). A backup for a lost passkey is the other owners reaching it without your seat. With
@@ -449,7 +452,8 @@ function safesCard() {
   return [el("h2", {}, "Safes"),
     el("ul", { class: "safes" }, ...list.map((a) => el("li", {}, addr(a),
       same(a, S.home.safe) ? el("span", { class: "badge" }, "yours") : null,
-      same(a, S.safe.address) ? el("span", { class: "badge you" }, "open") : el("button", { class: "link", type: "button", disabled: !!S.busy, onclick: () => openSafe(a) }, "Open")))),
+      same(a, S.safe.address) ? el("span", { class: "badge you" }, "open") : el("button", { class: "link", type: "button", disabled: !!S.busy, onclick: () => openSafe(a) }, "Open"),
+      nameLink(a)))),
     el("p", { class: "small" }, "Your seat's address. Another Safe adds this as an owner, and then your passkey can approve for it too:"),
     el("input", { class: "mono share-link", readonly: true, value: S.home.seat, "aria-label": "Your seat's address", onfocus: (e) => e.target.select() }),
     el("div", { class: "actions" }, el("button", { type: "button", onclick: () => copy(S.home.seat, "Copied your seat's address.") }, "Copy your seat's address")),
@@ -459,6 +463,66 @@ function safesCard() {
         el("input", { id: "add-safe", class: "mono", value: S.addSafe || "", placeholder: "0x…", spellcheck: "false", autocomplete: "off", "aria-label": "The Safe's address", oninput: (e) => { S.addSafe = e.target.value; } }),
         el("button", { type: "button", disabled: !!S.busy, onclick: addSafe }, "Open it")),
       el("p", { class: "small" }, "A link from another owner's device opens its Safe here by itself."))];
+}
+
+// ----------------------------------------------------------------------------- the address book
+/** "Name it": fill the address book's form with this address, and go there. */
+const nameLink = (a) => el("button", { class: "link", type: "button", onclick: () => {
+  S.bookAddr = a; S.bookName = names.nameOf(a); render();
+  $("#book").scrollIntoView({ block: "start", behavior: "smooth" }); $("#book-name")?.focus();
+} }, names.nameOf(a) ? "Rename" : "Name it");
+
+function saveName() {
+  const a = (S.bookAddr || "").trim();
+  if (!isAddress(a)) return fail("Address book: that isn't an address.");
+  const c = names.cleanName(S.bookName);
+  if (c.why) return fail("Address book: " + c.why);
+  names.setName(S.C.id, a, c.name);
+  S.bookAddr = S.bookName = ""; S.error = ""; S.flash = `Named ${short(a)} “${c.name}”.`;
+  render();
+}
+
+function exportNames() {
+  const url = URL.createObjectURL(new Blob([names.exportBook(S.C.id)], { type: "application/json" }));
+  const a = el("a", { href: url, download: "sign-and-burn-address-book.json" });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  S.flash = `Exported ${Object.keys(names.all()).length} names. The file holds names and addresses, nothing secret.`; S.error = "";
+  render();
+}
+
+function importNames(text) {
+  try {
+    const { added, replaced } = names.importBook(text, S.C.id);
+    S.flash = `Imported: ${added} new name${added === 1 ? "" : "s"}, ${replaced} renamed.`; S.error = ""; S.bookPaste = "";
+  } catch (e) {
+    S.error = "Address book: " + e.message; S.flash = "";
+  }
+  render();
+}
+
+function bookCard() {
+  const entries = Object.entries(names.all()).sort((x, y) => x[1].localeCompare(y[1]));
+  return [el("h2", {}, "Address book"),
+    el("p", { class: "small" }, "Your names for Safes, seats and wallets, kept in this browser. A name always shows beside its address, and the console never sees them."),
+    entries.length ? el("ul", { class: "book" }, ...entries.map(([a]) => el("li", {}, addr(a), nameLink(a),
+      el("button", { class: "link", type: "button", onclick: () => { names.setName(S.C.id, a, ""); render(); } }, "Remove"))))
+      : el("p", { class: "muted" }, "No names yet. “Name it” beside an owner or a Safe starts one."),
+    el("div", { class: "form book-form" },
+      el("label", {}, "Address", el("input", { id: "book-addr", class: "mono", value: S.bookAddr || "", placeholder: "0x…", spellcheck: "false", autocomplete: "off", oninput: (e) => { S.bookAddr = e.target.value; } })),
+      el("label", {}, "Name", el("input", { id: "book-name", value: S.bookName || "", maxlength: String(names.MAX_NAME), autocomplete: "off", oninput: (e) => { S.bookName = e.target.value; } }))),
+    el("div", { class: "actions" }, el("button", { class: "go", type: "button", onclick: saveName }, "Save name")),
+    el("h3", {}, "To another browser"),
+    el("div", { class: "actions" },
+      el("button", { type: "button", onclick: exportNames }, "Export JSON"),
+      el("label", { class: "btn file" }, "Import JSON", el("input", { id: "book-file", type: "file", accept: "application/json,.json", onchange: async (e) => {
+        const f = e.target.files?.[0];
+        if (f) importNames(f.size > 200000 ? "" : await f.text());
+      } }))),
+    el("details", {}, el("summary", { class: "small" }, "Or paste it"),
+      el("textarea", { id: "book-paste", class: "mono", rows: "4", spellcheck: "false", oninput: (e) => { S.bookPaste = e.target.value; } }, S.bookPaste || ""),
+      el("div", { class: "actions" }, el("button", { type: "button", onclick: () => importNames(S.bookPaste || "") }, "Import"))),
+    el("p", { class: "small" }, "Importing adds names, and replaces yours for the same addresses. A file is checked whole: one bad entry, and nothing is imported.")];
 }
 
 async function copy(text, said) {
