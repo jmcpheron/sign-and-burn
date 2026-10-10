@@ -1,11 +1,12 @@
 // The page's own JavaScript, without a browser: src/wots.mjs against reference/vectors/v1.json, the
 // danger case's forgery against a throwaway key, finding an approval inside a wallet's transaction,
-// the links another device pays from (a build, an approval), and console/cfg.py against what the page reads.
+// the links another device pays from (a build, an approval), the votes and owner changes the wallet page
+// sends, and console/cfg.py against what the page reads.
 //   cd site && npm ci && node test.mjs
 import { readFileSync } from "node:fs";
 import * as w from "./src/wots.mjs";
-import { encodeFunctionData, parseAbi } from "viem";
-import { MULTICALL_ABI, approveCalls, findApprove, parseCfg } from "./src/chain.mjs";
+import { decodeFunctionData, encodeFunctionData, parseAbi } from "viem";
+import { MULTICALL_ABI, SAFE_ABI, approveCalls, execData, findApprove, ownerTx, parseCfg } from "./src/chain.mjs";
 import * as pay from "./src/pay.mjs";
 
 let fails = 0;
@@ -81,6 +82,29 @@ badA("data that isn't hex bytes", (q) => q.set("data", "0xabc"));
 badA("an operation that is neither", (q) => q.set("op", "2"));
 badA("a value that isn't a number", (q) => q.set("value", "-1"));
 console.log(`approval links: round trip (${alink.length} characters), and six refusals`);
+
+// Votes: one pre-approved signature (r = owner, s = 0, v = 1) per owner, in ascending order, as Safe
+// wants. With only the seat's, the press is what it always was.
+const lo = "0x" + "0a".repeat(20), hi = "0x" + "f0".repeat(20);
+const sigs = (data) => decodeFunctionData({ abi: SAFE_ABI, data }).args[9];
+const vote = (o) => o.slice(2).padStart(64, "0") + "00".repeat(32) + "01";
+check("votes in ascending order of owner", sigs(execData(tx, [hi, lo, hi.toUpperCase().replace("0X", "0x")])) === "0x" + vote(lo) + vote(hi));
+check("a press with no other votes: the seat's alone", sigs(approveCalls(a, tx)[1].callData) === "0x" + vote(a.seat));
+check("a press with another vote carries both", sigs(approveCalls(a, tx, [lo])[1].callData) === "0x" + vote(lo) + vote(a.seat));
+// Owner changes: removing one names the owner before it in the Safe's list (the sentinel for the first).
+const owners = [a.seat, lo, hi], safe = a.safe;
+const call = (t) => decodeFunctionData({ abi: SAFE_ABI, data: t.data });
+const add = ownerTx(safe, 4, { add: lo, threshold: 1 });
+check("add an owner", add.to === safe && add.nonce === "4" && add.value === "0" && add.operation === 0 &&
+  call(add).functionName === "addOwnerWithThreshold" && call(add).args[0].toLowerCase() === lo && call(add).args[1] === 1n);
+check("remove the first owner: after the sentinel", JSON.stringify(call(ownerTx(safe, 4, { remove: a.seat, owners, threshold: 1 })).args.map(String).map((x) => x.toLowerCase())) ===
+  JSON.stringify(["0x0000000000000000000000000000000000000001", a.seat, "1"]));
+check("remove a later owner: after the one before it", call(ownerTx(safe, 4, { remove: hi, owners, threshold: 2 })).args[0].toLowerCase() === lo);
+check("change the threshold", call(ownerTx(safe, 4, { threshold: 2 })).functionName === "changeThreshold");
+let threw = false;
+try { ownerTx(safe, 4, { remove: "0x" + "77".repeat(20), owners, threshold: 1 }); } catch { threw = true; }
+check("refused: removing an address that isn't an owner", threw);
+console.log("votes and owner changes: order, the press, add, remove, threshold");
 
 const cfg = parseCfg(readFileSync(new URL("../console/cfg.py", import.meta.url), "utf8"));
 const dep = JSON.parse(readFileSync(new URL("../contracts/deployment.json", import.meta.url), "utf8"));
