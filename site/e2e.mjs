@@ -791,6 +791,13 @@ try {
   await second.locator("#account details.picker > summary").click();
   await second.locator("#account .menu button", { hasText: "Shared Safe" }).click();
   check(await see(/A Safe your seat is in[\s\S]*Shared Safe/i, 15000, second), "the caret beside it: a menu of your Safes, by name; picking one opens it");
+  await second.setViewportSize({ width: 390, height: 900 });
+  await second.locator("#account details.picker > summary").click();
+  const menuBox = await second.locator("#account .menu").boundingBox();
+  await second.screenshot({ path: join(SHOTS, "9-safe-menu-phone.png") });
+  check(!!menuBox && menuBox.x >= 0 && menuBox.x + menuBox.width <= 390, "at phone width, the Safe menu opens inside the screen");
+  await second.locator("#account details.picker > summary").click();
+  await second.setViewportSize({ width: 1360, height: 1000 });
   await second.locator("#send details.picker > summary").click();
   const offered = await second.locator("#send .menu").innerText();
   check(/Phone seat/.test(offered) && /your Safe/.test(offered) && !/Shared Safe/.test(offered), "the To menu: your other Safe and your contacts, by name, and not the Safe you send from");

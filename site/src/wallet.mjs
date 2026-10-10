@@ -26,7 +26,7 @@ import * as ch from "./chain.mjs";
 import { approve } from "./approve.mjs";
 import * as pay from "./pay.mjs";
 import * as names from "./names.mjs";
-import { $, addr, drawBlockie, el, eth, holdButton, label, picker, plain, qrToggle, refuseFrames, reviewParts, rows, short, txLink, useChain } from "./ui.mjs";
+import { $, addr, copyButton, drawBlockie, el, eth, holdButton, label, picker, plain, qrToggle, refuseFrames, reviewParts, rows, short, txLink, useChain } from "./ui.mjs";
 
 refuseFrames();
 
@@ -389,11 +389,21 @@ function drawAccount() {
   if (!S.pk) return box.replaceChildren(el("h1", {}, "No passkey here yet"), main);
   if (!S.safe && S.busy) return box.replaceChildren(el("p", { class: "muted" }, "Reading your Safe from the chain…"));
   if (!S.safe?.exists) return box.replaceChildren(el("h1", {}, "Your Safe isn't built yet"), main);
-  const c = drawBlockie(el("canvas", { width: 8, height: 8, class: "wallet-blockie", "aria-hidden": "true" }), S.safe.address);
-  box.replaceChildren(c, el("div", {},
-    el("p", { class: "eyebrow" }, same(S.safe.address, S.home.safe) ? "Your shielded Safe" : S.seatOwns ? "A Safe your seat is in" : "A Safe your wallet is in"),
+  // The Safe, in one box: its blockie, your name for it, the start and end of its address (the whole
+  // address to copy, or on the explorer), and the caret that switches to your other Safes.
+  const a = S.safe.address, name = names.nameOf(a), shortA = short(a, 6, 4);
+  const c = drawBlockie(el("canvas", { width: 8, height: 8, class: "wallet-blockie", "aria-hidden": "true" }), a);
+  const where = S.C.explorer ? el("a", { class: "mono", href: `${S.C.explorer}/address/${a}`, target: "_blank", rel: "noopener noreferrer", title: a }, shortA)
+    : el("span", { class: "mono", title: a }, shortA);
+  box.replaceChildren(el("div", { class: "safe-box" }, c,
+    el("div", { class: "safe-id" },
+      el("p", { class: "eyebrow" }, same(a, S.home.safe) ? "Your shielded Safe" : S.seatOwns ? "A Safe your seat is in" : "A Safe your wallet is in"),
+      name ? el("b", { class: "safe-name" }, name) : null,
+      el("div", { class: "safe-addr" }, where, copyButton(a))),
+    safesPicker()),
+  el("div", { class: "safe-money" },
     el("div", { class: "balance" }, eth(S.safe.balance)),
-    el("div", { class: "wallet-sub" }, addr(S.safe.address, { copy: true }), safesPicker(),
+    el("div", { class: "wallet-sub" },
       el("span", { class: "chip" }, `${S.safe.threshold} of ${S.safe.owners.length} to approve`),
       el("span", { class: "chip" }, `seat at key ${S.seat.n}`),
       el("span", { class: "chip" }, `nonce ${S.safe.nonce}`)),
