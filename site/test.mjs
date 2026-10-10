@@ -83,6 +83,24 @@ badA("an operation that is neither", (q) => q.set("op", "2"));
 badA("a value that isn't a number", (q) => q.set("value", "-1"));
 console.log(`approval links: round trip (${alink.length} characters), and six refusals`);
 
+// A transaction waiting for votes, from one owner's device to another's: the Safe and the fields
+// survive the trip, it holds no hash, and a link of any other shape is refused.
+const plink = pay.proposalLink(C, a.safe, tx, "https://signandburn.app/wallet.html");
+const pback = pay.proposalFrom(new URL(plink).hash, C).req;
+check("a proposal link round-trips", pback && pback.safe === a.safe && JSON.stringify(pback.tx) === JSON.stringify(tx));
+check("a proposal link holds no hash and nothing signed", !plink.includes(a.safeTxHash.slice(2)) && !/[?&#](sig|ot|next|seat)=/.test(plink));
+check("not a proposal: a payment link, or the page's own anchors", pay.proposalFrom(new URL(alink).hash, C) === null && pay.proposalFrom("#how", C) === null);
+check("a payment link isn't a proposal either way", pay.fromLink(new URL(plink).hash, C) === null);
+const badP = (what, f) => { const q = new URLSearchParams(new URL(plink).hash.slice(1)); f(q); check(`refused: ${what}`, !!pay.proposalFrom("#" + q, C)?.refuse); };
+badP("another tag", (q) => q.set("propose", "sign-and-burn/proposal/v2"));
+badP("another chain", (q) => q.set("chain", "1"));
+badP("a Safe that isn't an address", (q) => q.set("safe", "0x1234"));
+badP("a recipient with markup", (q) => q.set("to", "<b>"));
+badP("data that isn't hex bytes", (q) => q.set("data", "0xabc"));
+badP("an operation that is neither", (q) => q.set("op", "2"));
+badP("a nonce that isn't a number", (q) => q.set("nonce", "1e3"));
+console.log("proposal links: round trip, and seven refusals");
+
 // Votes: one pre-approved signature (r = owner, s = 0, v = 1) per owner, in ascending order, as Safe
 // wants. With only the seat's, the press is what it always was.
 const lo = "0x" + "0a".repeat(20), hi = "0x" + "f0".repeat(20);

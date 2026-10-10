@@ -127,14 +127,14 @@ const waitFor = (re, timeout = 30000, on = page) => on.waitForFunction((s) => ne
   .then(() => true, async () => { console.log("  screen said:", (await on.evaluate(said)).slice(0, 600)); return false; });
 const shot = (name) => page.screenshot({ path: join(SHOTS, `${name}.png`), fullPage: true });
 const click = (name, on = page) => on.getByRole("button", { name }).first().click();
-async function hold(ms = 2400) {
-  const btn = page.locator("button.hold");
+async function hold(ms = 2400, on = page) {
+  const btn = on.locator("button.hold");
   await btn.scrollIntoViewIfNeeded();
   const box = await btn.boundingBox();
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await page.mouse.down();
-  await page.waitForTimeout(ms);
-  await page.mouse.up();
+  await on.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await on.mouse.down();
+  await on.waitForTimeout(ms);
+  await on.mouse.up();
 }
 const SEAT_ABI = parseAbi(["function n() view returns (uint64)", "function current() view returns (bytes32)"]);
 const SAFE_ABI = parseAbi(["function nonce() view returns (uint256)", "function getOwners() view returns (address[])"]);
@@ -409,14 +409,14 @@ try {
     nonce: Number(await pc.readContract({ address: H.safe, abi: SAFE_OWNERS_ABI, functionName: "nonce" })),
     owners: (await pc.readContract({ address: H.safe, abi: SAFE_OWNERS_ABI, functionName: "getOwners" })).map((o) => o.toLowerCase()),
     threshold: Number(await pc.readContract({ address: H.safe, abi: SAFE_OWNERS_ABI, functionName: "getThreshold" })) });
-  const wsaid = () => page.evaluate(() => document.querySelector("main").innerText);
-  const see = (re, timeout = 30000) => page.waitForFunction(([s, f]) => new RegExp(s, f).test(document.querySelector("main").innerText), [re.source, re.flags], { timeout })
-    .then(() => true, async () => { console.log("  page said:", (await wsaid()).slice(0, 900)); return false; });
+  const wsaid = (on) => on.evaluate(() => document.querySelector("main").innerText);
+  const see = (re, timeout = 30000, on = page) => on.waitForFunction(([s, f]) => new RegExp(s, f).test(document.querySelector("main").innerText), [re.source, re.flags], { timeout })
+    .then(() => true, async () => { console.log("  page said:", (await wsaid(on)).slice(0, 900)); return false; });
   const inCard = (id, name) => page.locator(id).getByRole("button", { name, exact: true }).click();
   const ME = wallet.account;
   await page.goto(URL_ + "wallet.html");
   const start = await onChain();
-  check(await see(/your shielded safe[\s\S]*1 of 1 to approve[\s\S]*The seat is the only owner/i) && await see(new RegExp(`seat at key ${start.n}`)),
+  check(await see(/your shielded safe[\s\S]*1 of 1 to approve[\s\S]*Every owner is a seat[\s\S]*No backup if your passkey is lost/i) && await see(new RegExp(`seat at key ${start.n}`)),
     "the wallet page: the main page's Safe, its balance and its one owner, the seat");
   check(await see(/pays gas only/), "…and the wallet in this browser, which pays gas only");
   await shot("9-wallet");
@@ -432,8 +432,8 @@ try {
   check(await see(new RegExp(`Key ${start.n}: signed, sent, burned\\. The Safe ran it`), 60000) && (await signCount()) === before + 1, "one press: the seat approves it, and the Safe runs it");
   let now = await onChain();
   check(now.owners.length === 2 && now.owners.includes(ME) && now.threshold === 1, "on chain: two owners, the seat and the wallet, 1 of 2");
-  check(await see(/1 of 2 to approve[\s\S]*Your seat isn't needed to approve/) && await see(/this wallet[\s\S]*Ordinary key|Ordinary key[\s\S]*this wallet/),
-    "the page says the seat isn't needed now: the wallet can approve alone");
+  check(await see(/1 of 2 to approve[\s\S]*Ordinary keys can approve without a seat[\s\S]*A backup if your passkey is lost/) && await see(/this wallet[\s\S]*Ordinary key|Ordinary key[\s\S]*this wallet/),
+    "the page says the wallet can approve without a seat: a backup, and a way around the seat");
   check(await see(/Sent \d+ transactions?\. Its public key is on chain/), "…and that the wallet's public key is already on chain");
   await shot("9-wallet-1of2");
 
@@ -483,7 +483,7 @@ try {
   check(await see(/THRESHOLD[\s\S]*Approvals needed: 2/) && await page.getByRole("button", { name: "Run it with my wallet" }).isDisabled(), "2 of 2: red, and the wallet's button waits for the box too");
   await page.getByLabel("I read the red page").check();
   await page.getByRole("button", { name: "Run it with my wallet" }).click();
-  check(await see(/2 of 2 to approve[\s\S]*Every approval needs your seat/, 60000) && (await onChain()).threshold === 2, "on chain: 2 of 2, and the page says every approval needs the seat");
+  check(await see(/2 of 2 to approve[\s\S]*Every approval needs a seat[\s\S]*No backup if your passkey is lost/, 60000) && (await onChain()).threshold === 2, "on chain: 2 of 2, and the page says every approval needs the seat");
   await shot("9-wallet-2of2");
 
   // e. 2 of 2, the seat first: its vote lands, the Safe waits; then the wallet's vote runs it
@@ -535,6 +535,85 @@ try {
   check([k, k + 1, n2].every((x) => hist2.includes(`#${x}`)), "the seat's approvals from both pages, in one ledger");
   await page.setViewportSize({ width: 390, height: 900 });
   await page.setViewportSize({ width: 1360, height: 1000 });
+
+  // 9d. two seats. A second browser makes its own passkey, key 0 and shielded Safe; its own wallet pays
+  // for the build, from the main page. The first Safe takes the second seat as an owner (1 of 2: every
+  // owner a seat, and a backup), then the wallet (2 of 3). The wallet starts a send, a link carries it
+  // to the second browser, and the second seat's press makes two votes: the Safe runs it.
+  const ctx3 = await newBrowser();
+  const second = await ctx3.newPage();
+  second.on("pageerror", (e) => errors.push("second: " + e.message));
+  const cdp3 = await ctx3.newCDPSession(second);
+  await cdp3.send("WebAuthn.enable");
+  const { authenticatorId: auth3 } = await cdp3.send("WebAuthn.addVirtualAuthenticator", { options: {
+    protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true,
+    automaticPresenceSimulation: true, hasPrf: true } });
+  const signCount3 = async () => (await cdp3.send("WebAuthn.getCredentials", { authenticatorId: auth3 })).credentials[0]?.signCount ?? 0;
+  await second.goto(URL_);
+  await waitFor(/Make a passkey/, 30000, second);
+  await click("Make a passkey", second);
+  await waitFor(/Tap to make key 0/, 30000, second);
+  await click("Tap to make key 0", second);
+  await waitFor(/Build your shielded Safe/, 30000, second);
+  await click("Connect a wallet", second);
+  await second.locator(".chooser").waitFor();
+  await click("Test wallet (Anvil)", second);
+  await click("Build it: one transaction", second);
+  check(await waitFor(/Your Safe is built, and empty/, 60000, second), "a second browser: its own passkey, key 0 and shielded Safe, built by the wallet in that browser");
+  const H2 = Object.values(JSON.parse(await second.evaluate(() => localStorage.getItem("sab.home"))))[0];
+
+  // a. the second seat joins the first Safe, 1 of 2
+  let k2 = (await onChain()).n;
+  await page.locator("#add-owner").fill(H2.seat);
+  await page.locator("#add-threshold").selectOption("1");
+  await inCard("#owners .owner-add", "Review");
+  await see(/ADD OWNER/);
+  await page.getByLabel("I read the red page").check();
+  await hold();
+  check(await see(new RegExp(`Key ${k2}: signed, sent, burned\\. The Safe ran it`), 60000), "the first seat adds the second as an owner: one press");
+  check(await see(/1 of 2 to approve[\s\S]*Every approval needs a seat[\s\S]*A backup if your passkey is lost/) && await page.locator("#owners li.owner.seat").count() === 2 &&
+    /Another passkey's seat/.test(await page.locator("#owners").innerText()),
+    "two seats, 1 of 2: the page knows the other for a seat (the SeatFactory made it): every approval needs a seat, and there is a backup");
+
+  // b. the wallet as a third owner, 2 of 3
+  k2 = (await onChain()).n;
+  await inCard("#owners", "Use my wallet's address");
+  await page.locator("#add-threshold").selectOption("2");
+  await inCard("#owners .owner-add", "Review");
+  await see(/ADD OWNER[\s\S]*Approvals needed becomes 2/);
+  await page.getByLabel("I read the red page").check();
+  await hold();
+  await see(new RegExp(`Key ${k2}: signed, sent, burned\\. The Safe ran it`), 60000);
+  now = await onChain();
+  check(now.owners.length === 3 && now.owners.includes(H2.seat.toLowerCase()) && now.owners.includes(ME) && now.threshold === 2, "on chain: two seats and the wallet, 2 of 3");
+  check(await see(/2 of 3 to approve[\s\S]*Every approval needs a seat[\s\S]*A backup if your passkey is lost/), "2 of 3: the wallet can't approve alone, and either seat with the wallet still reaches 2");
+
+  // c. the wallet starts a send, and asks the second seat by link
+  const TO4 = "0x00000000000000000000000000000000000b0b04";
+  await page.locator("#send-to").fill(TO4);
+  await page.locator("#send-amount").fill("0.0001");
+  await inCard("#send", "Review");
+  await see(/Votes: 0 of 2/);
+  await page.getByRole("button", { name: "Approve with my wallet" }).click();
+  check(await see(/Your wallet's vote is on chain[\s\S]*Votes: 1 of 2/, 60000), "the wallet votes first");
+  const code2 = await page.locator("#act .verify .code").innerText();
+  await inCard("#act", "Copy link");
+  const plink = await page.evaluate(() => window.__e2eCopied);
+  check(plink.startsWith(URL_ + "wallet.html#propose=") && !plink.includes(code2), "the link to ask another owner: the wallet page and the transaction, no hash");
+  const nonce4 = (await onChain()).nonce;
+  await second.goto(plink);
+  check(await see(/A Safe your seat is in[\s\S]*Votes: 1 of 2/i, 30000, second) && (await second.locator("#act .verify .code").innerText()) === code2,
+    "the second browser opens it: the first Safe, the wallet's vote counted, and its own console shows the same check code");
+  const before3 = await signCount3();
+  await hold(2400, second);
+  check(await see(/Key 0: signed, sent, burned\. The Safe ran it/, 60000, second) && (await signCount3()) === before3 + 1,
+    "the second seat's press: one tap, key 0, and with the wallet's vote that makes two: the Safe runs it");
+  check((await onChain()).nonce === nonce4 + 1 && formatEther(await pc.getBalance({ address: TO4 })) === "0.0001" &&
+    Number(await pc.readContract({ address: H2.seat, abi: SEAT_ABI, functionName: "n" })) === 1, "on chain: the Safe ran it, and the second seat is at key 1");
+  check(await page.locator("#act").waitFor({ state: "hidden", timeout: 15000 }).then(() => true, () => false), "the first browser sees it run, by itself");
+  const listed = (await second.locator("#safes").innerText()).toLowerCase();
+  check(listed.includes(H.safe.slice(-6).toLowerCase()) && listed.includes(H2.safe.slice(-6).toLowerCase()), "the second browser keeps both Safes its seat is in");
+  await ctx3.close();
 
   // 10. the page reaches only this folder and the RPC
   const reach = await page.evaluate(() => fetch("https://example.com/").then(() => "reached", () => "blocked"));

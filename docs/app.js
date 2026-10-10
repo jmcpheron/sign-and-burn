@@ -21097,6 +21097,14 @@ async function votesFor(C2, safe, owners, hash3) {
   const got = await Promise.all(owners.map((o) => C2.pc.readContract({ address: safe, abi: SAFE_ABI, functionName: "approvedHashes", args: [o, hash3] })));
   return owners.filter((_, i) => got[i] > 0n);
 }
+async function isSeat(C2, a) {
+  try {
+    const signer = await C2.pc.readContract({ address: a, abi: SEAT_ABI, functionName: "curveSigner" });
+    return (await seatsOf(C2, signer)).some((s) => s.toLowerCase() === a.toLowerCase());
+  } catch {
+    return false;
+  }
+}
 function ownerTx(safe, nonce, change) {
   let data;
   if (change.add) data = encodeFunctionData({ abi: SAFE_ABI, functionName: "addOwnerWithThreshold", args: [getAddress(change.add), BigInt(change.threshold)] });
@@ -21396,8 +21404,155 @@ var init_approve2 = __esm({
   }
 });
 
+// src/pay.mjs
+function unb64(s) {
+  if (!/^[A-Za-z0-9_-]*$/.test(s || "")) return null;
+  try {
+    return bytesToHex(Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)), (c) => c.charCodeAt(0)));
+  } catch {
+    return null;
+  }
+}
+function toLink(req, base) {
+  const q = new URLSearchParams({ pay: req.tag, chain: String(req.chain), x: req.x, y: req.y, seat: String(req.seatNumber), key: req.firstKey });
+  return `${base}#${q}`;
+}
+function approvalLink(C2, n, a, tx, base) {
+  const q = new URLSearchParams({
+    pay: APPROVAL_TAG,
+    chain: String(C2.id),
+    seat: a.seat.toLowerCase(),
+    safe: a.safe.toLowerCase(),
+    n: String(n),
+    to: tx.to.toLowerCase(),
+    value: String(tx.value),
+    data: (tx.data || "0x").toLowerCase(),
+    op: String(tx.operation),
+    nonce: String(tx.nonce),
+    next: a.nextKey.toLowerCase(),
+    ot: b64("0x" + a.oneTime.map((v) => v.slice(2)).join("")),
+    sig: b64(a.curveSig)
+  });
+  return `${base}#${q}`;
+}
+function fromLink(hash3, C2) {
+  const q = new URLSearchParams(String(hash3 || "").replace(/^#/, ""));
+  if (!q.has("pay")) return null;
+  const tag = q.get("pay");
+  if (tag !== TAG && tag !== APPROVAL_TAG) return { refuse: `This link asks for "${tag.slice(0, 40)}", which this page doesn't know. It knows ${TAG} and ${APPROVAL_TAG}.` };
+  const chain = Number(q.get("chain"));
+  if (chain !== C2.id) return { refuse: `This link is for chain ${String(q.get("chain")).slice(0, 12)}. This page works on ${C2.chain.name} (${C2.id}) only.` };
+  return tag === TAG ? buildFrom(q, chain) : approvalFrom(q, chain);
+}
+function proposalLink(C2, safe, tx, base) {
+  const q = new URLSearchParams({
+    propose: PROPOSAL_TAG,
+    chain: String(C2.id),
+    safe: safe.toLowerCase(),
+    to: tx.to.toLowerCase(),
+    value: String(tx.value),
+    data: (tx.data || "0x").toLowerCase(),
+    op: String(tx.operation),
+    nonce: String(tx.nonce)
+  });
+  return `${base}#${q}`;
+}
+function proposalFrom(hash3, C2) {
+  const q = new URLSearchParams(String(hash3 || "").replace(/^#/, ""));
+  if (!q.has("propose")) return null;
+  const tag = q.get("propose");
+  if (tag !== PROPOSAL_TAG) return { refuse: `This link asks for "${tag.slice(0, 40)}", which this page doesn't know. It knows ${PROPOSAL_TAG}.` };
+  if (Number(q.get("chain")) !== C2.id) return { refuse: `This link is for chain ${String(q.get("chain")).slice(0, 12)}. This page works on ${C2.chain.name} (${C2.id}) only.` };
+  const get = (k) => (q.get(k) || "").toLowerCase();
+  const again = " Ask for the link again.";
+  if (!ADDR.test(get("safe"))) return { refuse: "This link's Safe isn't an address." + again };
+  const bad = txFields(get, again);
+  if (bad) return { refuse: bad };
+  return { req: { tag: PROPOSAL_TAG, chain: C2.id, safe: get("safe"), tx: { to: get("to"), value: get("value"), data: get("data"), operation: Number(get("op")), nonce: get("nonce") } } };
+}
+function txFields(get, again) {
+  if (!ADDR.test(get("to"))) return "This link's recipient isn't an address." + again;
+  if (!UINT.test(get("value")) || !UINT.test(get("nonce"))) return "This link's value or nonce isn't a number." + again;
+  if (!/^0x([0-9a-f]{2}){0,8192}$/.test(get("data"))) return "This link's call data isn't hex bytes." + again;
+  if (get("op") !== "0" && get("op") !== "1") return "This link's operation is neither a call nor a delegatecall." + again;
+  return "";
+}
+function approvalFrom(q, chain) {
+  const get = (k) => (q.get(k) || "").toLowerCase();
+  const again = " Ask for the link again.";
+  if (!ADDR.test(get("seat")) || !ADDR.test(get("safe")) || !ADDR.test(get("to"))) return { refuse: "This link's seat, Safe or recipient isn't an address." + again };
+  if (!/^(0|[1-9]\d{0,18})$/.test(get("n")) || !UINT.test(get("value")) || !UINT.test(get("nonce"))) return { refuse: "This link's key number, value or nonce isn't a number." + again };
+  if (!/^0x([0-9a-f]{2}){0,8192}$/.test(get("data"))) return { refuse: "This link's call data isn't hex bytes." + again };
+  if (get("op") !== "0" && get("op") !== "1") return { refuse: "This link's operation is neither a call nor a delegatecall." + again };
+  if (!/^0x[0-9a-f]{64}$/.test(get("next"))) return { refuse: "This link's next key isn't a 32-byte fingerprint." + again };
+  const ot = unb64(q.get("ot")), sig = unb64(q.get("sig"));
+  if (!ot || ot.length !== 2 + 2 * ONE_TIME) return { refuse: "This link's one-time signature isn't 67 values of 32 bytes." + again };
+  if (!sig || sig.length < 4 || sig.length > 2 + 2 * 4096) return { refuse: "This link's passkey signature isn't there, or is far too long." + again };
+  const oneTime = Array.from({ length: 67 }, (_, j) => "0x" + ot.slice(2 + 64 * j, 66 + 64 * j));
+  return { req: {
+    tag: APPROVAL_TAG,
+    chain,
+    seat: get("seat"),
+    safe: get("safe"),
+    n: Number(get("n")),
+    nextKey: get("next"),
+    oneTime,
+    curveSig: sig,
+    tx: { to: get("to"), value: get("value"), data: get("data"), operation: Number(get("op")), nonce: get("nonce") }
+  } };
+}
+function buildFrom(q, chain) {
+  const x = (q.get("x") || "").toLowerCase(), y = (q.get("y") || "").toLowerCase();
+  const seat = q.get("seat") || "", key = (q.get("key") || "").toLowerCase();
+  if (!HEX32.test(x) || !HEX32.test(y)) return { refuse: "This link's passkey public key isn't two 32-byte numbers. Ask for the link again." };
+  if (!/^(0|[1-9]\d{0,9})$/.test(seat) || Number(seat) > 4294967295) return { refuse: "This link's seat number isn't a number. Ask for the link again." };
+  if (!/^0x[0-9a-f]{64}$/.test(key) || /^0x0{64}$/.test(key)) return { refuse: "This link's first key isn't a 32-byte fingerprint. Ask for the link again." };
+  return { req: { tag: TAG, chain, x, y, seatNumber: Number(seat), firstKey: key } };
+}
+async function resolve(C2, req) {
+  const pk = { x: req.x, y: req.y };
+  const signer = getAddress(await signerAddress(C2, pk));
+  const seat = getAddress(await seatAddress(C2, signer, req.seatNumber, req.firstKey));
+  const safe = getAddress(await safeAddress(C2, seat));
+  const built = await hasCode(C2, seat) && await hasCode(C2, safe);
+  const calls = built ? [] : await buildCalls(C2, { pk, signer, seatNumber: req.seatNumber, firstKey: req.firstKey, seat });
+  return { signer, seat, safe, built, calls };
+}
+var TAG, APPROVAL_TAG, PROPOSAL_TAG, HEX32, ADDR, UINT, ONE_TIME, b64, request;
+var init_pay = __esm({
+  "src/pay.mjs"() {
+    init_esm();
+    init_chain2();
+    TAG = "sign-and-burn/build/v1";
+    APPROVAL_TAG = "sign-and-burn/approval/v1";
+    PROPOSAL_TAG = "sign-and-burn/proposal/v1";
+    HEX32 = /^[0-9a-f]{64}$/;
+    ADDR = /^0x[0-9a-f]{40}$/;
+    UINT = /^(0|[1-9]\d{0,77})$/;
+    ONE_TIME = 67 * 32;
+    b64 = (hex3) => btoa(String.fromCharCode(...hexToBytes(hex3))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    request = (C2, pk, home2) => ({
+      tag: TAG,
+      chain: C2.id,
+      x: pk.x.toLowerCase(),
+      y: pk.y.toLowerCase(),
+      seatNumber: home2.seatNumber,
+      firstKey: home2.firstKey.toLowerCase()
+    });
+  }
+});
+
 // src/wallet.mjs
 var wallet_exports = {};
+function keepSafe(a) {
+  if (safes().some((x) => x.toLowerCase() === a.toLowerCase())) return;
+  const all = read("sab.safes");
+  all[safesKey()] = [...all[safesKey()] || [], getAddress(a)];
+  try {
+    localStorage.setItem("sab.safes", JSON.stringify(all));
+  } catch {
+  }
+}
 function keepProposal(tx) {
   const all = read("sab.proposal");
   if (tx) all[proposalKey()] = tx;
@@ -21425,6 +21580,9 @@ async function boot2() {
   await reconnectWallet().catch(() => {
   });
   await guard("Reading your Safe from the chain…", find);
+  window.addEventListener("hashchange", () => {
+    if (proposalFrom(location.hash, S.C)) guard("Reading the Safe from the chain…", openProposal);
+  });
   setInterval(() => {
     if (!S.busy && S.current && document.visibilityState === "visible") refresh().then((changed) => changed && render(), () => {
     });
@@ -21441,23 +21599,69 @@ async function find() {
     h2 = seats.length ? { seat: seats[seats.length - 1], safe: await safeAddress(S.C, seats[seats.length - 1]), found: true } : null;
   }
   S.home = h2;
-  if (h2) await refresh();
+  if (!h2) return;
+  S.at = h2.safe;
+  if (proposalFrom(location.hash, S.C)) return openProposal();
+  await refresh();
+}
+async function openProposal() {
+  const got = proposalFrom(location.hash, S.C);
+  history.replaceState(null, "", location.pathname + location.search);
+  if (!got) return;
+  if (got.refuse) throw new Error(got.refuse);
+  if (!S.home) throw new Error("This browser has no seat yet. Open the link on the device whose seat is an owner of that Safe.");
+  const safe = await readSafe(S.C, got.req.safe);
+  const owns = (a) => safe.exists && safe.owners.some((o) => same(o, a));
+  if (!owns(S.home.seat) && !owns(S.wallet?.account)) throw new Error(`Neither your seat nor the wallet here is an owner of the Safe ${short(got.req.safe)}. Nothing to approve.`);
+  if (Number(got.req.tx.nonce) < safe.nonce) throw new Error(`The Safe ${short(got.req.safe)} has run its transaction ${got.req.tx.nonce} already. Nothing to approve.`);
+  if (owns(S.home.seat)) keepSafe(got.req.safe);
+  S.at = getAddress(got.req.safe);
+  S.draft = got.req.tx;
+  S.acks = {};
+  S.flash = "";
+  await refresh();
+}
+async function openSafe(a) {
+  S.at = a;
+  S.draft = null;
+  S.acks = {};
+  S.flash = "";
+  S.error = "";
+  await guard("Reading the Safe from the chain…", refresh);
+}
+async function addSafe() {
+  const a = (S.addSafe || "").trim();
+  await guard("Reading the Safe from the chain…", async () => {
+    if (!isAddress(a)) throw new Error("That isn't an address.");
+    const safe = await readSafe(S.C, a);
+    if (!safe.exists || !safe.owners.some((o) => same(o, S.home.seat))) throw new Error(`Your seat isn't an owner of ${short(a)}. Add it there first: on that Safe's own page, add ${S.home.seat} as an owner.`);
+    keepSafe(a);
+    S.addSafe = "";
+    S.at = getAddress(a);
+    S.draft = null;
+    S.acks = {};
+    await refresh();
+  });
 }
 async function refresh() {
   const H = S.home;
   if (!H || !await hasCode(S.C, H.seat)) return false;
-  const [seat, safe] = await Promise.all([readSeat(S.C, H.seat), readSafe(S.C, H.safe)]);
+  const [seat, safe] = await Promise.all([readSeat(S.C, H.seat), readSafe(S.C, S.at || H.safe)]);
   S.seat = seat;
   S.safe = safe;
   if (!safe.exists) return true;
   ask({ op: "chain", chainId: S.C.id, seat: H.seat, n: seat.n });
   S.owners = await Promise.all(safe.owners.map(async (a) => {
-    const isSeat = a.toLowerCase() === H.seat.toLowerCase();
-    const [code, sent] = isSeat ? [true, 0] : await Promise.all([hasCode(S.C, a), S.C.pc.getTransactionCount({ address: a })]);
-    return { address: a, isSeat, contract: !isSeat && code, sent };
+    const yours = same(a, H.seat);
+    const [code, sent] = yours ? [true, 0] : await Promise.all([hasCode(S.C, a), S.C.pc.getTransactionCount({ address: a })]);
+    const isSeat2 = yours || code && await isSeat(S.C, a);
+    return { address: a, yours, isSeat: isSeat2, contract: !isSeat2 && code, sent };
   }));
+  S.seatOwns = S.owners.some((o) => o.yours);
   if (S.wallet) S.walletBalance = await S.C.pc.getBalance({ address: S.wallet.account }).catch(() => null);
-  S.waiting = mine().find((e) => e.status !== "landed") || null;
+  const waiting2 = mine().find((e) => e.status !== "landed") || null;
+  S.waiting = waiting2 && same(waiting2.safe, safe.address) ? waiting2 : null;
+  S.waitingElsewhere = waiting2 && !S.waiting ? waiting2 : null;
   let kept = read("sab.proposal")[proposalKey()] || null;
   if (S.draft && Number(S.draft.nonce) !== safe.nonce) S.draft = null;
   if (kept && Number(kept.nonce) < safe.nonce) {
@@ -21468,7 +21672,7 @@ async function refresh() {
   S.review = S.current ? ask({ op: "review", chainId: S.C.id, safe: safe.address, tx: S.current.tx }) : null;
   S.votes = S.review?.ok ? await votesFor(S.C, safe.address, safe.owners, S.review.safeTxHash) : [];
   const was = S.seen;
-  S.seen = JSON.stringify([seat.n, safe.nonce, String(safe.balance), safe.owners, safe.threshold, S.votes, S.waiting?.n, S.walletBalance === null ? "" : String(S.walletBalance)]);
+  S.seen = JSON.stringify([safe.address, seat.n, safe.nonce, String(safe.balance), safe.owners, safe.threshold, S.votes, S.waiting?.n, S.walletBalance === null ? "" : String(S.walletBalance)]);
   return was !== S.seen;
 }
 async function guard(what, f) {
@@ -21596,6 +21800,7 @@ function discard() {
 async function voteSeat(tx) {
   await guard("Reading the seat and the Safe from the chain…", async () => {
     await refresh();
+    if (!S.seatOwns) throw new Error("Your seat isn't an owner of this Safe. Nothing was signed.");
     const nonceBefore = S.safe.nonce;
     if (Number(tx.nonce) >= S.safe.nonce) keepProposal(tx);
     const others = S.votes.filter((v) => v.toLowerCase() !== S.seat.address.toLowerCase());
@@ -21649,16 +21854,19 @@ function render() {
     S.flash && !S.busy && el("p", { class: "note" }, S.flash)
   ].filter(Boolean));
   if (!S.safe?.exists) {
-    for (const id of ["#act", "#send", "#owners", "#activity"]) $(id).replaceChildren();
-    $("#act").hidden = $("#send").hidden = $("#owners").hidden = $("#activity").hidden = true;
+    for (const id of ["#act", "#send", "#safes", "#owners", "#activity"]) {
+      $(id).replaceChildren();
+      $(id).hidden = true;
+    }
     return;
   }
   $("#act").hidden = !S.current;
   $("#act").className = "card";
-  $("#send").hidden = $("#owners").hidden = $("#activity").hidden = false;
+  $("#send").hidden = $("#safes").hidden = $("#owners").hidden = $("#activity").hidden = false;
   const fill = (id, parts) => $(id).replaceChildren(...parts.filter(Boolean));
   fill("#act", S.current ? approvalCard() : []);
   fill("#send", sendCard());
+  fill("#safes", safesCard());
   fill("#owners", ownersCard());
   fill("#activity", activityCard());
   if (focus) {
@@ -21683,7 +21891,7 @@ function drawAccount() {
     el(
       "div",
       {},
-      el("p", { class: "eyebrow" }, "Your shielded Safe"),
+      el("p", { class: "eyebrow" }, same(S.safe.address, S.home.safe) ? "Your shielded Safe" : S.seatOwns ? "A Safe your seat is in" : "A Safe your wallet is in"),
       el("div", { class: "balance" }, eth(S.safe.balance)),
       el(
         "div",
@@ -21718,7 +21926,7 @@ function drawAccount() {
 }
 function ownersCard() {
   const disabled = !!S.busy || !!S.current;
-  const t = S.safe.threshold, others = S.owners.filter((o) => !o.isSeat);
+  const t = S.safe.threshold;
   const out = [el("h2", {}, "Owners"), el("p", { class: "small" }, `${t} of ${S.owners.length} must approve each transaction.`)];
   out.push(el("ul", { class: "owners" }, ...S.owners.map((o) => {
     const [cls, name, what] = kindOf(o);
@@ -21730,26 +21938,34 @@ function ownersCard() {
         { class: "h" },
         addr(o.address),
         el("span", { class: "badge" }, name),
-        S.wallet && o.address.toLowerCase() === S.wallet.account.toLowerCase() ? el("span", { class: "badge you" }, "this wallet") : null
+        o.yours ? el("span", { class: "badge you" }, "your seat") : null,
+        S.wallet && same(o.address, S.wallet.account) ? el("span", { class: "badge you" }, "this wallet") : null
       ),
-      el("div", { class: "small" }, o.isSeat ? `Key ${S.seat.n} now. ${what}` : o.sent ? `Sent ${o.sent} transaction${o.sent === 1 ? "" : "s"}. ${what}` : what),
-      o.isSeat ? null : el("div", { class: "actions" }, el("button", { class: "link", type: "button", disabled, onclick: () => draftRemove(o.address) }, "Remove"))
+      el("div", { class: "small" }, o.yours ? `Key ${S.seat.n} now. ${what}` : !o.isSeat && !o.contract && o.sent ? `Sent ${o.sent} transaction${o.sent === 1 ? "" : "s"}. ${what}` : what),
+      o.yours ? null : el("div", { class: "actions" }, el("button", { class: "link", type: "button", disabled, onclick: () => draftRemove(o.address) }, "Remove"))
     );
   })));
-  const alone = others.length >= t;
+  const ordinary = S.owners.filter((o) => !o.isSeat), others = S.owners.filter((o) => !o.yours);
+  const exposed = ordinary.length >= t, backup = S.seatOwns && others.length >= t;
   out.push(el(
     "div",
-    { class: `verdict ${alone ? "bad" : "ok"}` },
-    el("b", {}, alone ? "Your seat isn't needed to approve" : "Every approval needs your seat"),
-    el("p", { class: "small" }, alone ? `${others.length === 1 ? "The other owner" : `${t} of the other owners`} can approve without it. That is a backup if you lose your passkey. It is also the way around the seat: someone who can forge curve signatures could sign as those owners and take the Safe.` : others.length ? "No set of the other owners reaches the threshold, so a broken curve isn't enough to take the Safe. But there's no backup: if your passkey is lost, the Safe is stuck." : "The seat is the only owner. If your passkey is lost, the Safe is stuck.")
+    { class: `verdict ${exposed ? "bad" : "ok"}` },
+    el("b", {}, exposed ? "Ordinary keys can approve without a seat" : "Every approval needs a seat"),
+    el("p", { class: "small" }, exposed ? `${ordinary.length === 1 ? "One ordinary owner" : `${t} of the ${ordinary.length} ordinary owners`} can approve with no seat at all. Someone who can forge curve signatures could sign as them and take the Safe.` : ordinary.length ? `The ordinary owners can't reach ${t} without a seat, so a broken curve isn't enough to take the Safe.` : "Every owner is a seat. A broken curve isn't enough to take the Safe.")
+  ));
+  if (S.seatOwns) out.push(el(
+    "div",
+    { class: `verdict ${backup ? "ok" : "warn"}` },
+    el("b", {}, backup ? "A backup if your passkey is lost" : "No backup if your passkey is lost"),
+    el("p", { class: "small" }, backup ? `The other owners can reach ${t} without your seat, and run the Safe or replace your seat.` : `The other owners can't reach ${t} without your seat. If your passkey is lost, the Safe is stuck.`)
   ));
   out.push(el(
     "details",
     { class: "small" },
-    el("summary", {}, "1 of 2, or 2 of 2?"),
-    el("p", {}, el("b", {}, "1 of 2"), ", your seat and your wallet: either can approve alone. Your wallet is a backup, and a way to get used to a multisig. But your wallet's key rests on a curve, and once it has signed anything its public key is public. If curves break, the seat no longer protects this Safe."),
-    el("p", {}, el("b", {}, "2 of 2"), ": both must approve. A broken curve can forge your wallet's vote, never the seat's, so the seat's protection holds. There is no backup: lose either key and the Safe is stuck."),
-    el("p", {}, "Both at once takes a second seat, a second passkey: say 2 of 3, with two seats and your wallet. This page can't build a second seat yet.")
+    el("summary", {}, "1 of 2, 2 of 2, or 2 of 3?"),
+    el("p", {}, el("b", {}, "Your seat and your wallet, 1 of 2"), ": either can approve alone. Your wallet is a backup, and a way to get used to a multisig. But your wallet's key rests on a curve, and once it has signed anything its public key is public. If curves break, the seats no longer protect this Safe."),
+    el("p", {}, el("b", {}, "2 of 2"), ": both must approve. A broken curve can forge your wallet's vote, never the seat's, so the protection holds. There is no backup: lose either key and the Safe is stuck."),
+    el("p", {}, el("b", {}, "Two seats and your wallet, 2 of 3"), ": any two. Your wallet can never approve alone, so every approval needs a one-time key, and if one passkey is lost the other seat and your wallet still reach 2. The other seat is another passkey's, made on the main page of another browser or device. Add its seat address here as an owner, then share each transaction with its device as a link.")
   ));
   const sel = (id, value, max, on) => el("select", { id, onchange: (e) => on(e.target.value) }, ...Array.from({ length: max }, (_, i) => el("option", { value: String(i + 1), selected: String(i + 1) === value }, String(i + 1))));
   out.push(
@@ -21790,6 +22006,47 @@ function ownersCard() {
   if (S.current) out.push(el("p", { class: "small" }, "One transaction at a time: finish or reject the one above first."));
   return out;
 }
+function safesCard() {
+  const list = safes();
+  if (!list.some((a) => same(a, S.safe.address))) list.push(S.safe.address);
+  return [
+    el("h2", {}, "Safes"),
+    el("ul", { class: "safes" }, ...list.map((a) => el(
+      "li",
+      {},
+      addr(a),
+      same(a, S.home.safe) ? el("span", { class: "badge" }, "yours") : null,
+      same(a, S.safe.address) ? el("span", { class: "badge you" }, "open") : el("button", { class: "link", type: "button", disabled: !!S.busy, onclick: () => openSafe(a) }, "Open")
+    ))),
+    el("p", { class: "small" }, "Your seat's address. Another Safe adds this as an owner, and then your passkey can approve for it too:"),
+    el("input", { class: "mono share-link", readonly: true, value: S.home.seat, "aria-label": "Your seat's address", onfocus: (e) => e.target.select() }),
+    el("div", { class: "actions" }, el("button", { type: "button", onclick: () => copy(S.home.seat, "Copied your seat's address.") }, "Copy your seat's address")),
+    el(
+      "details",
+      {},
+      el("summary", { class: "small" }, "Open another Safe your seat is in"),
+      el(
+        "div",
+        { class: "actions" },
+        el("input", { id: "add-safe", class: "mono", value: S.addSafe || "", placeholder: "0x…", spellcheck: "false", autocomplete: "off", "aria-label": "The Safe's address", oninput: (e) => {
+          S.addSafe = e.target.value;
+        } }),
+        el("button", { type: "button", disabled: !!S.busy, onclick: addSafe }, "Open it")
+      ),
+      el("p", { class: "small" }, "A link from another owner's device opens its Safe here by itself.")
+    )
+  ];
+}
+async function copy(text, said) {
+  try {
+    await navigator.clipboard.writeText(text);
+    S.flash = said;
+    S.error = "";
+  } catch {
+    S.error = "This browser wouldn't copy. Select the text shown and copy it yourself.";
+  }
+  render();
+}
 function sendCard() {
   const disabled = !!S.busy || !!S.current;
   return [
@@ -21828,7 +22085,7 @@ function approvalCard() {
     el("h3", {}, overtaken ? "Overtaken" : `Votes: ${count} of ${t}`),
     el("ul", { class: "votes" }, ...S.owners.map((o) => {
       const voted = S.votes.some((v) => v.toLowerCase() === o.address.toLowerCase());
-      const said = voted ? "approved" : o.isSeat && w ? `key ${w.n} signed it; not on chain yet` : "not yet";
+      const said = voted ? "approved" : o.yours && w ? `key ${w.n} signed it; not on chain yet` : "not yet";
       return el("li", { class: voted ? "yes" : "" }, el("span", { class: "mark", "aria-hidden": "true" }, voted ? "✓" : "○"), addr(o.address), el("span", { class: "small" }, ` ${kindOf(o)[1]} · ${said}`));
     }))
   );
@@ -21839,6 +22096,8 @@ function approvalCard() {
   const tooMuch = !w && BigInt(tx.value || 0) > S.safe.balance;
   if (tooMuch) out.push(el("p", { class: "note" }, `The Safe has ${eth(S.safe.balance)}, and this sends ${eth(BigInt(tx.value))}. Approving it now would spend a vote, and for the seat a key, on a transaction the Safe can't run.`));
   const elsewhere = S.home.found && !mine().length;
+  const wElse = S.waitingElsewhere;
+  if (wElse && !seatVoted && S.seatOwns) out.push(el("p", { class: "note" }, `Key ${n} signed an approval for another Safe (${short(wElse.safe)}), and it hasn't landed. One signature per key, ever: send that one first, then key ${n + 1} can approve this. `, el("button", { class: "link", type: "button", disabled: !!S.busy, onclick: () => openSafe(getAddress(wElse.safe)) }, "Open that Safe")));
   const ack = (k, text) => el("label", { class: "small ack" }, el("input", { type: "checkbox", checked: !!acks[k], onchange: (e) => {
     acks[k] = e.target.checked;
     gates.forEach((g) => g());
@@ -21853,7 +22112,7 @@ function approvalCard() {
     return b;
   };
   const needRed = red ? ["red"] : [];
-  if (!seatVoted || overtaken) {
+  if ((!seatVoted || overtaken) && S.seatOwns && !wElse) {
     const label = w ? `Hold to send approval ${w.n} again` : `Hold to approve with key ${n}`;
     if (!S.wallet) buttons.push(el("span", { class: "small" }, "Connect a wallet to pay the seat's gas, or send it from ", el("a", { href: "./" }, "the main page"), " by link."));
     else if (!canPay()) buttons.push(el("span", { class: "small" }, `${S.wallet.name}'s account has no ETH for the seat's gas.`));
@@ -21874,6 +22133,17 @@ function approvalCard() {
     rejectButton()
   ));
   if (elsewhere && !w && !seatVoted) out.push(el("p", { class: "note" }, `Another device made this seat, and this browser has no record of what its keys signed. If that device signed with key ${n} and its transaction is still pending, signing here would be key ${n}'s second signature: enough to forge a third. Check there first, and use one device per seat.`));
+  if (!overtaken && count < t) {
+    const link = proposalLink(S.C, S.safe.address, tx, location.origin + location.pathname);
+    out.push(el(
+      "div",
+      { class: "share" },
+      el("h4", {}, "Ask another owner"),
+      el("p", { class: "small" }, `Send this link to another owner's device: a seat's, or a wallet's. Its console works out the hash itself, and its code should read ${r.verify}. It sees the votes cast so far on chain. The link holds the transaction, and nothing signed.`),
+      el("input", { class: "mono share-link", readonly: true, value: link, "aria-label": "The link", onfocus: (e) => e.target.select() }),
+      el("div", { class: "actions" }, el("button", { type: "button", disabled: !!S.busy, onclick: () => copy(link, "Link copied. This page shows the new votes as they land.") }, "Copy link"))
+    ));
+  }
   if (w && !overtaken) out.push(el("p", { class: "small" }, `Key ${w.n} already signed this approval. One signature per key, ever: the console will only send this same one again. No tap needed.`));
   else if (!seatVoted && !overtaken) out.push(el("p", { class: "small" }, `Holding asks your passkey once. The console signs with key ${n}, burns it and names key ${n + 1}. Your wallet pays the gas.`));
   if (mineToo && !overtaken && !w && count < t) out.push(el("p", { class: "small" }, "Your wallet votes with its own key, the curve key a broken curve would forge. It shows that key's public half on chain, if it wasn't already."));
@@ -21891,13 +22161,13 @@ function activityCard() {
     es.length ? el("ul", { class: "history" }, ...es.map((e) => el(
       "li",
       {},
-      el("div", { class: "h" }, el("span", {}, `#${e.n} · ${e.summary}`), el("span", { class: `badge ${e.status}` }, e.status)),
+      el("div", { class: "h" }, el("span", {}, `#${e.n} · ${e.summary}${same(e.safe, S.safe.address) ? "" : ` · Safe ${short(e.safe)}`}`), el("span", { class: `badge ${e.status}` }, e.status)),
       el("div", { class: "s" }, `verify ${e.verify} · `, e.txHash ? txLink(e.txHash) : "not sent yet")
     ))) : el("p", { class: "muted" }, "This browser's console hasn't approved anything for this seat yet."),
     el("p", { class: "small" }, "Votes by other owners aren't listed here: the Safe's own history on the explorer has them.")
   ];
 }
-var S, log, read, home, proposalKey, ledger, mine, say, walletId, isOwner, canPay, KIND, kindOf;
+var S, log, read, home, proposalKey, safesKey, safes, same, ledger, mine, say, walletId, isOwner, canPay, KIND, kindOf;
 var init_wallet2 = __esm({
   "src/wallet.mjs"() {
     init_esm();
@@ -21905,6 +22175,7 @@ var init_wallet2 = __esm({
     init_passkey();
     init_chain2();
     init_approve2();
+    init_pay();
     init_ui();
     refuseFrames();
     S = { busy: "", error: "", flash: "", send: { to: "", amount: "0.0001" }, add: "", addThreshold: "1", threshold: "", draft: null, acks: {} };
@@ -21923,6 +22194,9 @@ var init_wallet2 = __esm({
     };
     home = () => read("sab.home")[`${S.C.id}:${S.pk.id}`] || null;
     proposalKey = () => `${S.C.id}:${S.safe.address.toLowerCase()}`;
+    safesKey = () => `${S.C.id}:${S.home.seat.toLowerCase()}`;
+    safes = () => [S.home.safe, ...read("sab.safes")[safesKey()] || []];
+    same = (a, b) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
     ledger = () => ask({ op: "ledger" }).entries || [];
     mine = () => ledger().filter((e) => e.chainId === S.C.id && e.seat === S.home.seat.toLowerCase());
     say = (t) => {
@@ -21934,116 +22208,13 @@ var init_wallet2 = __esm({
     canPay = () => !!S.wallet && S.walletBalance !== 0n;
     KIND = {
       seat: ["seat", "Sign and Burn seat", "A passkey and a one-time key. The key changes after every approval, so a broken curve isn't enough."],
-      contract: ["contract", "A contract", "Another seat, or a smart account: this page can't tell what it checks."],
+      other: ["seat", "Sign and Burn seat", "Another passkey's seat, made by the SeatFactory. It changes its key after every approval too. Its device holds its own ledger."],
+      contract: ["contract", "A contract", "Not a seat the SeatFactory made: a smart account, perhaps. This page can't tell what it checks."],
       exposed: ["exposed", "Ordinary key", "Its public key is on chain: it has signed transactions. Anyone who can forge curve signatures could sign as it."],
       fresh: ["fresh", "Ordinary key", "It has sent no transactions, so only its address, a hash of its key, is on chain. Its first signature shows its public key."]
     };
-    kindOf = (o) => KIND[o.isSeat ? "seat" : o.contract ? "contract" : o.sent ? "exposed" : "fresh"];
+    kindOf = (o) => KIND[o.yours ? "seat" : o.isSeat ? "other" : o.contract ? "contract" : o.sent ? "exposed" : "fresh"];
     boot2();
-  }
-});
-
-// src/pay.mjs
-function unb64(s) {
-  if (!/^[A-Za-z0-9_-]*$/.test(s || "")) return null;
-  try {
-    return bytesToHex(Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)), (c) => c.charCodeAt(0)));
-  } catch {
-    return null;
-  }
-}
-function toLink(req, base) {
-  const q = new URLSearchParams({ pay: req.tag, chain: String(req.chain), x: req.x, y: req.y, seat: String(req.seatNumber), key: req.firstKey });
-  return `${base}#${q}`;
-}
-function approvalLink(C2, n, a, tx, base) {
-  const q = new URLSearchParams({
-    pay: APPROVAL_TAG,
-    chain: String(C2.id),
-    seat: a.seat.toLowerCase(),
-    safe: a.safe.toLowerCase(),
-    n: String(n),
-    to: tx.to.toLowerCase(),
-    value: String(tx.value),
-    data: (tx.data || "0x").toLowerCase(),
-    op: String(tx.operation),
-    nonce: String(tx.nonce),
-    next: a.nextKey.toLowerCase(),
-    ot: b64("0x" + a.oneTime.map((v) => v.slice(2)).join("")),
-    sig: b64(a.curveSig)
-  });
-  return `${base}#${q}`;
-}
-function fromLink(hash3, C2) {
-  const q = new URLSearchParams(String(hash3 || "").replace(/^#/, ""));
-  if (!q.has("pay")) return null;
-  const tag = q.get("pay");
-  if (tag !== TAG && tag !== APPROVAL_TAG) return { refuse: `This link asks for "${tag.slice(0, 40)}", which this page doesn't know. It knows ${TAG} and ${APPROVAL_TAG}.` };
-  const chain = Number(q.get("chain"));
-  if (chain !== C2.id) return { refuse: `This link is for chain ${String(q.get("chain")).slice(0, 12)}. This page works on ${C2.chain.name} (${C2.id}) only.` };
-  return tag === TAG ? buildFrom(q, chain) : approvalFrom(q, chain);
-}
-function approvalFrom(q, chain) {
-  const get = (k) => (q.get(k) || "").toLowerCase();
-  const again = " Ask for the link again.";
-  if (!ADDR.test(get("seat")) || !ADDR.test(get("safe")) || !ADDR.test(get("to"))) return { refuse: "This link's seat, Safe or recipient isn't an address." + again };
-  if (!/^(0|[1-9]\d{0,18})$/.test(get("n")) || !UINT.test(get("value")) || !UINT.test(get("nonce"))) return { refuse: "This link's key number, value or nonce isn't a number." + again };
-  if (!/^0x([0-9a-f]{2}){0,8192}$/.test(get("data"))) return { refuse: "This link's call data isn't hex bytes." + again };
-  if (get("op") !== "0" && get("op") !== "1") return { refuse: "This link's operation is neither a call nor a delegatecall." + again };
-  if (!/^0x[0-9a-f]{64}$/.test(get("next"))) return { refuse: "This link's next key isn't a 32-byte fingerprint." + again };
-  const ot = unb64(q.get("ot")), sig = unb64(q.get("sig"));
-  if (!ot || ot.length !== 2 + 2 * ONE_TIME) return { refuse: "This link's one-time signature isn't 67 values of 32 bytes." + again };
-  if (!sig || sig.length < 4 || sig.length > 2 + 2 * 4096) return { refuse: "This link's passkey signature isn't there, or is far too long." + again };
-  const oneTime = Array.from({ length: 67 }, (_, j) => "0x" + ot.slice(2 + 64 * j, 66 + 64 * j));
-  return { req: {
-    tag: APPROVAL_TAG,
-    chain,
-    seat: get("seat"),
-    safe: get("safe"),
-    n: Number(get("n")),
-    nextKey: get("next"),
-    oneTime,
-    curveSig: sig,
-    tx: { to: get("to"), value: get("value"), data: get("data"), operation: Number(get("op")), nonce: get("nonce") }
-  } };
-}
-function buildFrom(q, chain) {
-  const x = (q.get("x") || "").toLowerCase(), y = (q.get("y") || "").toLowerCase();
-  const seat = q.get("seat") || "", key = (q.get("key") || "").toLowerCase();
-  if (!HEX32.test(x) || !HEX32.test(y)) return { refuse: "This link's passkey public key isn't two 32-byte numbers. Ask for the link again." };
-  if (!/^(0|[1-9]\d{0,9})$/.test(seat) || Number(seat) > 4294967295) return { refuse: "This link's seat number isn't a number. Ask for the link again." };
-  if (!/^0x[0-9a-f]{64}$/.test(key) || /^0x0{64}$/.test(key)) return { refuse: "This link's first key isn't a 32-byte fingerprint. Ask for the link again." };
-  return { req: { tag: TAG, chain, x, y, seatNumber: Number(seat), firstKey: key } };
-}
-async function resolve(C2, req) {
-  const pk = { x: req.x, y: req.y };
-  const signer = getAddress(await signerAddress(C2, pk));
-  const seat = getAddress(await seatAddress(C2, signer, req.seatNumber, req.firstKey));
-  const safe = getAddress(await safeAddress(C2, seat));
-  const built = await hasCode(C2, seat) && await hasCode(C2, safe);
-  const calls = built ? [] : await buildCalls(C2, { pk, signer, seatNumber: req.seatNumber, firstKey: req.firstKey, seat });
-  return { signer, seat, safe, built, calls };
-}
-var TAG, APPROVAL_TAG, HEX32, ADDR, UINT, ONE_TIME, b64, request;
-var init_pay = __esm({
-  "src/pay.mjs"() {
-    init_esm();
-    init_chain2();
-    TAG = "sign-and-burn/build/v1";
-    APPROVAL_TAG = "sign-and-burn/approval/v1";
-    HEX32 = /^[0-9a-f]{64}$/;
-    ADDR = /^0x[0-9a-f]{40}$/;
-    UINT = /^(0|[1-9]\d{0,77})$/;
-    ONE_TIME = 67 * 32;
-    b64 = (hex3) => btoa(String.fromCharCode(...hexToBytes(hex3))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-    request = (C2, pk, home2) => ({
-      tag: TAG,
-      chain: C2.id,
-      x: pk.x.toLowerCase(),
-      y: pk.y.toLowerCase(),
-      seatNumber: home2.seatNumber,
-      firstKey: home2.firstKey.toLowerCase()
-    });
   }
 });
 
@@ -22405,7 +22576,8 @@ async function landedElsewhere(w) {
   const landed = await approvalOnChain(S2.C, S2.home.seat, w.n).catch(() => null);
   if (landed?.txHash) ask({ op: "sent", chainId: S2.C.id, seat: S2.home.seat, n: w.n, txHash: landed.txHash });
   await refresh2();
-  S2.last = { n: w.n, a: w.approval, hash: landed?.txHash, elsewhere: true, ran: S2.safe.nonce > Number(w.tx.nonce), m: w.m, summary: w.summary };
+  const safe = w.safe.toLowerCase() === S2.home.safe.toLowerCase() ? S2.safe : await readSafe(S2.C, w.safe);
+  S2.last = { n: w.n, a: w.approval, hash: landed?.txHash, elsewhere: true, ran: safe.nonce > Number(w.tx.nonce), m: w.m, summary: w.summary };
   S2.step = "done";
   S2.shared = "";
   render2();
@@ -22847,16 +23019,28 @@ function pressScreen(s, disabled) {
   );
   if (!w) out.push(form);
   const tx = w ? w.tx : currentTx();
-  const r = ask({ op: "review", chainId: S2.C.id, safe: S2.home.safe, tx });
+  const safe = w ? w.safe : S2.home.safe, other = safe.toLowerCase() !== S2.home.safe.toLowerCase();
+  const r = ask({ op: "review", chainId: S2.C.id, safe, tx });
   if (!r.ok) {
     out.push(el("p", { class: "refuse" }, r.refuse));
     return out;
   }
   if (r.level === "red") s.className = "screen red";
   if (w) out.push(el("p", { class: "note" }, `Key ${w.n} already signed this approval. One signature per key, ever: the console will only send this same one again. No tap needed.`));
-  out.push(...reviewParts(r, S2.home.safe, tx, "Safe transaction hash, worked out by the console"));
+  out.push(...reviewParts(r, safe, tx, "Safe transaction hash, worked out by the console"));
   if (r.refuse) {
     out.push(el("p", { class: "refuse" }, "The console refuses: " + r.refuse));
+    return out;
+  }
+  if (other) {
+    watch();
+    out.push(el(
+      "p",
+      { class: "note" },
+      `This approval is for another Safe your seat is in (${short(safe)}), not yours. `,
+      el("a", { href: "wallet.html" }, "Send it from the wallet page"),
+      `, or as a link. Until it lands, key ${w.n} sends nothing else.`
+    ), approvalShareBox(w, !canPay2(), disabled));
     return out;
   }
   if (S2.wallet && !canPay2()) out.push(el("p", { class: "note" }, `${S2.wallet.name}'s account ${short(S2.wallet.account)} has no ${S2.C.chain.name} ETH for gas. ` + (w ? "Send this approval from another device, or fund that account and come back." : "Holding still signs here; then the approval goes out as a link for a wallet elsewhere. Or fund that account first.")));
