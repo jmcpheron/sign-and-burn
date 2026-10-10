@@ -82,8 +82,9 @@ and says so. A token send is a Safe transaction calling the token's `transfer`, 
 it like any other. The page holds the hold back when the Safe has less of the token than it sends.
 
 **Getting around.** The main addresses (the Safe, the wallet, owners, Safes, the address book)
-have a copy icon: one press copies the whole address. A caret beside the Safe's address opens a menu
-of your Safes, each by blockie and name. A caret beside "To" opens your other Safes, the wallet here
+have a copy icon: one press copies the whole address. The header shows the Safe in one box: its
+blockie, your name for it, the start and end of its address (copy icon; the explorer on a press), and
+on the far right a caret that opens a menu of your Safes, each by blockie and name. A caret beside "To" opens your other Safes, the wallet here
 and your contacts (any address with a name in the address book), and under "To" the page says
 whom it is: your name for it, or "not in your address book". 25%, 50% and Max fill in a share of the
 Safe's balance of the chosen asset, worked out in its smallest units; Max is all of it, since the

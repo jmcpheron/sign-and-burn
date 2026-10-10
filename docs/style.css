@@ -353,10 +353,19 @@ button.icon.done { color: var(--ok); }
   border: none; background: none; padding: 8px 10px; border-radius: 8px; }
 .picker .menu li > button:hover, .picker .menu li > button.on { background: var(--panel-2); }
 .picker .menu li > .small, .picker .menu li > .link { display: block; padding: 6px 10px; }
-.wallet-head .picker .menu { left: 0; right: auto; }
 .to-field { display: grid; gap: 4px; font-size: 0.86rem; color: var(--muted); min-width: 0; }
 .to-row { display: flex; gap: 6px; align-items: center; }
 .to-row input { flex: 1 1 auto; min-width: 0; }
 .to-preview { min-height: 1.4em; }
 .actions.quick { margin-top: 6px; gap: 6px; }
 .actions.quick button { padding: 4px 12px; border-radius: 999px; font-size: 0.86rem; }
+/* ---- the Safe's box, in the wallet page's header */
+.safe-box { display: flex; align-items: center; gap: 12px; width: 100%; max-width: 560px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); }
+.safe-box .wallet-blockie { width: 52px; height: 52px; }
+.safe-id { display: grid; gap: 2px; min-width: 0; flex: 1 1 auto; }
+.safe-id .eyebrow { margin: 0; font-size: 0.72rem; }
+.safe-name { font-size: 1.05rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.safe-addr { display: flex; align-items: center; gap: 2px; font-size: 0.95rem; }
+.safe-box > .picker { margin-left: auto; flex: none; }
+.safe-box > .picker > summary { min-width: 40px; min-height: 40px; }
+.safe-money { width: 100%; }

@@ -33,4 +33,13 @@ The console and the contracts are unchanged.
   2.5 and 5 of 5 USDC.
 - `npm test`, and `npm run build` twice: the same bytes.
 
+## Then, from a phone
+
+The caret's menu hung off the right edge of an iPhone's screen: it opened from the left of a caret
+that sat partway along a wrapping row. And the address line under the balance repeated the big
+blockie above it. The header now holds the Safe in one rounded box: the blockie, the eyebrow, your
+name for the Safe, the start and end of its address with the copy icon, and the caret at the box's
+far right; the menu opens from there, leftwards. The separate address line is gone. The e2e opens the
+menu at 390 pixels wide and checks it is inside the screen (146 checks pass).
+
 Not checked: on a phone. The menus are `<details>`, so they open by tap; a tap elsewhere closes them.
