@@ -22,6 +22,7 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { concat, createPublicClient, decodeFunctionData, encodeFunctionData, formatEther, http, parseAbi } from "viem";
 import { startChain } from "../tools/chain/anvil.mjs";
+import { tokenCode } from "../tools/chain/test-token.mjs";
 import { MULTICALL_ABI } from "./src/chain.mjs";
 
 const SITE = fileURLToPath(new URL(".", import.meta.url));
@@ -599,6 +600,44 @@ try {
   now = await onChain();
   check(now.owners.length === 1 && now.owners[0] === H.seat.toLowerCase() && now.threshold === 1 && now.n === n2 + 1, "on chain: the seat alone again, 1 of 1");
 
+  // f2. tokens. A test token sits at Base Sepolia's USDC address, which the console knows; another at an
+  // address it doesn't. The Safe holds some of each (written straight into their storage).
+  const USDC = "0x036CbD53842c5426634e7929541eC2318f3dCF7e", OTHER = "0x00000000000000000000000000000000000070e1";
+  const ERC20 = parseAbi(["function balanceOf(address) view returns (uint256)"]);
+  const word = (v) => "0x" + BigInt(v).toString(16).padStart(64, "0");
+  await rpc("anvil_setCode", [USDC, tokenCode("USDC", 6)]);
+  await rpc("anvil_setCode", [OTHER, tokenCode("TEST", 18)]);
+  await rpc("anvil_setStorageAt", [USDC, word(H.safe), word(5000000n)]);
+  await rpc("anvil_setStorageAt", [OTHER, word(H.safe), word(3n * 10n ** 18n)]);
+  await page.reload();
+  check(await see(/5 USDC/), "tokens: the Safe's USDC shows beside its ETH");
+  await page.locator("#send-asset").selectOption({ label: "USDC" });
+  await page.locator("#send-to").fill(TO3);
+  await page.locator("#send-amount").fill("100");
+  await inCard("#send", "Review");
+  check(await see(/Approve: Send 100 USDC[\s\S]*The Safe has 5 USDC, and this sends 100 USDC/) && await page.locator("button.hold").isDisabled(),
+    "more USDC than the Safe holds: said, and the hold waits");
+  await inCard("#act", "Reject");
+  await page.locator("#send-amount").fill("1.5");
+  await inCard("#send", "Review");
+  check(await see(/SEND USDC[\s\S]*Send 1\.5 USDC/) && await page.locator("#act.red").count() === 0, "1.5 USDC: the console names the token and the amount, and the page isn't red");
+  await hold();
+  check(await see(/Key \d+: signed, sent, burned\. The Safe ran it/, 60000) && (await pc.readContract({ address: USDC, abi: ERC20, functionName: "balanceOf", args: [TO3] })) === 1500000n,
+    "one press: the Safe sends 1.5 USDC");
+  await page.locator("#send details summary").click();
+  await page.locator("#add-token").fill(OTHER);
+  await page.getByRole("button", { name: "Add it" }).click();
+  check(await see(/Added TEST\. The console doesn't know it/), "a token added by address: its symbol and decimals from its contract");
+  await page.locator("#send-to").fill(TO3);
+  await page.locator("#send-amount").fill("0.5");
+  await inCard("#send", "Review");
+  check(await see(/SEND TOKEN[\s\S]*Send 500,000,000,000,000,000 TOKEN/), "a token the console doesn't know: the review shows raw units, and says so");
+  await hold();
+  check(await see(/Key \d+: signed, sent, burned\. The Safe ran it/, 60000) && (await pc.readContract({ address: OTHER, abi: ERC20, functionName: "balanceOf", args: [TO3] })) === 5n * 10n ** 17n,
+    "…and the Safe sends it");
+  await page.locator("#send-asset").selectOption("ETH");
+  await page.locator("#send-amount").fill("0.0001");
+
   // g. at phone width, with a transaction on the card; then reject is one press
   await page.setViewportSize({ width: 390, height: 900 });
   await page.locator("#send-to").fill(TO3);
@@ -609,8 +648,9 @@ try {
     .map((e) => `${e.tagName.toLowerCase()}.${e.className}#${e.id}:${Math.round(e.getBoundingClientRect().right)}`).slice(0, 8));
   check(await page.evaluate(() => document.documentElement.scrollWidth <= 390), `the wallet page at phone width, a transaction open: no sideways scroll${wide.length ? ": " + wide.join(" ") : ""}`);
   await shot("9-wallet-phone");
+  const nReject = (await onChain()).n;
   await inCard("#act", "Reject");
-  check(await page.locator("#act").waitFor({ state: "hidden", timeout: 5000 }).then(() => true, () => false) && (await onChain()).n === n2 + 1, "Reject: one press, and nothing signed");
+  check(await page.locator("#act").waitFor({ state: "hidden", timeout: 5000 }).then(() => true, () => false) && (await onChain()).n === nReject, "Reject: one press, and nothing signed");
   const hist2 = await page.locator("#activity").innerText();
   check([k, k + 1, n2].every((x) => hist2.includes(`#${x}`)), "the seat's approvals from both pages, in one ledger");
   await page.setViewportSize({ width: 390, height: 900 });

@@ -19,7 +19,7 @@
 // wallet. The page keeps the Safes this seat is in ("sab.safes") and votes on whichever is open. A
 // transaction waiting for votes goes from one owner's device to another's as a link
 // (sign-and-burn/proposal/v1, src/pay.mjs): the Safe and the fields, nothing signed, no hash.
-import { getAddress, isAddress, parseEther, zeroAddress } from "viem";
+import { formatUnits, getAddress, isAddress, parseEther, parseUnits, zeroAddress } from "viem";
 import * as consoleCore from "./console.mjs";
 import * as P from "./passkey.mjs";
 import * as ch from "./chain.mjs";
@@ -30,7 +30,7 @@ import { $, addr, drawBlockie, el, eth, holdButton, plain, qrToggle, refuseFrame
 
 refuseFrames();
 
-const S = { busy: "", error: "", flash: "", send: { to: "", amount: "0.0001" }, add: "", addThreshold: "1", threshold: "", draft: null, acks: {} };
+const S = { busy: "", error: "", flash: "", send: { to: "", amount: "0.0001", asset: "ETH" }, add: "", addThreshold: "1", threshold: "", draft: null, acks: {} };
 
 const log = $("#log");
 consoleCore.onLine((dir, line) => {
@@ -53,6 +53,30 @@ function keepSafe(a) {
   try { localStorage.setItem("sab.safes", JSON.stringify(all)); } catch {}
 }
 const same = (a, b) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
+
+// ----------------------------------------------------------------------------- tokens
+// The tokens the console knows (cfg.py, pinned: it reads their amounts), and ones you added here by
+// address ("sab.tokens"): their symbol and decimals come from their contract, for this page's own
+// display, and the console shows their amounts in raw units.
+const tokens = () => [...ch.pinnedTokens(S.C), ...(read("sab.tokens")[String(S.C.id)] || []).filter((t) => !ch.pinnedTokens(S.C).some((p) => same(p.address, t.address)))];
+const tokenOf = (a) => tokens().find((t) => same(t.address, a)) || null;
+const units = (v, t) => `${Number(formatUnits(v, t.decimals)).toLocaleString("en-US", { maximumFractionDigits: Math.min(t.decimals, 6) })} ${t.symbol}`;
+
+async function addToken() {
+  const a = (S.addToken || "").trim();
+  await guard("Reading the token from the chain…", async () => {
+    if (!isAddress(a)) throw new Error("Add a token: that isn't an address.");
+    if (tokenOf(a)) throw new Error("That token is on the list already.");
+    let t;
+    try { t = await ch.tokenInfo(S.C, a); } catch { throw new Error(`${short(a)} doesn't answer as a token (symbol and decimals). Nothing was added.`); }
+    const all = read("sab.tokens");
+    all[String(S.C.id)] = [...(all[String(S.C.id)] || []), t];
+    try { localStorage.setItem("sab.tokens", JSON.stringify(all)); } catch {}
+    S.addToken = ""; S.send.asset = t.address;
+    S.flash = `Added ${t.symbol}. The console doesn't know it, so its review shows raw units: ${t.decimals} decimals make one ${t.symbol}.`;
+    await refresh();
+  });
+}
 function keepProposal(tx) {
   const all = read("sab.proposal");
   if (tx) all[proposalKey()] = tx; else delete all[proposalKey()];
@@ -159,6 +183,8 @@ async function refresh() {
   }));
   S.seatOwns = S.owners.some((o) => o.yours);
   if (S.wallet) S.walletBalance = await S.C.pc.getBalance({ address: S.wallet.account }).catch(() => null);
+  const list = tokens(), bals = await ch.tokenBalances(S.C, safe.address, list);
+  S.tokenBal = new Map(list.map((t, i) => [t.address.toLowerCase(), bals[i]]));
   // The transaction on the approval card: one the seat signed and is waiting on (key n is bound to it),
   // else one that already has votes and hasn't run, else whatever the visitor is drafting.
   // Key n is bound to the approval it signed, whichever Safe that was for.
@@ -238,11 +264,12 @@ function draft(tx) {
 }
 
 function draftSend() {
-  const { to, amount } = S.send;
+  const { to, amount, asset } = S.send, t = asset === "ETH" ? null : tokenOf(asset);
   if (!isAddress(to)) return fail("Send to: that isn't an address.");
   let value;
-  try { value = parseEther(amount || ""); } catch { return fail("Amount: that isn't a number of ETH."); }
+  try { value = t ? parseUnits(amount || "", t.decimals) : parseEther(amount || ""); } catch { return fail(`Amount: that isn't a number of ${t ? t.symbol : "ETH"}.`); }
   if (value <= 0n) return fail("Amount: send more than nothing.");
+  if (t) return draft(ch.tokenTx(t.address, to, value, S.safe.nonce));
   draft({ to: getAddress(to), value: value.toString(), data: "0x", operation: 0, nonce: String(S.safe.nonce) });
 }
 
@@ -369,7 +396,9 @@ function drawAccount() {
     el("div", { class: "wallet-sub" }, addr(S.safe.address),
       el("span", { class: "chip" }, `${S.safe.threshold} of ${S.safe.owners.length} to approve`),
       el("span", { class: "chip" }, `seat at key ${S.seat.n}`),
-      el("span", { class: "chip" }, `nonce ${S.safe.nonce}`))),
+      el("span", { class: "chip" }, `nonce ${S.safe.nonce}`)),
+    tokens().some((t) => S.tokenBal?.get(t.address.toLowerCase())) ? el("div", { class: "wallet-sub tokens" },
+      ...tokens().filter((t) => S.tokenBal?.get(t.address.toLowerCase())).map((t) => el("span", { class: "chip token", title: t.address }, units(S.tokenBal.get(t.address.toLowerCase()), t)))) : null),
     el("div", { class: "wallet-who" }, S.wallet
       ? el("span", {}, el("span", { class: "small" }, `${S.wallet.name}: `), addr(S.wallet.account),
         el("span", { class: "small" }, ` ${S.walletBalance != null ? eth(S.walletBalance) : ""} · ${isOwner(S.wallet.account) ? "an owner" : "pays gas only"}`))
@@ -532,13 +561,26 @@ async function copy(text, said) {
 }
 
 function sendCard() {
-  const disabled = !!S.busy || !!S.current;
+  const disabled = !!S.busy || !!S.current, list = tokens(), t = S.send.asset === "ETH" ? null : tokenOf(S.send.asset);
+  if (S.send.asset !== "ETH" && !t) S.send.asset = "ETH";
+  const bal = t ? S.tokenBal?.get(t.address.toLowerCase()) : S.safe.balance;
   return [el("h2", {}, "Send"),
     el("div", { class: "form send-form" },
       el("label", {}, "To", el("input", { id: "send-to", class: "mono", value: S.send.to, placeholder: "0x…", spellcheck: "false", autocomplete: "off", oninput: (e) => { S.send.to = e.target.value.trim(); } })),
-      el("label", {}, "Amount (ETH)", el("input", { id: "send-amount", value: S.send.amount, inputmode: "decimal", oninput: (e) => { S.send.amount = e.target.value.trim(); } }))),
+      el("label", {}, "Asset", el("select", { id: "send-asset", onchange: (e) => { S.send.asset = e.target.value; render(); } },
+        el("option", { value: "ETH", selected: !t }, "ETH"),
+        ...list.map((x) => el("option", { value: x.address, selected: !!t && same(t.address, x.address) }, x.pinned ? x.symbol : `${x.symbol} (added here)`)))),
+      el("label", {}, `Amount (${t ? t.symbol : "ETH"})`, el("input", { id: "send-amount", value: S.send.amount, inputmode: "decimal", oninput: (e) => { S.send.amount = e.target.value.trim(); } }))),
+    el("p", { class: "small" }, `The Safe holds ${bal == null ? "an amount this page couldn't read" : t ? units(bal, t) : eth(bal)}.` +
+      (t && !t.pinned ? ` The console doesn't know ${t.symbol}: its review shows the amount in raw units (${t.decimals} decimals).` : "")),
     el("div", { class: "actions" }, el("button", { class: "go", type: "button", disabled, onclick: draftSend }, "Review")),
-    S.current ? el("p", { class: "small" }, "One transaction at a time: finish or reject the one above first.") : null];
+    S.current ? el("p", { class: "small" }, "One transaction at a time: finish or reject the one above first.") : null,
+    el("details", {}, el("summary", { class: "small" }, "Add a token"),
+      el("div", { class: "actions" },
+        el("input", { id: "add-token", class: "mono", value: S.addToken || "", placeholder: "The token's address, 0x…", spellcheck: "false", autocomplete: "off", "aria-label": "The token's address", oninput: (e) => { S.addToken = e.target.value; } }),
+        el("button", { type: "button", disabled: !!S.busy, onclick: addToken }, "Add it")),
+      el("p", { class: "small" }, `The console knows ${ch.pinnedTokens(S.C).map((x) => x.symbol).join(", ") || "no tokens"} on this chain. Any other ERC-20 works too; ` +
+        "the console reviews it as a token it doesn't know, with the amount in raw units."))];
 }
 
 /** The transaction the owners are voting on: what the console says it does, who has voted, and what
@@ -567,8 +609,12 @@ function approvalCard() {
       `this approval is the only thing key ${w.n} will ever send. Send it to move the seat on to key ${w.n + 1}; it runs nothing.`));
   }
   const acks = S.acks, gates = [];
-  const tooMuch = !w && BigInt(tx.value || 0) > S.safe.balance;
-  if (tooMuch) out.push(el("p", { class: "note" }, `The Safe has ${eth(S.safe.balance)}, and this sends ${eth(BigInt(tx.value))}. Approving it now would spend a vote, and for the seat a key, on a transaction the Safe can't run.`));
+  // The Safe must hold what it sends, ETH or a token on this page's list, or a vote (for the seat, a
+  // key) is spent on a transaction it can't run.
+  const ts = ch.tokenSendOf(tx), tk = ts && tokenOf(ts.token), tb = tk ? S.tokenBal?.get(tk.address.toLowerCase()) : null;
+  const tooMuch = !w && (BigInt(tx.value || 0) > S.safe.balance || (tb != null && ts.amount > tb));
+  if (tooMuch) out.push(el("p", { class: "note" }, (tk && tb != null && ts.amount > tb ? `The Safe has ${units(tb, tk)}, and this sends ${units(ts.amount, tk)}. `
+    : `The Safe has ${eth(S.safe.balance)}, and this sends ${eth(BigInt(tx.value))}. `) + "Approving it now would spend a vote, and for the seat a key, on a transaction the Safe can't run."));
   // A browser that found the seat on chain, whose console has signed nothing for it: another device's
   // console holds the ledger (as on the main page).
   const elsewhere = S.home.found && !mine().length;

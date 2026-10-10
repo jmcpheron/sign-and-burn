@@ -96,6 +96,11 @@ The checks, in order:
     - **Remove the wallet, the wallet first.** Red; approvals needed drops to 1. The wallet votes
       with `approveHash`; the seat's press carries both votes, and the Safe runs it. On chain: the
       seat alone, 1 of 1.
+    - **Tokens.** A test token (`tools/chain/test-token.mjs`) at Base Sepolia's USDC address, and one
+      at an address the console doesn't know, with the Safe's balances written into their storage.
+      USDC shows beside the ETH. 100 USDC, more than the Safe has: said, and the hold waits. 1.5 USDC:
+      the console names it, not red, and one press sends it. A token added by address: its symbol from
+      its contract, the console's review in raw units, and one press sends it.
     - **Reject** is one press, and nothing is signed. The seat's history lists approvals made on
       both pages, from one ledger. At phone width, no sideways scroll.
 17. Two seats. A second browser, with its own virtual passkey, makes a passkey, key 0 and its own

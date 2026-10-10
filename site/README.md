@@ -74,6 +74,13 @@ on chain. The link opens only on a device whose seat, or wallet, is an owner of 
 bound to whatever it signed: while an approval for one Safe waits, the seat approves nothing for
 another, and the main page offers only that approval too.
 
+**Tokens.** Send picks ETH or a token. The tokens the console knows are pinned in `console/cfg.py`
+(USDC on Base Sepolia, `0x036C…CF7e`, Circle's test USDC): it names them and their amounts. Any other
+ERC-20 can be added by address ("Add a token", kept in `sab.tokens`). The page reads its symbol and
+decimals for its own display, and the console reviews it as a token it doesn't know, in raw units,
+and says so. A token send is a Safe transaction calling the token's `transfer`, so its owners approve
+it like any other. The page holds the hold back when the Safe has less of the token than it sends.
+
 **Names.** "Name it" beside an owner or a Safe, and the Address book card, keep your names for
 addresses in `sab.names`. Every address the pages draw shows its name beside it, never instead of it,
 and the console never sees them. Export JSON writes `{tag: "sign-and-burn/address-book/v1", chain,
