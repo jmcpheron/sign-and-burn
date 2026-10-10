@@ -23,6 +23,12 @@ Every change to `contracts/src/` goes through these steps, and each review is ke
      - Keep it under 12,000 characters. It is stored on chain, in public, for good.
    - **A person pays, from their own wallet**, on the site. An AI agent never pays, never holds a key
      for it, and never asks for one.
+   - **What the wallet needs.** Real funds on Base mainnet (chain 8453), not Base Sepolia: test ETH
+     can't pay. The site takes USDC, ETH or CLAWD, swaps it to CLAWD and burns it. Have about $1 of
+     USDC or ETH, plus a little ETH for gas; paying in USDC on chain takes an approval first, so two
+     transactions. The price can change: the site shows the total before you sign. A wallet that
+     holds only a few dollars is enough, and keeps the rest of your funds out of it. The payment, the
+     wallet's address and the description are public on chain.
    - Write the job ID into the review's file as soon as it is known. The job lives on chain, so the
      report can be fetched later from anywhere.
    - Fetch the report from `GET https://onedollaraudit.com/api/jobs/<jobId>` (JSON, no login; it
@@ -48,4 +54,4 @@ Every change to `contracts/src/` goes through these steps, and each review is ke
 
 | date | commit | scope | job | status |
 |---|---|---|---|---|
-| 2026-10-08 | `f5c1c7d0` | `Seat`, `OneTimeKey`, `SeatFactory`, as deployed | [baseline](2026-10-08-baseline.md) | description drafted; waiting for the job ID |
+| 2026-10-08 | `f5c1c7d0` | `Seat`, `OneTimeKey`, `SeatFactory`, as deployed | [baseline](2026-10-08-baseline.md) | description updated 2026-10-10; waiting for the job ID |

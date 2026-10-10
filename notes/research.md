@@ -31,7 +31,7 @@ Any change to the contracts names the questions it touches and updates this file
 | 4 | [Secret handling](#4-secret-handling) | partly answered; a board's chip not yet |
 | 5 | [Recovery and bypasses](#5-recovery-and-bypasses) | **open**: the demo is 1 of 1 |
 | 6 | [Practical cost](#6-practical-cost) | measured on Base Sepolia; no comparisons yet |
-| 7 | [Prior art and review](#7-prior-art-and-review) | **open**: no survey; a baseline AI review asked for |
+| 7 | [Prior art and review](#7-prior-art-and-review) | **open**: a first survey; a baseline AI review asked for |
 
 ## 1. Complete authorization
 
@@ -127,6 +127,12 @@ public.
   the credential. Whether it syncs, and on which platforms, is untested.
 - **Look before signing.** Search the mempool and recent blocks for any transaction carrying key `n`.
   It is cheap, but it can't see a transaction that was never broadcast.
+- **A counter and the waiting approval, in a chip.** wedgie-pq spends a counter in a Trust M before
+  each signature, so no key number signs twice, even through a power cut. A counter alone can't send
+  an approval again; kept beside it, the waiting approval could. That needs the console on a board
+  with a chip, not a passkey ([question 7](#7-prior-art-and-review)).
+- **A fallback for lost state.** SHRINCS signs statelessly once its state is lost or restored from a
+  backup. Here that would mean a second, stateless signature scheme in the seat.
 
 ## 4. Secret handling
 
@@ -200,7 +206,20 @@ integrations, and hybrid passkey and post-quantum signers. Get independent crypt
 contract review before making stronger claims.
 
 **Today:**
-- No survey yet.
+- A first survey, on 2026-10-10 ([log](log/2026-10-10-01-prior-art.md)). wedgie-pq's code was read;
+  for the others, their own pages, not their code.
+
+  | project | what it binds | how it rotates | its state | when a transaction fails |
+  |---|---|---|---|---|
+  | [wedgie-pq](https://github.com/clawdbotatg/wedgie-pq) (`a930b55`): WOTS on Poseidon2, a Pico and a Trust M chip; for a Safe, through a STARK later | the message and the next key's public key, under `n` alone | every signature; the contract isn't built | the chip's counter, spent before signing | nothing keeps the signature, so a lost one leaves the chain expecting a key the chip has moved past |
+  | [Riva Labs Ephemeral Keys](https://github.com/RivaLabs-Core/Ephemeral-Keys-Protocol): ERC-4337 | the UserOp, with the next signer in `callData` | in `validateUserOp`, so it stands even if execution reverts | a seed on the device; a map of burned signers on chain | resending the same UserOp is safe. It moved off WOTS to FORS+C, a few-time scheme, because dropped UserOps, replacements and reorgs made reuse routine |
+  | [WOTS-39](https://ethereum-magicians.org/t/post-quantum-erc-4337-wots-39-winternitz-one-time-signature-wallet-for-ethereum/28715): ERC-4337 and EIP-7702 | a 32-byte hash; each new key is authorized by a Lamport-chain preimage | every transaction, same address | the chain tip and used slots on chain | not said |
+  | Solana Winternitz Vault, [winterwallet](https://github.com/blueshift-gg/winterwallet), [z0s-vault](https://github.com/z0s-app/z0s-vault) | the spend | a new vault, so a new address, every spend | none: each vault closes | not said |
+  | [Qanary](https://github.com/RaYYeR220/qanary): ML-DSA or Falcon as a Safe owner (`PQSafeOwner`) | the transaction | not per use | none | not applicable |
+  | [SHRINCS](https://delvingbitcoin.org/t/shrincs-324-byte-stateful-post-quantum-signatures-with-static-backups/2158) (Bitcoin): a stateful XMSS-style tree with a stateless fallback | the transaction | not per use: many signatures per key | the device; after a restore it signs only statelessly | its answer to lost state is the fallback |
+
+- Not found: a rotating one-time key behind one owner of an ordinary Safe, or one that pairs a
+  passkey's curve signature with a one-time signature.
 - A baseline AI review of the contracts, asked for on 2026-10-08:
   [reviews/2026-10-08-baseline.md](reviews/2026-10-08-baseline.md). That is a first pass, not an
   audit.
