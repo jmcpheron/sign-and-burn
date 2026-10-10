@@ -90,7 +90,18 @@ The checks, in order:
       seat alone, 1 of 1.
     - **Reject** is one press, and nothing is signed. The seat's history lists approvals made on
       both pages, from one ledger. At phone width, no sideways scroll.
-17. The CSP refuses another host. A phone-width screen has no sideways scroll. No page errors.
+17. Two seats. A second browser, with its own virtual passkey, makes a passkey, key 0 and its own
+    Safe; the wallet in that browser pays for the build from the main page ("Build it"). Then, on
+    the first browser's wallet page:
+    - The second seat is added to the first Safe, 1 of 2, with one press. The owners card knows it
+      for a seat (the SeatFactory made it): every approval needs a seat, and there is a backup.
+    - The wallet is added too, 2 of 3. On chain: two seats and the wallet, threshold 2.
+    - The wallet votes first on a send, and copies the link to ask another owner. It names the
+      wallet page and the transaction, and no hash. The second browser opens it: the first Safe,
+      the wallet's vote counted, the same check code. One press there (key 0, one passkey signature)
+      makes two votes, and the Safe runs it. The first browser sees it run by itself; the second
+      keeps both Safes its seat is in.
+18. The CSP refuses another host. A phone-width screen has no sideways scroll. No page errors.
 
 Screenshots go to `site/shots/` (not committed).
 

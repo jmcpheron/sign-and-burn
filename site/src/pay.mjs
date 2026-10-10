@@ -18,11 +18,17 @@
 // the Safe transaction hash from the fields itself, and the seat checks everything else. An approval
 // isn't secret once it leaves (anyone who sees it sent can copy it), and it can do only what was
 // signed. Until it lands, the console shares only that same approval again (core.begin, "resend").
+//
+// A third kind, for the wallet page: a Safe transaction waiting for votes, from one owner's device to
+// another's (sign-and-burn/proposal/v1, in "#propose=…"). It holds the Safe and the transaction's
+// fields, nothing signed and no hash. The other device's console works out the hash and what it does;
+// the votes already cast are on chain, where that page reads them.
 import { bytesToHex, getAddress, hexToBytes } from "viem";
 import * as ch from "./chain.mjs";
 
 export const TAG = "sign-and-burn/build/v1";
 export const APPROVAL_TAG = "sign-and-burn/approval/v1";
+export const PROPOSAL_TAG = "sign-and-burn/proposal/v1";
 const HEX32 = /^[0-9a-f]{64}$/;
 const ADDR = /^0x[0-9a-f]{40}$/;
 const UINT = /^(0|[1-9]\d{0,77})$/;
@@ -66,6 +72,37 @@ export function fromLink(hash, C) {
   const chain = Number(q.get("chain"));
   if (chain !== C.id) return { refuse: `This link is for chain ${String(q.get("chain")).slice(0, 12)}. This page works on ${C.chain.name} (${C.id}) only.` };
   return tag === TAG ? buildFrom(q, chain) : approvalFrom(q, chain);
+}
+
+/** A Safe transaction waiting for votes, as a link to the wallet page. */
+export function proposalLink(C, safe, tx, base) {
+  const q = new URLSearchParams({ propose: PROPOSAL_TAG, chain: String(C.id), safe: safe.toLowerCase(), to: tx.to.toLowerCase(), value: String(tx.value),
+    data: (tx.data || "0x").toLowerCase(), op: String(tx.operation), nonce: String(tx.nonce) });
+  return `${base}#${q}`;
+}
+
+/** A link's fragment -> null if it isn't a proposal, else { req: { safe, tx } } or { refuse }. */
+export function proposalFrom(hash, C) {
+  const q = new URLSearchParams(String(hash || "").replace(/^#/, ""));
+  if (!q.has("propose")) return null;
+  const tag = q.get("propose");
+  if (tag !== PROPOSAL_TAG) return { refuse: `This link asks for "${tag.slice(0, 40)}", which this page doesn't know. It knows ${PROPOSAL_TAG}.` };
+  if (Number(q.get("chain")) !== C.id) return { refuse: `This link is for chain ${String(q.get("chain")).slice(0, 12)}. This page works on ${C.chain.name} (${C.id}) only.` };
+  const get = (k) => (q.get(k) || "").toLowerCase();
+  const again = " Ask for the link again.";
+  if (!ADDR.test(get("safe"))) return { refuse: "This link's Safe isn't an address." + again };
+  const bad = txFields(get, again);
+  if (bad) return { refuse: bad };
+  return { req: { tag: PROPOSAL_TAG, chain: C.id, safe: get("safe"), tx: { to: get("to"), value: get("value"), data: get("data"), operation: Number(get("op")), nonce: get("nonce") } } };
+}
+
+/** The Safe transaction's fields in a link, each checked for its exact shape. -> why not, or "". */
+function txFields(get, again) {
+  if (!ADDR.test(get("to"))) return "This link's recipient isn't an address." + again;
+  if (!UINT.test(get("value")) || !UINT.test(get("nonce"))) return "This link's value or nonce isn't a number." + again;
+  if (!/^0x([0-9a-f]{2}){0,8192}$/.test(get("data"))) return "This link's call data isn't hex bytes." + again;
+  if (get("op") !== "0" && get("op") !== "1") return "This link's operation is neither a call nor a delegatecall." + again;
+  return "";
 }
 
 function approvalFrom(q, chain) {

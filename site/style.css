@@ -303,6 +303,11 @@ main.wallet { max-width: 1100px; }
 .verdict { border-radius: 10px; padding: 10px 12px; margin: 12px 0; background: var(--panel-2); border-left: 4px solid var(--ok); }
 .verdict.bad { border-left-color: var(--bad); }
 .verdict.bad b { color: var(--bad); }
+.verdict.warn { border-left-color: var(--warn); }
+.verdict.warn b { color: var(--warn); }
+.safes { list-style: none; padding: 0; margin: 10px 0; display: grid; gap: 8px; }
+.safes li { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
+#add-safe { flex: 1 1 14em; }
 .verdict.ok b { color: var(--ok); }
 .verdict p { margin: 4px 0 0; }
 .card details p { margin: 6px 0; }

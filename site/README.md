@@ -46,12 +46,23 @@ transaction hash and says what the transaction does. Then owners vote:
 
 Votes are on chain (`approvedHashes`). A transaction that waits for more is kept in `sab.proposal`
 until it runs; one the seat signed and hasn't landed is the ledger's, and the page offers only that.
-One transaction at a time: the Safe runs them in nonce order. The page has no link handoff: with no
-wallet here, the main page shares a signed approval as a link.
+One transaction at a time: the Safe runs them in nonce order. With no wallet here, the main page
+shares a signed approval as a link.
 
-For a Safe with one seat, the owners card says whether the other owners reach the threshold without
-the seat. It counts only this browser's seat as a seat. It reads each other owner's transaction count:
-an address that has sent one has shown its public key.
+**Other Safes.** A seat can be an owner of other Safes: another passkey's, say. The page keeps the
+Safes this seat is in (`sab.safes`), and shows the seat's address to copy into another Safe's "Add an
+owner". A transaction waiting for votes goes to another owner's device as a link to this page
+(`sign-and-burn/proposal/v1`, `src/pay.mjs`): the Safe and the transaction's fields, nothing signed,
+no hash. That device's console works out the hash and shows the same check code; the votes so far are
+on chain. The link opens only on a device whose seat, or wallet, is an owner of that Safe. Key `n` is
+bound to whatever it signed: while an approval for one Safe waits, the seat approves nothing for
+another, and the main page offers only that approval too.
+
+**The verdict.** An owner is a seat if it names a passkey signer (`curveSigner()`) and the SeatFactory
+lists it among that signer's seats (`chain.isSeat`). The owners card says two things: whether the
+ordinary owners can reach the threshold with no seat (then a broken curve takes the Safe), and
+whether the other owners can reach it without this browser's seat (a backup if its passkey is lost).
+It reads each ordinary owner's transaction count: an address that has sent one has shown its public key.
 
 The CSP: `default-src 'none'`; scripts and styles from the folder only, plus `'wasm-unsafe-eval'` for
 MicroPython; `connect-src` the folder and the RPC in `console/cfg.py`. GitHub Pages can't send

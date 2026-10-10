@@ -246,6 +246,17 @@ export async function votesFor(C, safe, owners, hash) {
   return owners.filter((_, i) => got[i] > 0n);
 }
 
+/** Whether an owner is a seat: a contract that names a passkey signer, and that the SeatFactory says
+ * it made for that signer. Anything else that answers curveSigner() is not one. */
+export async function isSeat(C, a) {
+  try {
+    const signer = await C.pc.readContract({ address: a, abi: SEAT_ABI, functionName: "curveSigner" });
+    return (await seatsOf(C, signer)).some((s) => s.toLowerCase() === a.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
 /** A Safe transaction that changes the owners. Removing one needs the owner before it in Safe's
  * list (the first one's is the sentinel, 0x…01). */
 export function ownerTx(safe, nonce, change) {

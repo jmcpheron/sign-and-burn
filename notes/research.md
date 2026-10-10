@@ -29,7 +29,7 @@ Any change to the contracts names the questions it touches and updates this file
 | 2 | [Retirement and execution](#2-retirement-and-execution) | mostly answered; a reentrancy test to add |
 | 3 | [Signer state](#3-signer-state) | **open**: one device, one browser only |
 | 4 | [Secret handling](#4-secret-handling) | partly answered; a board's chip not yet |
-| 5 | [Recovery and bypasses](#5-recovery-and-bypasses) | **open**: the wallet page adds owners and checks the rule for one seat |
+| 5 | [Recovery and bypasses](#5-recovery-and-bypasses) | **open**: the wallet page checks the rule; 2 of 3 with two seats rehearsed locally |
 | 6 | [Practical cost](#6-practical-cost) | measured on Base Sepolia; no comparisons yet |
 | 7 | [Prior art and review](#7-prior-art-and-review) | **open**: a first survey; a baseline AI review asked for |
 
@@ -169,8 +169,9 @@ upgrades. A protected seat helps only if no required authorization can go around
 - The wallet page (`site/wallet.html`) adds and removes owners and changes the threshold, each a
   Safe transaction the console marks red. For a Safe with one seat it checks the rule below: it says
   whether the other owners can reach the threshold without the seat, and that the same fact is the
-  backup for a lost passkey. With one seat the two can't both hold. The e2e rehearses 1 of 2 and
-  2 of 2 with the seat and an ordinary wallet (`site/e2e.mjs`, 9c).
+  backup for a lost passkey. With one seat the two can't both hold; with two seats they can. The e2e
+  rehearses 1 of 2 and 2 of 2 with a seat and an ordinary wallet, then 1 of 2 with two seats and
+  2 of 3 with two seats and the wallet, each seat in its own browser (`site/e2e.mjs`, 9c and 9d).
 - The seat has no admin, no upgrade and no recovery key.
 - A lost passkey leaves the demo Safe stuck.
 
@@ -178,8 +179,10 @@ upgrades. A protected seat helps only if no required authorization can go around
 - **A real threshold.** In a 2-of-3 with one seat and two ordinary owners, someone who can forge
   curve signatures can sign for both ordinary owners and reach the threshold without the seat. A
   Safe is protected only when every set of owners that meets the threshold includes enough seats.
-  The wallet page checks it for one seat, counting only this browser's seat as a seat; another seat,
-  or any contract owner, counts as an ordinary owner there. With several seats it is still to write.
+  The wallet page checks it: an owner counts as a seat when it names a passkey signer and the
+  SeatFactory lists it for that signer. A smart account, or a seat of another design, counts as
+  ordinary. Not checked: modules, guards, and a seat whose passkey is synced to the same account as
+  another seat's, so that one takeover reaches both.
 - **Modules, guards, fallback handlers, `delegatecall`, and changes to owners or threshold.** Each
   is a way around the owners. The console already marks owner changes red and refuses unpinned
   delegatecalls; a full list is still to be written.

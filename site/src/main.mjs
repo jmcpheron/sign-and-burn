@@ -337,7 +337,8 @@ async function landedElsewhere(w) {
   const landed = await ch.approvalOnChain(S.C, S.home.seat, w.n).catch(() => null);
   if (landed?.txHash) consoleCore.ask({ op: "sent", chainId: S.C.id, seat: S.home.seat, n: w.n, txHash: landed.txHash });
   await refresh();
-  S.last = { n: w.n, a: w.approval, hash: landed?.txHash, elsewhere: true, ran: S.safe.nonce > Number(w.tx.nonce), m: w.m, summary: w.summary };
+  const safe = w.safe.toLowerCase() === S.home.safe.toLowerCase() ? S.safe : await ch.readSafe(S.C, w.safe);
+  S.last = { n: w.n, a: w.approval, hash: landed?.txHash, elsewhere: true, ran: safe.nonce > Number(w.tx.nonce), m: w.m, summary: w.summary };
   S.step = "done"; S.shared = "";
   render();
 }
@@ -717,12 +718,20 @@ function pressScreen(s, disabled) {
     })()));
   if (!w) out.push(form);
   const tx = w ? w.tx : currentTx();
-  const r = consoleCore.ask({ op: "review", chainId: S.C.id, safe: S.home.safe, tx });
+  // Key n may have signed for another Safe the seat is in, on the wallet page: it is bound to that one.
+  const safe = w ? w.safe : S.home.safe, other = safe.toLowerCase() !== S.home.safe.toLowerCase();
+  const r = consoleCore.ask({ op: "review", chainId: S.C.id, safe, tx });
   if (!r.ok) { out.push(el("p", { class: "refuse" }, r.refuse)); return out; }
   if (r.level === "red") s.className = "screen red";
   if (w) out.push(el("p", { class: "note" }, `Key ${w.n} already signed this approval. One signature per key, ever: the console will only send this same one again. No tap needed.`));
-  out.push(...reviewParts(r, S.home.safe, tx, "Safe transaction hash, worked out by the console"));
+  out.push(...reviewParts(r, safe, tx, "Safe transaction hash, worked out by the console"));
   if (r.refuse) { out.push(el("p", { class: "refuse" }, "The console refuses: " + r.refuse)); return out; }
+  if (other) {
+    watch();
+    out.push(el("p", { class: "note" }, `This approval is for another Safe your seat is in (${short(safe)}), not yours. `,
+      el("a", { href: "wallet.html" }, "Send it from the wallet page"), `, or as a link. Until it lands, key ${w.n} sends nothing else.`), approvalShareBox(w, !canPay(), disabled));
+    return out;
+  }
   // Approval n is signed and waiting. With no wallet here it goes out as a link (src/pay.mjs), the same
   // approval every time; with one, the link is offered beside "send it again".
   if (S.wallet && !canPay()) out.push(el("p", { class: "note" }, `${S.wallet.name}'s account ${short(S.wallet.account)} has no ${S.C.chain.name} ETH for gas. ` +
