@@ -84,7 +84,9 @@ async function boot() {
   setInterval(() => { if (!S.busy && S.current && document.visibilityState === "visible") refresh().then((changed) => changed && render(), () => {}); }, S.C.id === 31337 ? 1500 : 12000);
 }
 
-/** Which seat and Safe are this passkey's: the main page's record, or the newest seat on chain. */
+/** Which seat and Safe are this passkey's: the main page's record, or the newest seat on chain that
+ * this passkey has signed for. Anyone may add seats to seatsOf (the baseline review's H-1), and an
+ * unused one proves nothing without a tap: the main page finds that one. */
 async function find() {
   if (!S.pk) return;
   const signer = consoleCore.ask({ op: "signer", x: S.pk.x, y: S.pk.y }).signer;
@@ -92,8 +94,8 @@ async function find() {
   if (onChain !== signer) throw new Error(`the signer factory names ${onChain} for this passkey, the console ${signer}`);
   let h = home();
   if (!h?.seat || !(await ch.hasCode(S.C, h.seat))) {
-    const seats = await ch.seatsOf(S.C, signer);
-    h = seats.length ? { seat: seats[seats.length - 1], safe: await ch.safeAddress(S.C, seats[seats.length - 1]), found: true } : null;
+    const used = (await ch.seatCounts(S.C, (await ch.seatsOf(S.C, signer)).slice(-8))).filter((s) => s.n > 0).pop();
+    h = used ? { seat: used.address, safe: await ch.safeAddress(S.C, used.address), found: true } : null;
   }
   S.home = h;
   if (!h) return;

@@ -128,6 +128,15 @@ export async function seatsOf(C, signer) {
   return C.pc.readContract({ address: C.seatFactory, abi: FACTORY_ABI, functionName: "seatsOf", args: [signer] });
 }
 
+/** Each seat's n and seat number: enough to tell which of them this passkey has signed for. */
+export async function seatCounts(C, seats) {
+  const read = (address, functionName) => C.pc.readContract({ address, abi: SEAT_ABI, functionName });
+  return Promise.all(seats.map(async (address) => {
+    const [n, seatNumber] = await Promise.all([read(address, "n"), read(address, "seatNumber")]);
+    return { address, n: Number(n), seatNumber: Number(seatNumber) };
+  }));
+}
+
 export async function readSeat(C, address) {
   const read = (functionName) => C.pc.readContract({ address, abi: SEAT_ABI, functionName });
   const [n, current, curveSigner, seatNumber, pubSeed] = await Promise.all(["n", "current", "curveSigner", "seatNumber", "pubSeed"].map(read));

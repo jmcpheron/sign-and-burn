@@ -54,4 +54,4 @@ Every change to `contracts/src/` goes through these steps, and each review is ke
 
 | date | commit | scope | job | status |
 |---|---|---|---|---|
-| 2026-10-08 | `f5c1c7d0` | `Seat`, `OneTimeKey`, `SeatFactory`, as deployed | [baseline](2026-10-08-baseline.md) | description updated 2026-10-10; waiting for the job ID |
+| 2026-10-08 | `f5c1c7d0` | `Seat`, `OneTimeKey`, `SeatFactory`, as deployed | [baseline](2026-10-08-baseline.md), [987](https://onedollaraudit.com/audit/987) | report 2026-10-10: 1 high, 2 low, 3 info; answered: 2 open (H-1's page part fixed), 4 not a bug |

@@ -46,7 +46,8 @@ The checks, in order:
 6. Then one transaction from the second browser builds the shielded Safe (deploying the SeatFactory
    too), making only what isn't there. On chain: the Safe's one owner is the seat, and the seat holds
    key 0's fingerprint. The first browser moves on by itself, to funding it from another device (a
-   link, and the Safe's address to copy). The second funds it and keeps no `sab.home`; the first moves on again,
+   link, and the Safe's address to copy). With its `sab.home` gone, it doesn't take the unused seat
+   from `seatsOf` on trust: it asks for key 0's tap, which shows the seat is this passkey's. The second funds it and keeps no `sab.home`; the first moves on again,
    then connects a wallet for the presses.
 7. More than the Safe holds: the hold is held back, with a way to fund it. A wallet account with no
    ETH for gas: said before the hold. The console's words and hash for "Send 0.0001 ETH".
@@ -60,7 +61,8 @@ The checks, in order:
     that approval again; the serial log shows the request and never the seeds; after a reload too; then
     it lands with no new passkey signature. History: three approvals, all landed.
 13. A browser with no ledger (its site data cleared, as a second device with the synced passkey would
-    be): it finds the seat on chain, says another device's console holds its record, and holds the
+    be), after a stranger adds two seats for the passkey that nobody can sign for: it finds the real
+    seat on chain, not the newer ones, says another device's console holds its record, and holds the
     button back until the visitor ticks that nothing is waiting there. Then key 3 signs; the warning is
     gone once this ledger has an approval.
 14. A front-run: a third account copies the approve call out of the page's transaction and sends it

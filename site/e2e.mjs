@@ -241,6 +241,18 @@ try {
   check((await pc.readContract({ address: H.seat, abi: SEAT_ABI, functionName: "current" })) === H.firstKey, "on chain: the seat holds key 0's fingerprint and nothing else");
   check(await waitFor(/Your Safe is built, and empty[\s\S]*Fund it from another device/, 30000) && await page.getByRole("button", { name: "Copy the Safe's address" }).count() === 1,
     "the first browser sees the Safe and moves on by itself, to funding it from another device");
+  // the same seat, in a browser that has lost its record of it: built and unused, the seat proves
+  // nothing on chain, so the page takes it only after a tap shows its first key is this passkey's
+  const saved = await page.evaluate(() => localStorage.getItem("sab.home"));
+  await page.evaluate(() => localStorage.removeItem("sab.home"));
+  await page.reload();
+  check(await waitFor(/Tap to make key 0/), "a browser with no record of an unused seat doesn't take it from seatsOf on trust");
+  await click("Tap to make key 0");
+  check(await waitFor(/Your Safe is built, and empty/) && (await home()).seat.toLowerCase() === H.seat.toLowerCase(),
+    "…one tap shows the seat's first key is this passkey's, and the page finds it");
+  await page.evaluate((h) => localStorage.setItem("sab.home", h), saved);
+  await page.reload();
+  await waitFor(/Your Safe is built, and empty/);
   await click("Send it 0.001 test ETH", payer);
   check(await waitFor(/Funded/, 30000, payer) && await payer.evaluate(() => localStorage.getItem("sab.home") === null), "the payer funds it too, and keeps nothing");
   check(await waitFor(/Press the button/), "the first browser sees the ETH and moves on");
@@ -340,9 +352,17 @@ try {
   // 8. a browser whose console has no ledger for the seat (a second device with the synced passkey):
   // it finds the seat on chain, warns that another device's console holds its record, and signs only
   // once the visitor says nothing is waiting there
+  // A stranger first adds two seats nobody can sign for to this passkey's list, as anyone may (the
+  // baseline review's H-1): the newest seats in seatsOf are theirs, not this passkey's.
+  for (const junk of ["0x" + "11".repeat(32), "0x" + "22".repeat(32)]) {
+    const r = await rpc("eth_sendTransaction", [{ from: THIRD, to: dep.SeatFactory.address, gas: "0x" + (5000000).toString(16),
+      data: encodeFunctionData({ abi: dep.abi.SeatFactory, functionName: "createSeat", args: [signer, 7, junk] }) }]);
+    await pc.waitForTransactionReceipt({ hash: r.result });
+  }
   await page.evaluate(() => { localStorage.removeItem("sab.ledger"); localStorage.removeItem("sab.home"); });
   await page.reload();
   check(await waitFor(/Another device made this seat/), "a browser with no ledger finds the seat on chain, and is told another device's console holds its record");
+  check((await home()).seat.toLowerCase() === H.seat.toLowerCase(), "…the seat this passkey signed for, not the strangers' newer seats in seatsOf");
   check(await page.locator("button.hold").isDisabled(), "…holding waits until the visitor says nothing is waiting on that device");
   await page.getByLabel(/Nothing signed with key 3 is waiting/).check();
   before = await signCount();
