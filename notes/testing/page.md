@@ -68,7 +68,29 @@ The checks, in order:
     pastes the real one into “Pay for a request”. The seat accepts it, and the hash it works out
     shows the same check code. Its wallet sends it: the seat moves to key 6, and the Safe runs it. The first browser sees approval 5
     land by itself, says another device sent it, and its history has it landed.
-16. The CSP refuses another host. A phone-width screen has no sideways scroll. No page errors.
+16. The wallet page (`wallet.html`), in the same browser: it finds the main page's Safe, its balance,
+    and the seat as its one owner; the wallet pays gas only.
+    - **Add the wallet as an owner, 1 of 2.** Red, and holding waits for the box. One press: the
+      seat approves and the Safe runs it. On chain: two owners, threshold 1. The page says the seat
+      isn't needed now, and that the wallet's public key is on chain (it has sent transactions).
+    - **The wallet alone.** A send the console reviews; the wallet runs it as an owner. The Safe runs
+      it; the seat's `n` and the passkey's sign count don't move.
+    - **The guardrail across both kinds of owner.** Key 7 signs a send and the wallet refuses to
+      send it. The card offers only approval 7 again: no Reject, no wallet vote. Then the wallet
+      runs another transaction at the same Safe nonce, straight to the Safe. After a reload the card
+      says the approval was overtaken and still offers only it. Sent: it lands, the seat moves to
+      key 8, the Safe runs nothing, and no new passkey signature.
+    - **2 of 2**, run by the wallet while it still can (red, and its button waits for the box). The
+      page says every approval needs the seat.
+    - **2 of 2, the seat first.** With no votes, the wallet may approve but not run. One press: the
+      seat's vote lands and the Safe waits. After a reload the vote is still shown. The wallet's
+      vote runs it.
+    - **Remove the wallet, the wallet first.** Red; approvals needed drops to 1. The wallet votes
+      with `approveHash`; the seat's press carries both votes, and the Safe runs it. On chain: the
+      seat alone, 1 of 1.
+    - **Reject** is one press, and nothing is signed. The seat's history lists approvals made on
+      both pages, from one ledger. At phone width, no sideways scroll.
+17. The CSP refuses another host. A phone-width screen has no sideways scroll. No page errors.
 
 Screenshots go to `site/shots/` (not committed).
 
@@ -80,6 +102,9 @@ Screenshots go to `site/shots/` (not committed).
 | After a reload, the page didn't reconnect the wallet, so "send it again" had no button | a quiet reconnect, with no prompt, of the wallet used last |
 | The page took the first wallet the browser announced | a chooser, remembered by the wallet's `rdns` |
 | The danger case sometimes found no forgery in two million tries: four random signatures can leave long odds | it signs until the odds are about 1 in 50,000, and says how many it took |
+| A link pasted into "Pay for a request" while the page started was opened twice, and the screen went back to "Working out…" for a moment | start-up leaves an open review alone, and redraws it with the wallet it found |
+| Two quick account switches: the first one's late redraw replaced the recipient field while it was being typed in | a switch that a later one has replaced doesn't redraw |
+| The wallet page scrolled sideways at phone width with a transaction open: the Safe transaction hash didn't wrap | the hash wraps, and the wallet page's columns are `minmax(0, 1fr)` |
 
 Found live, not by the e2e: with a smart-account wallet the attack room stayed empty, because the page
 looked for the approval only in a plain Multicall3 call, and that wallet wraps it. It now searches the

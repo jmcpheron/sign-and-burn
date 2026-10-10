@@ -4,7 +4,9 @@
 // only this folder and the RPC endpoint in console/cfg.py. Commit what it writes; CI rebuilds it and
 // fails on any difference.
 //   index.html, style.css, favicon.svg   the page (no inline script or style: the CSP refuses them)
-//   app.js                 src/*.mjs and viem, bundled by esbuild, not minified, so it can be read
+//   wallet.html            the wallet page: the same Safe as a plain wallet, with its owners
+//   app.js                 src/*.mjs and viem, bundled by esbuild, not minified, so it can be read.
+//                          Both pages load it; each runs only its own part (src/app.mjs)
 //   console/               the console image, exactly the files console/manifest.json lists, by the
 //                          names a board gives them. They hash to the console fingerprint.
 //   vendor/micropython/    MicroPython 1.26 for WebAssembly, from npm, pinned by its hash
@@ -57,7 +59,7 @@ put("console/manifest.json", JSON.stringify({
 
 // ----------------------------------------------------------------------------- the page's code
 const js = await build({
-  entryPoints: [join(SITE, "src", "main.mjs")], bundle: true, format: "esm", target: "es2022", platform: "browser",
+  entryPoints: [join(SITE, "src", "app.mjs")], bundle: true, format: "esm", target: "es2022", platform: "browser",
   external: ["./vendor/*"], write: false, minify: false, legalComments: "eof", charset: "utf8", logLevel: "warning",
 });
 put("app.js", js.outputFiles[0].contents);
@@ -80,11 +82,14 @@ const policy = [
   "base-uri 'none'",
   "form-action 'none'",
 ].join("; ");
-let html = readFileSync(join(SITE, "index.html"), "utf8");
-if (/<script(?![^>]*\bsrc=)/.test(html) || /\sstyle=/.test(html) || /<style/.test(html)) throw new Error("index.html: no inline scripts or styles (the CSP refuses them)");
-html = html.replace('<meta charset="utf-8">\n', `<meta charset="utf-8">\n<meta http-equiv="Content-Security-Policy" content="${policy}">\n`);
-if (DEV) html = html.replace("Base Sepolia · test network only", "Development build · local Anvil chain");
-put("index.html", html);
+for (const page of ["index.html", "wallet.html"]) {
+  let html = readFileSync(join(SITE, page), "utf8");
+  if (/<script(?![^>]*\bsrc=)/.test(html) || /\sstyle=/.test(html) || /<style/.test(html)) throw new Error(`${page}: no inline scripts or styles (the CSP refuses them)`);
+  if (!html.includes('<meta charset="utf-8">\n')) throw new Error(`${page}: the policy goes after <meta charset="utf-8">`);
+  html = html.replace('<meta charset="utf-8">\n', `<meta charset="utf-8">\n<meta http-equiv="Content-Security-Policy" content="${policy}">\n`);
+  if (DEV) html = html.replace("Base Sepolia · test network only", "Development build · local Anvil chain");
+  put(page, html);
+}
 
 // ----------------------------------------------------------------------------- checks, and the seal
 const walk = (d, all = []) => { for (const f of readdirSync(d).sort()) { const p = join(d, f); statSync(p).isDirectory() ? walk(p, all) : all.push(p); } return all; };

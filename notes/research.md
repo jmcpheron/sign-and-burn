@@ -29,7 +29,7 @@ Any change to the contracts names the questions it touches and updates this file
 | 2 | [Retirement and execution](#2-retirement-and-execution) | mostly answered; a reentrancy test to add |
 | 3 | [Signer state](#3-signer-state) | **open**: one device, one browser only |
 | 4 | [Secret handling](#4-secret-handling) | partly answered; a board's chip not yet |
-| 5 | [Recovery and bypasses](#5-recovery-and-bypasses) | **open**: the demo is 1 of 1 |
+| 5 | [Recovery and bypasses](#5-recovery-and-bypasses) | **open**: the wallet page adds owners and checks the rule for one seat |
 | 6 | [Practical cost](#6-practical-cost) | measured on Base Sepolia; no comparisons yet |
 | 7 | [Prior art and review](#7-prior-art-and-review) | **open**: a first survey; a baseline AI review asked for |
 
@@ -91,7 +91,9 @@ happens if the transaction it approves fails? What about rollback and reentrancy
   external call, and a second `approve` would need key `n+1`'s signature, but a test should show it.
 - **An approval that can never run.** The vote stays in `approvedHashes` forever. That is harmless
   in a 1-of-1, but in a real threshold it is a standing vote. Safe can cancel it by using the same
-  nonce for another transaction. Write this down for a real multisig.
+  nonce for another transaction. Write this down for a real multisig. The wallet page's e2e has the
+  other side of it: another owner runs a transaction at the nonce a signed, unsent approval was for.
+  Key `n` has signed, so the console still sends only that approval; it lands and runs nothing.
 
 ## 3. Signer state
 
@@ -162,8 +164,13 @@ answer reveal future keys?
 upgrades. A protected seat helps only if no required authorization can go around it.
 
 **Today:**
-- The demo Safe is 1 of 1, its only owner the seat, with no modules and no guard. Its fallback
+- The demo Safe starts 1 of 1, its only owner the seat, with no modules and no guard. Its fallback
   handler is Safe's standard one (`console/cfg.py`).
+- The wallet page (`site/wallet.html`) adds and removes owners and changes the threshold, each a
+  Safe transaction the console marks red. For a Safe with one seat it checks the rule below: it says
+  whether the other owners can reach the threshold without the seat, and that the same fact is the
+  backup for a lost passkey. With one seat the two can't both hold. The e2e rehearses 1 of 2 and
+  2 of 2 with the seat and an ordinary wallet (`site/e2e.mjs`, 9c).
 - The seat has no admin, no upgrade and no recovery key.
 - A lost passkey leaves the demo Safe stuck.
 
@@ -171,7 +178,8 @@ upgrades. A protected seat helps only if no required authorization can go around
 - **A real threshold.** In a 2-of-3 with one seat and two ordinary owners, someone who can forge
   curve signatures can sign for both ordinary owners and reach the threshold without the seat. A
   Safe is protected only when every set of owners that meets the threshold includes enough seats.
-  Write down that rule and check it on the page before a build.
+  The wallet page checks it for one seat, counting only this browser's seat as a seat; another seat,
+  or any contract owner, counts as an ordinary owner there. With several seats it is still to write.
 - **Modules, guards, fallback handlers, `delegatecall`, and changes to owners or threshold.** Each
   is a way around the owners. The console already marks owner changes red and refuses unpinned
   delegatecalls; a full list is still to be written.

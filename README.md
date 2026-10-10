@@ -105,6 +105,16 @@ only pays gas. With no wallet on the passkey's device (a phone, say), the page s
 wallet on another device pays for the build, and sends each approval after the console has signed it. A Trezor or a Ledger works through a browser wallet that drives it, such as Rabby,
 MetaMask or Frame; the page lets you pick among the wallets in your browser.
 
+**The wallet page** ([signandburn.app/wallet.html](https://signandburn.app/wallet.html)) shows the same
+Safe as a plain wallet: its balance, a send form, and its owners. It can add your browser wallet as a
+second owner, remove it, and change how many must approve. Each change is a Safe transaction that
+the console marks red. In a **1 of 2** your wallet can approve alone: a backup if the passkey is lost,
+and a way to get used to a multisig. It is also the way around the seat. Your wallet's key rests on a
+curve, and once it has signed a transaction its public key is public, so if curves break the seat no
+longer protects the Safe. In a **2 of 2** the seat's protection holds, and there is no backup. The page
+says which of the two the Safe is in. It shares the main page's passkey and ledger, so the guardrail
+is the same one.
+
 **On your own computer**, with nothing on a real chain:
 
 ```sh
@@ -123,7 +133,7 @@ wallet: it builds a shielded Safe, presses twice, runs every attack, and checks 
 | The one-time keys | Python and JavaScript, against 7 vectors in `reference/vectors/v1.json`. The Solidity, the page's JavaScript and the console on MicroPython check the same file. |
 | The console | `console/test/`: the Safe hash against 17 vectors (real mainnet transactions among them), the decoder against 15 expectations, a real browser passkey's assertion that Safe's signer accepted on chain, and every request and refusal. On CPython and on MicroPython 1.26. |
 | The contracts | 22 Foundry tests: every refusal in the attack table, and two presses against Base Sepolia's real Safe 1.4.1, passkey signer and Multicall3 bytecode, with a real P-256 key. About 660,000 gas a press. |
-| The page | `site/e2e.mjs`, in Chromium against a local chain with that same bytecode: passkey, first key, a shielded Safe paid for from a second browser by link, two presses, five attacks refused, red pages and refusals, the guardrail across a refused wallet, a reload and a browser with no ledger, a front-run approval, the danger case, and the CSP. |
+| The page | `site/e2e.mjs`, in Chromium against a local chain with that same bytecode: passkey, first key, a shielded Safe paid for from a second browser by link, two presses, five attacks refused, red pages and refusals, the guardrail across a refused wallet, a reload and a browser with no ledger, a front-run approval, the danger case, and the CSP. The wallet page: the wallet added as an owner, 1 of 2 and 2 of 2 with votes in either order, a signed approval overtaken by the wallet's own transaction, and the owner removed again. |
 
 On Base Sepolia, by hand ([notes/testing/live.md](notes/testing/live.md)): a MacBook's Touch ID
 passkey has PRF; the first shielded Safe was built, which deployed the SeatFactory at

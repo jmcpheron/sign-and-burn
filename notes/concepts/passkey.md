@@ -67,6 +67,8 @@ ID, on 2026-10-08.
 
 ## If the passkey is lost
 
-The seat can't approve again. In this demo the Safe is 1 of 1, so it is stuck. In a real multisig the
-other owners would replace the seat. A synced passkey (iCloud Keychain, Google Password Manager)
+The seat can't approve again. The demo Safe starts 1 of 1, so it is stuck. In a real multisig the
+other owners would replace the seat. The wallet page can add your browser wallet as an owner: in a
+1 of 2 it can run the Safe without the seat, which is a backup, and also the way around the seat if
+curves break ([trust](trust.md)). A synced passkey (iCloud Keychain, Google Password Manager)
 survives a lost device, but whoever takes over that account takes both halves.

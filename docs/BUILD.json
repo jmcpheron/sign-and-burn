@@ -3,8 +3,8 @@
   "console": "4ab406c3611fa40dce02fcd1763db83ae4233a5c608847df1d8ec8f9008e785f",
   "files": {
     "LICENSE": "84d2bd6f4370ad28bb4f23f9ebf7a9f659b3ccc043120566711c2325a5858800",
-    "SHA256SUMS": "a6d8724532eee2749de661e6ead86effc7dbbee801311195c90d37e1fa61b177",
-    "app.js": "911443b273eb9339f4f0390de367f0f3f88c1172f41e952a6f8d00fccfc384f2",
+    "SHA256SUMS": "55d59b74b36132bd355c4b362c33c8f5c44220ab2f75f5541c494d19ef12086f",
+    "app.js": "21cb2944be3bfe32962572be036581797f123e8a630c2316b55165d5c877c88c",
     "console/cfg.py": "c1903ccd1398363e1d5c4de04980aa43568b6f1cc9090b0913fdcd63e1a9cdcc",
     "console/core.py": "06c25a9b60a8ba1454e0b6747e7b03b2112005f4577644683fa173aa228ac179",
     "console/decode.py": "efeffa4f75f6e61f2b128266c9b857b5efa54bac248fd3840825158da9be1df9",
@@ -15,10 +15,11 @@
     "console/sign_and_burn.py": "666431420f29c460a7de985cc63b79a05bde1f43f9188a6d3e5c2721f0ae7c6f",
     "console/webauthn.py": "30a261d02fa730b488ef57ce38b6b126b6512437c147bc3a5be04b74112ec968",
     "favicon.svg": "cceeed405e1713c33ca20315d82e7a63230e75a54c276310af988f19eae3e340",
-    "index.html": "148e8cae430eaf7685a1590e022ff1f07d398e5b40dedd9ad41adf5f74989a3b",
-    "style.css": "887080954a1cf506dad14f1e0f6c63a0a84fdde0fba4e731e6d605654e60bb17",
+    "index.html": "c70bfe282ab7ff4b274dd811f076edc6f8066d87fb7bb5c33b31cf8bdc424ae6",
+    "style.css": "5051021cdb44cbb2f1d42699e43e566bd8165d3d846fa21810c2b4ce27add7f8",
     "vendor/micropython/LICENSE.txt": "0fdc6988e5b07653728624e1d404fa9f12fafeae56d3890e55fcb614bf850ebb",
     "vendor/micropython/micropython.mjs": "4d2d763127382a5b1a2c85a93355e9a20ee0c97f6f097e87b8c15ed5101169ee",
-    "vendor/micropython/micropython.wasm": "2168fd5f9b3ad52811361f0f5ed5598d081c13c79c508062fb1ac68b530d569d"
+    "vendor/micropython/micropython.wasm": "2168fd5f9b3ad52811361f0f5ed5598d081c13c79c508062fb1ac68b530d569d",
+    "wallet.html": "87cb797b28409508ba23dab30b530779fc5a970daf4995a9eb5c1e5931073741"
   }
 }
