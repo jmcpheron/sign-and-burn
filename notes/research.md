@@ -31,7 +31,7 @@ Any change to the contracts names the questions it touches and updates this file
 | 4 | [Secret handling](#4-secret-handling) | partly answered; a board's chip not yet |
 | 5 | [Recovery and bypasses](#5-recovery-and-bypasses) | **open**: the demo is 1 of 1 |
 | 6 | [Practical cost](#6-practical-cost) | measured on Base Sepolia; no comparisons yet |
-| 7 | [Prior art and review](#7-prior-art-and-review) | **open**: a first survey; a baseline AI review asked for |
+| 7 | [Prior art and review](#7-prior-art-and-review) | **open**: a first survey; a baseline AI review back, no human review |
 
 ## 1. Complete authorization
 
@@ -117,6 +117,13 @@ public.
 - **Another device.** A synced passkey gives the same seeds on a second device, which has its own
   ledger. Two devices could each sign key `n` for different transactions. Today the page warns and
   asks, and the rule is one device per seat. A warning can't stop it.
+- **Finding the seat on a new device.** A browser with no saved seat takes the last address in
+  `SeatFactory.seatsOf`, and anyone can add seats to that list for any passkey. One junk seat points
+  a new device at a seat nobody can sign for; the console refuses to sign for it, so no key is spent,
+  but the page is stuck. Many junk seats can make `seatsOf` too big to read at all. Found by the
+  baseline review (H-1, [reviews/2026-10-08-baseline.md](reviews/2026-10-08-baseline.md)). The page
+  could check each seat against the passkey's own first key, or read `SeatCreated` events; paging
+  `seatsOf` would need a new factory.
 
 **Candidates:**
 - **Reserve on chain first.** A first transaction records "key `n` is for `hash(m)`" with the curve
@@ -220,9 +227,10 @@ contract review before making stronger claims.
 
 - Not found: a rotating one-time key behind one owner of an ordinary Safe, or one that pairs a
   passkey's curve signature with a one-time signature.
-- A baseline AI review of the contracts, asked for on 2026-10-08:
-  [reviews/2026-10-08-baseline.md](reviews/2026-10-08-baseline.md). That is a first pass, not an
-  audit.
+- A baseline AI review of the contracts, One Dollar Audit job 987, reported on 2026-10-10:
+  [reviews/2026-10-08-baseline.md](reviews/2026-10-08-baseline.md). One high (an unbounded
+  `seatsOf`, now in question 3), two low (one already question 1), three informational. That is a
+  first pass, not an audit.
 
 **To find and read:**
 - Hash-based (Lamport or Winternitz) contract wallets and vaults on Ethereum and elsewhere.

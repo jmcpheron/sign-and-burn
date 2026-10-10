@@ -62,6 +62,8 @@ changes are reviewed, and the reviews so far.
 | [2026-10-09: onboarding walkthrough](log/2026-10-09-06-onboarding-walkthrough.md) | local screenshots, a separate gas payer, three transfers and disclosure timing |
 | [2026-10-09: diagrams beside screenshots](log/2026-10-09-07-onboarding-infographics.md) | passkey methods, key counters and public values beside each screen |
 | [2026-10-09: pictorial diagrams](log/2026-10-09-08-pictorial-infographics.md) | illustrated phones, seed capsules, signed approvals, wallets and chain blocks |
+| [2026-10-10: prior art, and the review plan](log/2026-10-10-01-prior-art.md) | wedgie-pq and Riva Labs, the nearest designs; the review asks about the standing vote; paying on Base mainnet |
+| [2026-10-10: the baseline review's report](log/2026-10-10-02-baseline-report.md) | job 987's six findings, answered; a page that trusts the last seat in `seatsOf` |
 
 A new log entry is named `YYYY-MM-DD-NN-topic.md`: what was done, what was found, the numbers, and the
 mistakes.
