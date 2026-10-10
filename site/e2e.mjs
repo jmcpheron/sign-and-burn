@@ -184,6 +184,8 @@ try {
   const H = await home();
   check(link === await page.locator(".share-link").inputValue() && link.startsWith(URL_ + "#pay=") && !link.includes(H.seat.slice(2).toLowerCase()) && !link.includes(H.safe.slice(2).toLowerCase()),
     "the link: this page's address, then public values only (it names neither the seat nor the Safe)");
+  await click("Show QR code");
+  check((await page.locator(".qr canvas").getAttribute("data-text")) === link, "Show QR code: the same link, as a QR code");
 
   const ctx2 = await newBrowser();
   const payer = await ctx2.newPage();
@@ -379,11 +381,19 @@ try {
   await page.reload();
   check(await waitFor(/Approval 5 is signed/) && (await signCount()) === before + 1 && (await page.locator(".share-link").inputValue()) === alink,
     "after a reload: the same approval, the same link, and no new passkey signature");
+  // The link is too long for one QR code; the code carries the approval's compact form (#aq=).
+  if (!(await page.locator(".qr canvas").count())) await click("Show QR code");
+  const qrText = await page.locator(".qr canvas").getAttribute("data-text");
+  await page.locator(".qr canvas").screenshot({ path: join(SHOTS, "qr-approval.png") });
+  check(qrText.startsWith(URL_ + "#aq=") && /^[0-9A-Z$*+\-./:]+$/.test(qrText.split("#aq=")[1]), "its QR code: the approval in compact form, this page's address then base 43");
   const tampered = new URLSearchParams(new URL(alink).hash.slice(1));
   tampered.set("next", "0x" + "ab".repeat(32));
   await payer.goto(URL_ + "#" + tampered);
   check(await waitFor(/The seat would refuse this approval \(Bad/, 30000, payer) && !(await payer.getByRole("button", { name: "Send it: one transaction" }).count()),
     "the other browser: the link with another next key, and the seat would refuse it; no button");
+  await payer.goto(qrText);
+  check(await waitFor(/Send approval 5[\s\S]*The seat accepts it/, 30000, payer) && (await payer.locator("#screen .verify .code").innerText()) === code,
+    "the compact form, opened as a phone's camera would: the same approval, the same check code, and the seat accepts it");
   await payer.goto(URL_);
   await payer.locator(".payment-request summary").click();
   await payer.locator("#pay-request-link").fill(alink);

@@ -114,7 +114,8 @@ curve, and once it has signed a transaction its public key is public, so if curv
 longer protects the Safe. In a **2 of 2** the seat's protection holds, and there is no backup. With a
 **second seat** (another passkey's, made in another browser or on another device) you can have both:
 in a **2 of 3** with two seats and your wallet, the wallet never approves alone, and either seat with
-the wallet still reaches 2. A transaction waiting for votes goes to the other device as a link. The
+the wallet still reaches 2. A transaction waiting for votes goes to the other device as a link, or a
+QR code. The
 page says whether ordinary keys can approve without a seat, and whether there is a backup if your
 passkey is lost. It shares the main page's passkey and ledger, so the guardrail is the same one.
 

@@ -18,7 +18,8 @@ npm run e2e       # the whole flow in Chromium against the local chain (needs an
 | `src/main.mjs` | the screens, the panels, the attack room, the explainers in "How it works" |
 | `src/wallet.mjs` | the wallet page: send, the owners, add or remove one, the threshold, and each owner's vote |
 | `src/approve.mjs` | one press, for both pages: the console, one tap, the seat asked by simulation, the wallet, the block |
-| `src/ui.mjs` | what both pages draw with: addresses, the hold button, the console's review |
+| `src/ui.mjs` | what both pages draw with: addresses, the hold button, the console's review, "Show QR code" |
+| `src/qr.mjs` | QR codes, written here: byte and alphanumeric modes, versions 1 to 40. `test.mjs` checks it against `qr-vectors.json`, made by an independent encoder (`tools/qr-vectors.py`) |
 | `src/console.mjs` | MicroPython 1.26 in the page, the console's files, the ledger kept in localStorage, the serial log (seeds never shown) |
 | `src/passkey.mjs` | make a passkey; one tap that signs `c` and answers two PRF salts; find a passkey made elsewhere |
 | `src/pay.mjs` | links for another device's wallet: the build request (public values only, no calls) and how a payer rebuilds the calls; a signed approval (no hash: the payer's console works it out) |
@@ -31,6 +32,20 @@ The build step keeps “Connect a wallet” beside a payment link. “Copy link�
 with a visible field for copying by hand. A payer can open it or paste it into “Pay for a request”
 on this page, review what it builds, then connect a wallet to pay. The same handoff works for
 funding and signed approvals. Pasting reads the request here; it does not visit the pasted host.
+
+## QR codes
+
+Every link the pages share has "Show QR code" beside "Copy link", and the wallet page shows the
+seat's address as one too. The code is drawn on a canvas, black on white whatever the theme.
+
+A signed approval's link is about 3,600 characters: more than one QR code holds. Its code carries a
+compact form instead (`sign-and-burn/approval-qr/v1`, `#aq=` in `src/pay.mjs`). The same fields are
+packed as bytes, with the curve signature as its four parts. They are written in base 43, characters
+that a QR code's alphanumeric mode stores in 5.5 bits each, and that a URL fragment carries unescaped.
+That's about 3,750 characters, in a version 37 or 38 code (165 or 169 modules a side). Only the
+part after `#aq=` is alphanumeric; the address before it is in byte mode. The page that opens it gets
+exactly what the approval link would give, and checks it the same way. A curve signature that isn't
+in its canonical form gets no compact form, and the page says to copy the link.
 
 ## The wallet page
 

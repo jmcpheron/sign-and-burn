@@ -25,7 +25,7 @@ import * as P from "./passkey.mjs";
 import * as ch from "./chain.mjs";
 import { approve } from "./approve.mjs";
 import * as pay from "./pay.mjs";
-import { $, addr, drawBlockie, el, eth, holdButton, plain, refuseFrames, reviewParts, rows, short, txLink, useChain } from "./ui.mjs";
+import { $, addr, drawBlockie, el, eth, holdButton, plain, qrToggle, refuseFrames, reviewParts, rows, short, txLink, useChain } from "./ui.mjs";
 
 refuseFrames();
 
@@ -451,6 +451,7 @@ function safesCard() {
     el("p", { class: "small" }, "Your seat's address. Another Safe adds this as an owner, and then your passkey can approve for it too:"),
     el("input", { class: "mono share-link", readonly: true, value: S.home.seat, "aria-label": "Your seat's address", onfocus: (e) => e.target.select() }),
     el("div", { class: "actions" }, el("button", { type: "button", onclick: () => copy(S.home.seat, "Copied your seat's address.") }, "Copy your seat's address")),
+    qrToggle(S.home.seat),
     el("details", {}, el("summary", { class: "small" }, "Open another Safe your seat is in"),
       el("div", { class: "actions" },
         el("input", { id: "add-safe", class: "mono", value: S.addSafe || "", placeholder: "0x…", spellcheck: "false", autocomplete: "off", "aria-label": "The Safe's address", oninput: (e) => { S.addSafe = e.target.value; } }),
@@ -543,7 +544,8 @@ function approvalCard() {
       el("p", { class: "small" }, `Send this link to another owner's device: a seat's, or a wallet's. Its console works out the hash itself, and its code should read ${r.verify}. ` +
         "It sees the votes cast so far on chain. The link holds the transaction, and nothing signed."),
       el("input", { class: "mono share-link", readonly: true, value: link, "aria-label": "The link", onfocus: (e) => e.target.select() }),
-      el("div", { class: "actions" }, el("button", { type: "button", disabled: !!S.busy, onclick: () => copy(link, "Link copied. This page shows the new votes as they land.") }, "Copy link"))));
+      el("div", { class: "actions" }, el("button", { type: "button", disabled: !!S.busy, onclick: () => copy(link, "Link copied. This page shows the new votes as they land.") }, "Copy link")),
+      qrToggle(link)));
   }
   if (w && !overtaken) out.push(el("p", { class: "small" }, `Key ${w.n} already signed this approval. One signature per key, ever: the console will only send this same one again. No tap needed.`));
   else if (!seatVoted && !overtaken && S.seatOwns && !wElse) out.push(el("p", { class: "small" }, `Holding asks your passkey once. The console signs with key ${n}, burns it and names key ${n + 1}. ` +
@@ -563,7 +565,8 @@ function approvalShare(w, overtaken) {
       `(its code should read ${S.review.verify}), asks the seat, and sends it. ${overtaken ? "It will run nothing, and moves the seat to the next key. " : ""}` +
       `This page moves on once it lands. Until then key ${w.n} sends nothing else.`),
     el("input", { class: "mono share-link", readonly: true, value: link, "aria-label": "The link", onfocus: (e) => e.target.select() }),
-    el("div", { class: "actions" }, el("button", { class: canPay() ? "" : "go", type: "button", disabled: !!S.busy, onclick: () => copy(link, "Link copied. This page moves on once the approval lands.") }, "Copy link")));
+    el("div", { class: "actions" }, el("button", { class: canPay() ? "" : "go", type: "button", disabled: !!S.busy, onclick: () => copy(link, "Link copied. This page moves on once the approval lands.") }, "Copy link")),
+    qrToggle(pay.approvalQr(S.C, w.n, w.approval, w.tx, new URL("./", location.href).href)?.segments ?? null));
 }
 
 /** Reject is one easy press, except for a transaction key n has signed: that one is the only thing

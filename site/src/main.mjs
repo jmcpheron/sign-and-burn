@@ -9,7 +9,7 @@ import * as ch from "./chain.mjs";
 import * as pay from "./pay.mjs";
 import * as wots from "./wots.mjs";
 import { approve } from "./approve.mjs";
-import { $, addr, drawBlockie, el, eth, holdButton, plain, refuseFrames, reviewParts, rows, short, txLink, useChain } from "./ui.mjs";
+import { $, addr, drawBlockie, el, eth, holdButton, plain, qrToggle, refuseFrames, reviewParts, rows, short, txLink, useChain } from "./ui.mjs";
 
 const S = { step: "boot", busy: "", error: "", tx: { preset: "send", to: "", amount: "0.0001" }, onchain: {}, last: null };
 
@@ -604,6 +604,7 @@ function fundShareBox(disabled) {
     el("div", { class: "actions" },
       el("button", { class: "go", type: "button", disabled, onclick: () => copyLink(buildLink()) }, "Copy link"),
       el("button", { type: "button", disabled, onclick: copySafe }, "Copy the Safe's address"), faucets()),
+    qrToggle(buildLink()),
     S.shared ? el("p", { class: "small", role: "status" }, `${S.shared} This page looks at the chain every few seconds.`) : null);
 }
 
@@ -626,6 +627,7 @@ function shareBox(first, disabled) {
     el("div", { class: "actions" },
       el("button", { class: first ? "go" : "", type: "button", disabled, onclick: () => copyLink(buildLink()) }, "Copy link"),
       S.shared ? el("button", { type: "button", disabled, onclick: checkBuilt }, "Check again") : null),
+    qrToggle(link),
     S.shared ? el("p", { class: "small", role: "status" }, `${S.shared} This page looks at the chain every few seconds.`) : null,
     el("details", {}, el("summary", { class: "small" }, "What the link holds"),
       el("p", { class: "small" }, "Three values, all of which go on chain in the build anyway:"),
@@ -786,6 +788,8 @@ function approvalShareBox(w, first, disabled) {
     el("div", { class: "actions" },
       el("button", { class: first ? "go" : "", type: "button", disabled, onclick: () => copyLink(link) }, "Copy link"),
       S.shared ? el("button", { type: "button", disabled, onclick: checkLanded }, "Check again") : null),
+    // The link is too long for a QR code; the code carries the same approval in its compact form.
+    qrToggle(pay.approvalQr(S.C, w.n, w.approval, w.tx, location.origin + location.pathname)?.segments ?? null),
     S.shared ? el("p", { class: "small", role: "status" }, `${S.shared} This page looks at the chain every few seconds.`) : null,
     el("details", {}, el("summary", { class: "small" }, "What the link holds"),
       el("p", { class: "small" }, `Approval ${w.n}, exactly as the console signed it:`),
