@@ -20,7 +20,8 @@ import { createServer } from "node:http";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
-import { concat, createPublicClient, decodeFunctionData, encodeFunctionData, formatEther, http, parseAbi } from "viem";
+import { concat, createPublicClient, decodeFunctionData, encodeFunctionData, formatEther, getAddress, http, parseAbi } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 import { startChain } from "../tools/chain/anvil.mjs";
 import { tokenCode } from "../tools/chain/test-token.mjs";
 import { MULTICALL_ABI } from "./src/chain.mjs";
@@ -735,6 +736,35 @@ try {
   check((await onChain()).nonce === nonce4 + 1 && formatEther(await pc.getBalance({ address: TO4 })) === "0.0001" &&
     Number(await pc.readContract({ address: H2.seat, abi: SEAT_ABI, functionName: "n" })) === 1, "on chain: the Safe ran it, and the second seat is at key 1");
   check(await page.locator("#act").waitFor({ state: "hidden", timeout: 15000 }).then(() => true, () => false), "the first browser sees it run, by itself");
+  // c2. a transaction proposed in Safe{Wallet} by the wallet, signed there off chain, as Safe's
+  // transaction service shows it. Pasted in: a tampered hash is refused; a signature by a key that isn't
+  // the owner it names is left out; the wallet's counts, and the first seat's press runs it with that
+  // signature, in one transaction. (Anvil's second account's well-known test key: the wallet here.)
+  const SECOND_KEY = "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d", THIRD_KEY = "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a";
+  check(privateKeyToAccount(SECOND_KEY).address.toLowerCase() === ME, "(the wallet here is Anvil's second account)");
+  const nowSW = await onChain(), Z = "0x0000000000000000000000000000000000000000";
+  const swData = encodeFunctionData({ abi: parseAbi(["function transfer(address to, uint256 amount)"]), functionName: "transfer", args: [TO4, 250000n] });
+  const swHash = await pc.readContract({ address: H.safe, functionName: "getTransactionHash", args: [USDC, 0n, swData, 0, 0n, 0n, 0n, Z, Z, BigInt(nowSW.nonce)],
+    abi: parseAbi(["function getTransactionHash(address to, uint256 value, bytes data, uint8 operation, uint256 safeTxGas, uint256 baseGas, uint256 gasPrice, address gasToken, address refundReceiver, uint256 _nonce) view returns (bytes32)"]) });
+  const swTx = { safe: getAddress(H.safe), to: USDC, value: "0", data: swData, operation: 0, safeTxGas: 0, baseGas: 0, gasPrice: "0", gasToken: Z, refundReceiver: Z,
+    nonce: nowSW.nonce, safeTxHash: swHash, confirmationsRequired: 2, isExecuted: false,
+    confirmations: [{ owner: getAddress(ME), signature: await privateKeyToAccount(SECOND_KEY).sign({ hash: swHash }), signatureType: "EOA" },
+      { owner: getAddress(H2.seat), signature: await privateKeyToAccount(THIRD_KEY).sign({ hash: swHash }), signatureType: "EOA" }] };
+  await page.locator("#send summary", { hasText: "Safe{Wallet}" }).click();
+  await page.locator("#sw-paste").fill(JSON.stringify({ count: 1, results: [{ ...swTx, safeTxHash: "0x" + "ab".repeat(32) }] }));
+  await page.getByRole("button", { name: "Import it" }).click();
+  check(await see(/aren't the same transaction\. Nothing was imported/), "Safe{Wallet}: a hash that isn't the fields' is refused");
+  await page.locator("#sw-paste").fill(JSON.stringify({ count: 1, results: [swTx] }));
+  await page.getByRole("button", { name: "Import it" }).click();
+  check(await see(/Imported Safe\{Wallet\}'s transaction at nonce \d+, with 1 signature that check out, and 1 left out/) &&
+    await see(/Send 0\.25 USDC[\s\S]*Votes: 1 of 2[\s\S]*signed in Safe\{Wallet\}/),
+    "…the real one: the console's words, the wallet's signature counted, and a forged one left out");
+  const usdc4 = await pc.readContract({ address: USDC, abi: ERC20, functionName: "balanceOf", args: [TO4] });
+  await hold();
+  check(await see(/Key \d+: signed, sent, burned\. The Safe ran it/, 60000) && (await onChain()).nonce === nowSW.nonce + 1 &&
+    (await pc.readContract({ address: USDC, abi: ERC20, functionName: "balanceOf", args: [TO4] })) === usdc4 + 250000n,
+    "the seat's press carries the wallet's Safe{Wallet} signature: two of three, and the Safe runs it");
+
   // e. names: the first browser names the second seat and the shared Safe, exports its address book,
   // and the second browser imports the file. A bad paste is refused, and changes nothing.
   await page.locator("#owners li.owner", { hasText: H2.seat.slice(-6) }).getByRole("button", { name: "Name it" }).click();

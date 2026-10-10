@@ -160,6 +160,50 @@ function approvalQrFrom(s, C) {
   }
 }
 
+// ----------------------------------------------------------------------------- from Safe{Wallet}
+// A transaction proposed in Safe{Wallet} lives on Safe's transaction service, with the owners' off-chain
+// signatures, not on chain. The page doesn't fetch from it: its policy lets it reach the RPC only. You
+// open the service's URL yourself (safeWalletUrl), and paste what it answers. That text is untrusted:
+// each field is checked for its shape here; the console works out the hash from the fields and the
+// page compares it with the one pasted; each signature must recover to an owner (chain.signerOf).
+export const SAFE_SERVICE = "https://api.safe.global/tx-service/basesep/api/v1";
+export const safeWalletUrl = (safe) => `${SAFE_SERVICE}/safes/${getAddress(safe)}/multisig-transactions/?executed=false`;
+const ZERO_ADDR = "0x0000000000000000000000000000000000000000";
+
+/** The service's answer (its list, or one transaction) -> [{ tx, safeTxHash, sigs }] for this Safe,
+ * lowest nonce first. Throws, in plain words, if it isn't that. Transactions that pay a gas refund
+ * are refused: this page makes and runs only those without one, as Safe{Wallet} makes them. */
+export function fromSafeWallet(text, safe) {
+  let o;
+  try { o = JSON.parse(text); } catch { throw new Error("That isn't JSON. Copy the whole page the link shows."); }
+  const list = Array.isArray(o?.results) ? o.results : o && typeof o === "object" ? [o] : [];
+  if (!list.length) throw new Error("That has no transactions in it: nothing is waiting in Safe{Wallet}.");
+  if (list.length > 50) throw new Error("That has more than 50 transactions.");
+  const out = [];
+  for (const t of list) {
+    const str = (k) => (t[k] === null || t[k] === undefined ? "" : String(t[k])).toLowerCase();
+    const uint = (k) => UINT.test(str(k));
+    if (t.safe !== undefined && str("safe") !== safe.toLowerCase()) throw new Error(`That is for another Safe (${String(t.safe).slice(0, 42)}).`);
+    if (t.isExecuted === true) continue;
+    if (!ADDR.test(str("to"))) throw new Error("A transaction's recipient isn't an address. Nothing was imported.");
+    if (!uint("value") || !uint("nonce") || Number(str("nonce")) > Number.MAX_SAFE_INTEGER) throw new Error("A transaction's value or nonce isn't a number. Nothing was imported.");
+    const data = str("data") || "0x";
+    if (!/^0x([0-9a-f]{2}){0,8192}$/.test(data)) throw new Error("A transaction's data isn't hex bytes. Nothing was imported.");
+    if (str("operation") !== "0" && str("operation") !== "1") throw new Error("A transaction's operation is neither a call nor a delegatecall. Nothing was imported.");
+    for (const k of ["safeTxGas", "baseGas", "gasPrice"]) if (str(k) && str(k) !== "0") throw new Error(`A transaction sets ${k}: it pays a gas refund, which this page doesn't run. Nothing was imported.`);
+    for (const k of ["gasToken", "refundReceiver"]) if (str(k) && str(k) !== ZERO_ADDR) throw new Error(`A transaction sets ${k}: it pays a gas refund, which this page doesn't run. Nothing was imported.`);
+    if (!HEX32.test(str("safeTxHash").replace(/^0x/, "")) || !str("safeTxHash").startsWith("0x")) throw new Error("A transaction has no Safe transaction hash. Nothing was imported.");
+    const sigs = [];
+    for (const c of (Array.isArray(t.confirmations) ? t.confirmations : []).slice(0, 20)) {
+      const owner = String(c?.owner || "").toLowerCase(), signature = String(c?.signature || "").toLowerCase();
+      if (ADDR.test(owner) && /^0x[0-9a-f]{130}$/.test(signature)) sigs.push({ owner, signature });
+    }
+    out.push({ tx: { to: str("to"), value: str("value"), data, operation: Number(str("operation")), nonce: str("nonce") }, safeTxHash: str("safeTxHash"), sigs });
+  }
+  if (!out.length) throw new Error("Every transaction in that has run already.");
+  return out.sort((x, y) => Number(x.tx.nonce) - Number(y.tx.nonce));
+}
+
 /** A Safe transaction waiting for votes, as a link to the wallet page. */
 export function proposalLink(C, safe, tx, base) {
   const q = new URLSearchParams({ propose: PROPOSAL_TAG, chain: String(C.id), safe: safe.toLowerCase(), to: tx.to.toLowerCase(), value: String(tx.value),

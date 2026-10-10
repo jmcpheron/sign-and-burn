@@ -114,6 +114,11 @@ The checks, in order:
       the wallet's vote counted, the same check code. One press there (key 0, one passkey signature)
       makes two votes, and the Safe runs it. The first browser sees it run by itself; the second
       keeps both Safes its seat is in.
+    - From Safe{Wallet}: a USDC send at the Safe's nonce, as Safe's transaction service would show it, with
+      the wallet's off-chain signature (Anvil's second account's test key), and a "signature" by another
+      key that names the second seat. With a tampered hash: refused. As it is: imported, the console's
+      words, 1 of 2 votes ("signed in Safe{Wallet}"), and the forged one left out. The first seat's press
+      carries the wallet's signature, and the Safe runs it: 2 of 3.
     - Names: the first browser names the second seat and the shared Safe ("Name it"), and they show
       beside their addresses. Export JSON downloads the address book, tagged; the second browser
       imports the file and shows the same names. A pasted file with a bad address is refused whole.

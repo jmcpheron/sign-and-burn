@@ -20309,6 +20309,8 @@ var init_esm = __esm({
     init_keccak256();
     init_sha2562();
     init_toFunctionSelector();
+    init_hashMessage();
+    init_recoverAddress();
     init_formatEther();
     init_formatUnits();
     init_parseEther();
@@ -21095,25 +21097,37 @@ async function buildCalls(C2, { pk, signer, seatNumber, firstKey: firstKey2, sea
   }) });
   return calls;
 }
-function approveCalls(a, tx, others = []) {
+function approveCalls(a, tx, others = [], sigs = []) {
   const approve3 = { target: a.seat, allowFailure: false, callData: encodeFunctionData({
     abi: SEAT_ABI,
     functionName: "approve",
     args: [a.safe, a.safeTxHash, a.nextKey, a.oneTime, a.curveSig]
   }) };
-  return [approve3, execCall(a.seat, a.safe, tx, others)];
+  return [approve3, execCall(a.seat, a.safe, tx, others, sigs)];
 }
-function execCall(seat, safe, tx, others = []) {
-  return { target: safe, allowFailure: true, callData: execData(tx, [seat, ...others]) };
+function execCall(seat, safe, tx, others = [], sigs = []) {
+  return { target: safe, allowFailure: true, callData: execData(tx, [seat, ...others], sigs) };
 }
-function execData(tx, voters) {
-  const sorted = [...new Set(voters.map((v) => v.toLowerCase()))].sort((x, y) => BigInt(x) < BigInt(y) ? -1 : 1);
-  const signatures = sorted.length ? concat(sorted.map((v) => concat([pad(v, { size: 32 }), pad("0x", { size: 32 }), "0x01"]))) : "0x";
+function execData(tx, voters, sigs = []) {
+  const parts = new Map(voters.map((v) => [v.toLowerCase(), concat([pad(v, { size: 32 }), pad("0x", { size: 32 }), "0x01"])]));
+  for (const s of sigs) if (!parts.has(s.owner.toLowerCase())) parts.set(s.owner.toLowerCase(), s.signature);
+  const sorted = [...parts.keys()].sort((x, y) => BigInt(x) < BigInt(y) ? -1 : 1);
+  const signatures = sorted.length ? concat(sorted.map((o) => parts.get(o))) : "0x";
   return encodeFunctionData({
     abi: SAFE_ABI,
     functionName: "execTransaction",
     args: [tx.to, BigInt(tx.value), tx.data || "0x", Number(tx.operation), 0n, 0n, 0n, zeroAddress, zeroAddress, signatures]
   });
+}
+async function signerOf(hash3, signature) {
+  if (!/^0x[0-9a-fA-F]{130}$/.test(signature)) return null;
+  const v = parseInt(signature.slice(-2), 16);
+  try {
+    if (v === 27 || v === 28) return await recoverAddress({ hash: hash3, signature });
+    if (v === 31 || v === 32) return await recoverAddress({ hash: hashMessage({ raw: hash3 }), signature: signature.slice(0, -2) + (v - 4).toString(16) });
+  } catch {
+  }
+  return null;
 }
 async function votesFor(C2, safe, owners, hash3) {
   const got = await Promise.all(owners.map((o) => C2.pc.readContract({ address: safe, abi: SAFE_ABI, functionName: "approvedHashes", args: [o, hash3] })));
@@ -21906,7 +21920,7 @@ var init_ui = __esm({
 });
 
 // src/approve.mjs
-async function approve2({ C: C2, pk, seat, safe, tx, wallet, others = [], say: say2 }) {
+async function approve2({ C: C2, pk, seat, safe, tx, wallet, others = [], sigs = [], say: say2 }) {
   const n = seat.n;
   const req = {
     chainId: C2.id,
@@ -21933,7 +21947,7 @@ async function approve2({ C: C2, pk, seat, safe, tx, wallet, others = [], say: s
   if (why) throw new Error(`The seat would refuse this approval (${why}). The console keeps it, and will only ever send this one for key ${n}.`);
   if (!wallet) return out;
   say2("Your wallet sends it. It pays gas, and approves nothing…");
-  const hash3 = await send(C2, wallet, approveCalls(a, tx, others));
+  const hash3 = await send(C2, wallet, approveCalls(a, tx, others, sigs));
   ask({ op: "sent", chainId: C2.id, seat: a.seat, n, txHash: hash3 });
   say2("Waiting for the block…");
   const r = await receipt(C2, hash3);
@@ -22112,6 +22126,40 @@ function approvalQrFrom(s, C2) {
     return { refuse: "This code's approval isn't whole, or has bytes it shouldn't." + again };
   }
 }
+function fromSafeWallet(text, safe) {
+  let o;
+  try {
+    o = JSON.parse(text);
+  } catch {
+    throw new Error("That isn't JSON. Copy the whole page the link shows.");
+  }
+  const list = Array.isArray(o?.results) ? o.results : o && typeof o === "object" ? [o] : [];
+  if (!list.length) throw new Error("That has no transactions in it: nothing is waiting in Safe{Wallet}.");
+  if (list.length > 50) throw new Error("That has more than 50 transactions.");
+  const out = [];
+  for (const t of list) {
+    const str = (k) => (t[k] === null || t[k] === void 0 ? "" : String(t[k])).toLowerCase();
+    const uint = (k) => UINT.test(str(k));
+    if (t.safe !== void 0 && str("safe") !== safe.toLowerCase()) throw new Error(`That is for another Safe (${String(t.safe).slice(0, 42)}).`);
+    if (t.isExecuted === true) continue;
+    if (!ADDR.test(str("to"))) throw new Error("A transaction's recipient isn't an address. Nothing was imported.");
+    if (!uint("value") || !uint("nonce") || Number(str("nonce")) > Number.MAX_SAFE_INTEGER) throw new Error("A transaction's value or nonce isn't a number. Nothing was imported.");
+    const data = str("data") || "0x";
+    if (!/^0x([0-9a-f]{2}){0,8192}$/.test(data)) throw new Error("A transaction's data isn't hex bytes. Nothing was imported.");
+    if (str("operation") !== "0" && str("operation") !== "1") throw new Error("A transaction's operation is neither a call nor a delegatecall. Nothing was imported.");
+    for (const k of ["safeTxGas", "baseGas", "gasPrice"]) if (str(k) && str(k) !== "0") throw new Error(`A transaction sets ${k}: it pays a gas refund, which this page doesn't run. Nothing was imported.`);
+    for (const k of ["gasToken", "refundReceiver"]) if (str(k) && str(k) !== ZERO_ADDR) throw new Error(`A transaction sets ${k}: it pays a gas refund, which this page doesn't run. Nothing was imported.`);
+    if (!HEX32.test(str("safeTxHash").replace(/^0x/, "")) || !str("safeTxHash").startsWith("0x")) throw new Error("A transaction has no Safe transaction hash. Nothing was imported.");
+    const sigs = [];
+    for (const c of (Array.isArray(t.confirmations) ? t.confirmations : []).slice(0, 20)) {
+      const owner = String(c?.owner || "").toLowerCase(), signature = String(c?.signature || "").toLowerCase();
+      if (ADDR.test(owner) && /^0x[0-9a-f]{130}$/.test(signature)) sigs.push({ owner, signature });
+    }
+    out.push({ tx: { to: str("to"), value: str("value"), data, operation: Number(str("operation")), nonce: str("nonce") }, safeTxHash: str("safeTxHash"), sigs });
+  }
+  if (!out.length) throw new Error("Every transaction in that has run already.");
+  return out.sort((x, y) => Number(x.tx.nonce) - Number(y.tx.nonce));
+}
 function proposalLink(C2, safe, tx, base) {
   const q = new URLSearchParams({
     propose: PROPOSAL_TAG,
@@ -22186,7 +22234,7 @@ async function resolve(C2, req) {
   const calls = built ? [] : await buildCalls(C2, { pk, signer, seatNumber: req.seatNumber, firstKey: req.firstKey, seat });
   return { signer, seat, safe, built, calls };
 }
-var TAG, APPROVAL_TAG, PROPOSAL_TAG, APPROVAL_QR_TAG, HEX32, ADDR, UINT, ONE_TIME, b64, request, B43, CURVE;
+var TAG, APPROVAL_TAG, PROPOSAL_TAG, APPROVAL_QR_TAG, HEX32, ADDR, UINT, ONE_TIME, b64, request, B43, CURVE, SAFE_SERVICE, safeWalletUrl, ZERO_ADDR;
 var init_pay = __esm({
   "src/pay.mjs"() {
     init_esm();
@@ -22210,6 +22258,9 @@ var init_pay = __esm({
     });
     B43 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ$*+-./:";
     CURVE = parseAbiParameters("bytes authenticatorData, string clientDataFields, uint256 r, uint256 s");
+    SAFE_SERVICE = "https://api.safe.global/tx-service/basesep/api/v1";
+    safeWalletUrl = (safe) => `${SAFE_SERVICE}/safes/${getAddress(safe)}/multisig-transactions/?executed=false`;
+    ZERO_ADDR = "0x0000000000000000000000000000000000000000";
   }
 });
 
@@ -22248,8 +22299,8 @@ async function addToken() {
   });
 }
 function keepProposal(tx) {
-  const all2 = read("sab.proposal");
-  if (tx) all2[proposalKey()] = tx;
+  const all2 = read("sab.proposal"), was = all2[proposalKey()];
+  if (tx) all2[proposalKey()] = { ...txOnly(tx), sigs: tx.sigs || (sameTx(was, tx) ? was.sigs : void 0) };
   else delete all2[proposalKey()];
   try {
     localStorage.setItem("sab.proposal", JSON.stringify(all2));
@@ -22364,11 +22415,12 @@ async function refresh() {
     keepProposal(null);
     kept = null;
   }
-  S.current = S.waiting ? { tx: S.waiting.tx, locked: true } : kept ? { tx: kept, kept: true } : S.draft ? { tx: S.draft } : null;
+  S.current = S.waiting ? { tx: S.waiting.tx, locked: true } : kept ? { tx: txOnly(kept), kept: true } : S.draft ? { tx: S.draft } : null;
   S.review = S.current ? ask({ op: "review", chainId: S.C.id, safe: safe.address, tx: S.current.tx }) : null;
   S.votes = S.review?.ok ? await votesFor(S.C, safe.address, safe.owners, S.review.safeTxHash) : [];
+  S.sigs = (kept && S.current && sameTx(kept, S.current.tx) ? kept.sigs || [] : []).filter((x) => safe.owners.some((o) => same(o, x.owner)) && !S.votes.some((v) => same(v, x.owner)));
   const was = S.seen;
-  S.seen = JSON.stringify([safe.address, seat.n, safe.nonce, String(safe.balance), safe.owners, safe.threshold, S.votes, S.waiting?.n, S.walletBalance === null ? "" : String(S.walletBalance)]);
+  S.seen = JSON.stringify([safe.address, seat.n, safe.nonce, String(safe.balance), safe.owners, safe.threshold, S.votes, S.sigs.length, S.waiting?.n, S.walletBalance === null ? "" : String(S.walletBalance)]);
   return was !== S.seen;
 }
 async function guard(what, f) {
@@ -22494,6 +22546,30 @@ function discard() {
   if (S.current?.kept) keepProposal(null);
   refresh().finally(render);
 }
+async function importSafeWallet() {
+  await guard("Checking the transaction from Safe{Wallet}…", async () => {
+    await refresh();
+    if (S.current && !(S.current.tx === S.draft)) throw new Error("Finish or reject the transaction on the card first: the Safe runs one at a time.");
+    const all2 = fromSafeWallet(S.swPaste || "", S.safe.address);
+    const got = all2.find((x) => Number(x.tx.nonce) === S.safe.nonce);
+    if (!got) throw new Error(`Nothing in that is for the Safe's next transaction, nonce ${S.safe.nonce} (it has ${all2.map((x) => x.tx.nonce).join(", ")}). The Safe runs them in order: the one at its nonce first.`);
+    const r = ask({ op: "review", chainId: S.C.id, safe: S.safe.address, tx: got.tx });
+    if (!r.ok) throw new Error(r.refuse);
+    if (r.safeTxHash.toLowerCase() !== got.safeTxHash) throw new Error(`The console works out ${short(r.safeTxHash, 10, 6)} from these fields, and Safe{Wallet} says ${short(got.safeTxHash, 10, 6)}: they aren't the same transaction. Nothing was imported.`);
+    const sigs = [], dropped = [];
+    for (const x of got.sigs) {
+      const who = await signerOf(r.safeTxHash, x.signature);
+      if (who && same(who, x.owner) && isOwner(x.owner)) sigs.push({ owner: getAddress(x.owner), signature: x.signature });
+      else dropped.push(x.owner);
+    }
+    S.draft = null;
+    S.acks = {};
+    S.swPaste = "";
+    keepProposal({ ...got.tx, sigs });
+    await refresh();
+    S.flash = `Imported Safe{Wallet}'s transaction at nonce ${got.tx.nonce}, with ${sigs.length} signature${sigs.length === 1 ? "" : "s"} that check out` + (dropped.length ? `, and ${dropped.length} left out: ${dropped.map((a) => short(a)).join(", ")} (not a signature of this transaction by an owner of this Safe).` : ".");
+  });
+}
 async function voteSeat(tx) {
   await guard("Reading the seat and the Safe from the chain…", async () => {
     await refresh();
@@ -22501,7 +22577,7 @@ async function voteSeat(tx) {
     const nonceBefore = S.safe.nonce;
     if (Number(tx.nonce) >= S.safe.nonce) keepProposal(tx);
     const others = S.votes.filter((v) => v.toLowerCase() !== S.seat.address.toLowerCase());
-    const got = await approve2({ C: S.C, pk: S.pk, seat: S.seat, safe: S.safe, tx, wallet: canPay() ? S.wallet : null, others, say });
+    const got = await approve2({ C: S.C, pk: S.pk, seat: S.seat, safe: S.safe, tx, wallet: canPay() ? S.wallet : null, others, sigs: S.sigs, say });
     S.draft = null;
     S.acks = {};
     await refresh();
@@ -22521,7 +22597,7 @@ async function voteWallet(tx, run2) {
     if (!isOwner(S.wallet?.account)) throw new Error("This wallet's account isn't an owner of the Safe. Nothing was sent.");
     await needGas();
     keepProposal(tx);
-    const data = run2 ? execData(tx, [...S.votes, S.wallet.account]) : approveHashData(S.review.safeTxHash);
+    const data = run2 ? execData(tx, [...S.votes, S.wallet.account], S.sigs) : approveHashData(S.review.safeTxHash);
     const hash3 = await sendToSafe(S.C, S.wallet, S.safe.address, data);
     say("Waiting for the block…");
     const r = await receipt(S.C, hash3);
@@ -22536,7 +22612,7 @@ async function run(tx) {
   await guard("Your wallet runs it. It pays gas, and approves nothing…", async () => {
     await refresh();
     await needGas();
-    const hash3 = await sendToSafe(S.C, S.wallet, S.safe.address, execData(tx, S.votes));
+    const hash3 = await sendToSafe(S.C, S.wallet, S.safe.address, execData(tx, S.votes, S.sigs));
     say("Waiting for the block…");
     const r = await receipt(S.C, hash3);
     if (r.status !== "success") throw new Error(`The transaction reverted (${short(hash3, 10, 6)}). Nothing changed.`);
@@ -22835,7 +22911,7 @@ function bookCard() {
     ),
     el(
       "details",
-      {},
+      keepOpen("book-paste"),
       el("summary", { class: "small" }, "Or paste it"),
       el("textarea", { id: "book-paste", class: "mono", rows: "4", spellcheck: "false", oninput: (e) => {
         S.bookPaste = e.target.value;
@@ -22955,7 +23031,7 @@ function sendCard() {
     S.current ? el("p", { class: "small" }, "One transaction at a time: finish or reject the one above first.") : null,
     el(
       "details",
-      {},
+      keepOpen("add-token"),
       el("summary", { class: "small" }, "Add a token"),
       el(
         "div",
@@ -22966,6 +23042,18 @@ function sendCard() {
         el("button", { type: "button", disabled: !!S.busy, onclick: addToken }, "Add it")
       ),
       el("p", { class: "small" }, `The console knows ${pinnedTokens(S.C).map((x) => x.symbol).join(", ") || "no tokens"} on this chain. Any other ERC-20 works too; the console reviews it as a token it doesn't know, with the amount in raw units.`)
+    ),
+    el(
+      "details",
+      keepOpen("safe-wallet"),
+      el("summary", { class: "small" }, "A transaction from Safe{Wallet}"),
+      el("p", { class: "small" }, "Safe{Wallet} keeps a transaction it proposes, and its owners' signatures, on Safe's server, not on chain. This page reaches only the chain, so bring it here: open this link, copy everything it shows, and paste it below."),
+      S.C.id === 84532 ? el("a", { class: "mono small sw-link", href: safeWalletUrl(S.safe.address), target: "_blank", rel: "noopener noreferrer" }, "Safe's transaction service: this Safe's waiting transactions") : el("p", { class: "small" }, "(On a test chain of your own, Safe's service has nothing: paste the same JSON by hand.)"),
+      el("textarea", { id: "sw-paste", class: "mono", rows: "4", spellcheck: "false", placeholder: '{"count": 1, "results": [ … ] }', oninput: (e) => {
+        S.swPaste = e.target.value;
+      } }, S.swPaste || ""),
+      el("div", { class: "actions" }, el("button", { type: "button", disabled: !!S.busy, onclick: importSafeWallet }, "Import it")),
+      el("p", { class: "small" }, "The console works out the hash from the fields, and it must match Safe{Wallet}'s. Each signature must be an owner's, of this transaction. Then your seat's press adds its vote, and runs it with theirs if that makes enough.")
     )
   ];
 }
@@ -22984,12 +23072,13 @@ function approvalCard() {
   }
   const overtaken = Number(tx.nonce) < S.safe.nonce;
   const seatVoted = S.votes.some((v) => v.toLowerCase() === S.seat.address.toLowerCase());
-  const t = S.safe.threshold, count = S.votes.length;
+  const t = S.safe.threshold, count = S.votes.length + S.sigs.length;
+  const signed = (a) => S.sigs.some((x) => same(x.owner, a));
   out.push(
     el("h3", {}, overtaken ? "Overtaken" : `Votes: ${count} of ${t}`),
     el("ul", { class: "votes" }, ...S.owners.map((o) => {
-      const voted = S.votes.some((v) => v.toLowerCase() === o.address.toLowerCase());
-      const said = voted ? "approved" : o.yours && w ? `key ${w.n} signed it; not on chain yet` : "not yet";
+      const voted = S.votes.some((v) => v.toLowerCase() === o.address.toLowerCase()) || signed(o.address);
+      const said = signed(o.address) ? "signed in Safe{Wallet}" : voted ? "approved" : o.yours && w ? `key ${w.n} signed it; not on chain yet` : "not yet";
       return el("li", { class: voted ? "yes" : "" }, el("span", { class: "mark", "aria-hidden": "true" }, voted ? "✓" : "○"), addr(o.address), el("span", { class: "small" }, ` ${kindOf(o)[1]} · ${said}`));
     }))
   );
@@ -23022,7 +23111,7 @@ function approvalCard() {
     if (canPay() || !w) buttons.push(gated(holdButton(label2, () => voteSeat(tx), { red }), [...needRed, ...elsewhere && !w ? ["elsewhere"] : []]));
     if (S.wallet && !canPay()) buttons.push(el("span", { class: "small" }, `${S.wallet.name}'s account has no ETH for gas.`));
   }
-  const mineToo = S.wallet && isOwner(S.wallet.account) && !S.votes.some((v) => v.toLowerCase() === S.wallet.account.toLowerCase());
+  const mineToo = S.wallet && isOwner(S.wallet.account) && !S.votes.some((v) => v.toLowerCase() === S.wallet.account.toLowerCase()) && !signed(S.wallet.account);
   if (mineToo && !overtaken && !w && count < t) {
     const runs = count + 1 >= t;
     buttons.push(gated(el("button", { type: "button", onclick: () => voteWallet(tx, runs) }, runs ? "Run it with my wallet" : "Approve with my wallet"), needRed));
@@ -23038,7 +23127,7 @@ function approvalCard() {
   ));
   if (elsewhere && !w && !seatVoted) out.push(el("p", { class: "note" }, `Another device made this seat, and this browser has no record of what its keys signed. If that device signed with key ${n} and its transaction is still pending, signing here would be key ${n}'s second signature: enough to forge a third. Check there first, and use one device per seat.`));
   const mine_ = (S.seatOwns && !seatVoted && !wElse ? 1 : 0) + (mineToo && !w ? 1 : 0);
-  const askable = S.owners.some((o) => !o.yours && !same(o.address, S.wallet?.account) && !S.votes.some((v) => same(v, o.address)));
+  const askable = S.owners.some((o) => !o.yours && !same(o.address, S.wallet?.account) && !S.votes.some((v) => same(v, o.address)) && !signed(o.address));
   if (w) out.push(approvalShare(w, overtaken));
   if (!overtaken && count < t && askable) {
     const link = proposalLink(S.C, S.safe.address, tx, location.origin + location.pathname);
@@ -23090,7 +23179,7 @@ function activityCard() {
     el("p", { class: "small" }, "Votes by other owners aren't listed here: the Safe's own history on the explorer has them.")
   ];
 }
-var S, log, read, home, proposalKey, safesKey, safes, same, tokens, tokenOf, units, ledger, mine, say, walletId, isOwner, canPay, KIND, kindOf, nameLink;
+var S, log, read, home, proposalKey, safesKey, safes, same, opened, keepOpen, tokens, tokenOf, units, sameTx, txOnly, ledger, mine, say, walletId, isOwner, canPay, KIND, kindOf, nameLink;
 var init_wallet2 = __esm({
   "src/wallet.mjs"() {
     init_esm();
@@ -23121,9 +23210,16 @@ var init_wallet2 = __esm({
     safesKey = () => `${S.C.id}:${S.home.seat.toLowerCase()}`;
     safes = () => [S.home.safe, ...read("sab.safes")[safesKey()] || []];
     same = (a, b) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
+    opened = /* @__PURE__ */ new Set();
+    keepOpen = (key) => ({ open: opened.has(key), ontoggle: (e) => {
+      if (e.target.open) opened.add(key);
+      else opened.delete(key);
+    } });
     tokens = () => [...pinnedTokens(S.C), ...(read("sab.tokens")[String(S.C.id)] || []).filter((t) => !pinnedTokens(S.C).some((p) => same(p.address, t.address)))];
     tokenOf = (a) => tokens().find((t) => same(t.address, a)) || null;
     units = (v, t) => `${Number(formatUnits(v, t.decimals)).toLocaleString("en-US", { maximumFractionDigits: Math.min(t.decimals, 6) })} ${t.symbol}`;
+    sameTx = (a, b) => !!a && !!b && ["to", "value", "data", "operation", "nonce"].every((k) => String(a[k] ?? "").toLowerCase() === String(b[k] ?? "").toLowerCase());
+    txOnly = ({ sigs, ...tx }) => tx;
     ledger = () => ask({ op: "ledger" }).entries || [];
     mine = () => ledger().filter((e) => e.chainId === S.C.id && e.seat === S.home.seat.toLowerCase());
     say = (t) => {

@@ -11,7 +11,7 @@
 // viem's client keeps ccipRead off: the page never follows a contract's request to fetch elsewhere.
 import {
   ContractFunctionRevertedError, concat, createPublicClient, createWalletClient, custom, decodeFunctionData, decodeFunctionResult,
-  encodeFunctionData, getAddress, getContractAddress, http, keccak256, pad, parseAbi, toFunctionSelector, zeroAddress,
+  encodeFunctionData, getAddress, getContractAddress, hashMessage, http, keccak256, pad, parseAbi, recoverAddress, toFunctionSelector, zeroAddress,
 } from "viem";
 import deployment from "../../contracts/deployment.json" with { type: "json" };
 
@@ -248,25 +248,43 @@ export async function buildCalls(C, { pk, signer, seatNumber, firstKey, seat }) 
 /** One press: the seat's approval (it must land), then the Safe transaction it approves (it may
  * fail, say for lack of ETH or of other owners' votes, and run later: the Safe keeps the seat's vote).
  * others: owners whose votes the Safe already holds for it, counted in the same execTransaction. */
-export function approveCalls(a, tx, others = []) {
+export function approveCalls(a, tx, others = [], sigs = []) {
   const approve = { target: a.seat, allowFailure: false, callData: encodeFunctionData({ abi: SEAT_ABI, functionName: "approve",
     args: [a.safe, a.safeTxHash, a.nextKey, a.oneTime, a.curveSig] }) };
-  return [approve, execCall(a.seat, a.safe, tx, others)];
+  return [approve, execCall(a.seat, a.safe, tx, others, sigs)];
 }
 
-/** execTransaction with the seat's vote, and any others', as pre-approved signatures. */
-export function execCall(seat, safe, tx, others = []) {
-  return { target: safe, allowFailure: true, callData: execData(tx, [seat, ...others]) };
+/** execTransaction with the seat's vote, and any others', as pre-approved signatures, and any owners'
+ * own signatures (sigs). */
+export function execCall(seat, safe, tx, others = [], sigs = []) {
+  return { target: safe, allowFailure: true, callData: execData(tx, [seat, ...others], sigs) };
 }
 
-/** execTransaction for these voters. Each vote is a pre-approved signature: r = the owner, s = 0,
- * v = 1. Safe accepts one when the owner is the sender, or has approved the hash on chain (the seat
- * does, in approve). It wants them in ascending order of owner. */
-export function execData(tx, voters) {
-  const sorted = [...new Set(voters.map((v) => v.toLowerCase()))].sort((x, y) => (BigInt(x) < BigInt(y) ? -1 : 1));
-  const signatures = sorted.length ? concat(sorted.map((v) => concat([pad(v, { size: 32 }), pad("0x", { size: 32 }), "0x01"]))) : "0x";
+/** execTransaction for these voters, and these signatures. A vote is a pre-approved signature: r = the
+ * owner, s = 0, v = 1; Safe accepts one when the owner is the sender, or has approved the hash on chain
+ * (the seat does, in approve). sigs are [{ owner, signature }]: an owner's own 65-byte ECDSA signature
+ * of the Safe transaction hash, as Safe{Wallet} collects them off chain. An owner with a vote needs no
+ * signature. Safe wants them all in ascending order of owner. */
+export function execData(tx, voters, sigs = []) {
+  const parts = new Map(voters.map((v) => [v.toLowerCase(), concat([pad(v, { size: 32 }), pad("0x", { size: 32 }), "0x01"])]));
+  for (const s of sigs) if (!parts.has(s.owner.toLowerCase())) parts.set(s.owner.toLowerCase(), s.signature);
+  const sorted = [...parts.keys()].sort((x, y) => (BigInt(x) < BigInt(y) ? -1 : 1));
+  const signatures = sorted.length ? concat(sorted.map((o) => parts.get(o))) : "0x";
   return encodeFunctionData({ abi: SAFE_ABI, functionName: "execTransaction",
     args: [tx.to, BigInt(tx.value), tx.data || "0x", Number(tx.operation), 0n, 0n, 0n, zeroAddress, zeroAddress, signatures] });
+}
+
+/** Who signed a Safe transaction hash with this 65-byte signature, as Safe would read it: v 27 or 28,
+ * the hash itself (an EIP-712 signature, as Safe{Wallet} asks wallets for); v 31 or 32, the hash as an
+ * eth_sign message. -> the address, or null for any other kind (a contract's, or a pre-approved one). */
+export async function signerOf(hash, signature) {
+  if (!/^0x[0-9a-fA-F]{130}$/.test(signature)) return null;
+  const v = parseInt(signature.slice(-2), 16);
+  try {
+    if (v === 27 || v === 28) return await recoverAddress({ hash, signature });
+    if (v === 31 || v === 32) return await recoverAddress({ hash: hashMessage({ raw: hash }), signature: signature.slice(0, -2) + (v - 4).toString(16) });
+  } catch {}
+  return null;
 }
 
 // ----------------------------------------------------------------------------- owners
