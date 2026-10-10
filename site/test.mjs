@@ -1,11 +1,14 @@
 // The page's own JavaScript, without a browser: src/wots.mjs against reference/vectors/v1.json, the
 // danger case's forgery against a throwaway key, finding an approval inside a wallet's transaction,
 // the links another device pays from (a build, an approval), the votes and owner changes the wallet page
-// sends, and console/cfg.py against what the page reads.
+// sends, the QR encoder against an independent one, the compact approval a QR code carries, and
+// console/cfg.py against what the page reads.
 //   cd site && npm ci && node test.mjs
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import * as w from "./src/wots.mjs";
-import { decodeFunctionData, encodeFunctionData, parseAbi } from "viem";
+import { decodeFunctionData, encodeAbiParameters, encodeFunctionData, parseAbi, parseAbiParameters } from "viem";
+import * as qr from "./src/qr.mjs";
 import { MULTICALL_ABI, SAFE_ABI, approveCalls, execData, findApprove, ownerTx, parseCfg } from "./src/chain.mjs";
 import * as pay from "./src/pay.mjs";
 
@@ -123,6 +126,39 @@ let threw = false;
 try { ownerTx(safe, 4, { remove: "0x" + "77".repeat(20), owners, threshold: 1 }); } catch { threw = true; }
 check("refused: removing an address that isn't an owner", threw);
 console.log("votes and owner changes: order, the press, add, remove, threshold");
+
+// The QR encoder, module for module against python-qrcode 8.2 (site/qr-vectors.json, made by
+// tools/qr-vectors.py): byte and alphanumeric segments, all four levels, versions 1 to 37.
+const QV = JSON.parse(readFileSync(new URL("./qr-vectors.json", import.meta.url), "utf8"));
+const rowsOf = (q) => q.modules.map((r) => r.map((c) => (c ? "1" : "0")).join(""));
+for (const c of QV.cases) {
+  const q = qr.encode(c.segments, { ecl: c.ecl, mask: c.mask });
+  check(`QR v${c.version} ${c.ecl} mask ${c.mask}`, q && q.version === c.version && createHash("sha256").update(rowsOf(q).join("\n")).digest("hex") === c.sha256);
+}
+// With the mask left to it, it picks one and draws the same code as with that mask fixed.
+const auto = qr.encode(QV.cases[0].segments);
+check("QR: its own choice of mask", JSON.stringify(rowsOf(auto)) === JSON.stringify(rowsOf(qr.encode(QV.cases[0].segments, { mask: auto.mask }))));
+check("QR: too long for version 40 is null", qr.encode([{ mode: "byte", text: "x".repeat(3000) }]) === null);
+console.log(`qr.mjs: ${QV.cases.length} codes, as python-qrcode makes them`);
+
+// The compact approval a QR code carries: the same approval the link gives, in one version 37-40 code.
+const CURVE = parseAbiParameters("bytes authenticatorData, string clientDataFields, uint256 r, uint256 s");
+const real = { ...a, curveSig: encodeAbiParameters(CURVE, ["0x" + "49".repeat(32) + "1d00000003", '"origin":"https://signandburn.app","crossOrigin":false', 2n ** 255n + 7n, 12345n]) };
+const otx = { to: a.safe, value: "0", data: "0x0d582f13" + "00".repeat(12) + "ce".repeat(20) + "00".repeat(31) + "01", operation: 0, nonce: "12" };
+const compact = pay.approvalQr(C, 7, real, otx, "https://signandburn.app/");
+const viaLink = pay.fromLink(new URL(pay.approvalLink(C, 7, real, otx, "https://signandburn.app/")).hash, C).req;
+const viaCode = pay.fromLink(new URL(compact.link).hash, C).req;
+check("a compact approval reads as the approval link does", JSON.stringify(viaCode) === JSON.stringify(viaLink));
+const code = qr.encode(compact.segments);
+check("…and fits one QR code", !!code && code.version <= 40);
+check("a curve signature that isn't canonical gets no compact form", pay.approvalQr(C, 7, a, otx, "https://signandburn.app/") === null);
+const rest = compact.link.split("#aq=")[1];
+const badQ = (what, h) => check(`refused: ${what}`, !!pay.fromLink(h, C)?.refuse);
+badQ("one character short", "#aq=" + rest.slice(0, -1));
+badQ("a byte more", "#aq=" + rest + "00");
+badQ("a character outside base 43", "#aq=" + rest.slice(0, -3) + "aaa");
+badQ("another chain", "#aq=" + pay.approvalQr({ ...C, id: 1 }, 7, real, otx, "x").link.split("#aq=")[1]);
+console.log(`compact approvals: ${compact.link.length} characters, a version ${code.version} code, and four refusals`);
 
 const cfg = parseCfg(readFileSync(new URL("../console/cfg.py", import.meta.url), "utf8"));
 const dep = JSON.parse(readFileSync(new URL("../contracts/deployment.json", import.meta.url), "utf8"));

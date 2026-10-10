@@ -10,7 +10,10 @@ npm run e2e     # the whole flow in Chromium (needs anvil)
 
 `src/wots.mjs` against all 7 vectors; the danger case's forgery against a throwaway key; and
 `console/cfg.py` against what the page reads (Base Sepolia only, the factory's address as
-`contracts/deployment.json` has it).
+`contracts/deployment.json` has it). Also the links (build, approval, proposal, compact approval)
+and their refusals, the votes and owner changes the wallet page sends, and `src/qr.mjs` module for
+module against 16 codes from python-qrcode 8.2 (`site/qr-vectors.json`, made by `tools/qr-vectors.py`
+by hand; CI only reads the file).
 
 ## In Chromium (`site/e2e.mjs`)
 
@@ -32,6 +35,7 @@ The checks, in order:
 3. One tap: key 0's fingerprint, and every address before anything exists.
 4. With no wallet in the browser, at phone width, the build keeps Connect and a visible link.
    Copied, it is this page's address followed by public values only: it names neither the seat nor the Safe.
+   "Show QR code" draws the same link as a QR code.
 5. With no wallet found, Connect stays available and explains the payment link. Copy writes only
    the URL, even when the browser has a share sheet. If the clipboard refuses, the link stays visible.
    The second browser refuses a link with another chain. Its “Pay for a request” form refuses bad
@@ -64,7 +68,9 @@ The checks, in order:
     names it, the seat is at key 5, and the Safe hasn't run it.
 15. A press with no wallet: the first browser loses its wallet. Holding asks the passkey once (key 5),
     and the approval waits to be shared. After a reload: the same link, and no new passkey signature.
-    The second browser refuses a link with another next key (the seat's own refusal, no button), then
+    Its QR code carries the approval in compact form (`#aq=`, base 43). The second browser opens that
+    compact link as a phone's camera would: the same approval, the same check code, and the seat
+    accepts it. It refuses a link with another next key (the seat's own refusal, no button), then
     pastes the real one into “Pay for a request”. The seat accepts it, and the hash it works out
     shows the same check code. Its wallet sends it: the seat moves to key 6, and the Safe runs it. The first browser sees approval 5
     land by itself, says another device sent it, and its history has it landed.
@@ -101,6 +107,10 @@ The checks, in order:
       the wallet's vote counted, the same check code. One press there (key 0, one passkey signature)
       makes two votes, and the Safe runs it. The first browser sees it run by itself; the second
       keeps both Safes its seat is in.
+    - A phone with no wallet: the second browser adds the first seat to its own 1 of 1 Safe. Holding
+      is offered, and no other owner is asked. One tap signs key 1, and the approval waits as a link to
+      the main page. The first browser's wallet sends it there; on chain the second Safe has both
+      seats, and the second browser sees it land by itself: 1 of 2, and a backup.
 18. The CSP refuses another host. A phone-width screen has no sideways scroll. No page errors.
 
 Screenshots go to `site/shots/` (not committed).

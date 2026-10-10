@@ -2,6 +2,7 @@
 // Anything from the chain, a wallet or a link is drawn as text (textContent), never as HTML.
 import { formatEther } from "viem";
 import { blockie, blockieSrc, rgb } from "./blockies.mjs";
+import * as qr from "./qr.mjs";
 
 let C = null;
 /** The chain the page is on, for explorer links and the review's fields. */
@@ -91,4 +92,40 @@ export function reviewParts(r, safe, tx, label) {
     el("div", { class: "verify" }, vc, el("div", {}, el("div", { class: "small" }, label),
       el("div", { class: "code" }, r.verify), el("div", { class: "mono small" }, r.safeTxHash))),
   ];
+}
+
+// ----------------------------------------------------------------------------- QR codes
+// A link shown as a QR code, for another device's camera, behind a button. Which ones are open, and
+// the codes already worked out, outlive a redraw of the screen.
+const qrOpen = new Set(), qrMade = new Map();
+
+/** "Show QR code" for `what`: a text (byte mode), QR segments (src/qr.mjs), or null for one too long
+ * for a QR code. Black on white whatever the theme, with the four-module quiet zone around it. */
+export function qrToggle(what) {
+  const segs = typeof what === "string" ? [{ mode: "byte", text: what }] : what;
+  const text = segs ? segs.map((g) => g.text).join("") : "";
+  const key = text || "(too long)", open = qrOpen.has(key);
+  const box = el("div", { class: "qr" });
+  if (open && !segs) box.append(el("p", { class: "small" }, "Too long for a QR code. Copy the link instead."));
+  else if (open) {
+    let q = qrMade.get(text);
+    if (!q) { q = qr.encode(segs); if (qrMade.size > 8) qrMade.clear(); qrMade.set(text, q); }
+    if (!q) box.append(el("p", { class: "small" }, "Too long for a QR code. Copy the link instead."));
+    else {
+      const scale = q.size > 100 ? 4 : 8, n = (q.size + 8) * scale;
+      const c = el("canvas", { width: n, height: n, class: q.size > 100 ? "qr-code dense" : "qr-code", role: "img", "aria-label": "A QR code of the link", "data-text": text });
+      const ctx = c.getContext("2d");
+      ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, n, n); ctx.fillStyle = "#000";
+      q.modules.forEach((row, y) => row.forEach((dark, x) => { if (dark) ctx.fillRect((x + 4) * scale, (y + 4) * scale, scale, scale); }));
+      box.append(c, el("p", { class: "small" }, q.size > 100
+        ? `A dense code (version ${q.version}, ${q.size} × ${q.size}). Show it large, on a computer's screen say, and hold the camera steady.`
+        : "Point the other device's camera at it."));
+    }
+  }
+  const btn = el("button", { type: "button", class: "link", "aria-expanded": String(open), onclick: () => {
+    if (qrOpen.has(key)) qrOpen.delete(key); else qrOpen.add(key);
+    wrap.replaceWith(qrToggle(what));
+  } }, open ? "Hide QR code" : "Show QR code");
+  const wrap = el("div", { class: "qr-wrap" }, btn, box);
+  return wrap;
 }

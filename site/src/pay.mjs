@@ -19,16 +19,24 @@
 // isn't secret once it leaves (anyone who sees it sent can copy it), and it can do only what was
 // signed. Until it lands, the console shares only that same approval again (core.begin, "resend").
 //
+// The same approval also has a compact form, for a QR code (sign-and-burn/approval-qr/v1, in
+// "#aq=…"): the approval link is about 3,600 characters, more than one QR code holds. The compact form
+// packs the same fields as bytes, the curve signature as its four parts, and writes them in base 43:
+// characters a QR code's alphanumeric mode stores in 5.5 bits each, and a URL fragment carries as they
+// are. About 3,650 characters, in a version 37 code. The page that opens it reads exactly what the
+// approval link would give it, and checks it the same way.
+//
 // A third kind, for the wallet page: a Safe transaction waiting for votes, from one owner's device to
 // another's (sign-and-burn/proposal/v1, in "#propose=…"). It holds the Safe and the transaction's
 // fields, nothing signed and no hash. The other device's console works out the hash and what it does;
 // the votes already cast are on chain, where that page reads them.
-import { bytesToHex, getAddress, hexToBytes } from "viem";
+import { bytesToHex, decodeAbiParameters, encodeAbiParameters, getAddress, hexToBytes, parseAbiParameters } from "viem";
 import * as ch from "./chain.mjs";
 
 export const TAG = "sign-and-burn/build/v1";
 export const APPROVAL_TAG = "sign-and-burn/approval/v1";
 export const PROPOSAL_TAG = "sign-and-burn/proposal/v1";
+export const APPROVAL_QR_TAG = "sign-and-burn/approval-qr/v1";
 const HEX32 = /^[0-9a-f]{64}$/;
 const ADDR = /^0x[0-9a-f]{40}$/;
 const UINT = /^(0|[1-9]\d{0,77})$/;
@@ -65,6 +73,7 @@ export function approvalLink(C, n, a, tx, base) {
 /** A link's fragment -> null if it isn't a request to pay for something, else { req } or { refuse }.
  * Every field is checked for its exact shape; nothing in it is drawn as HTML. */
 export function fromLink(hash, C) {
+  if (/^#?aq=/.test(String(hash || ""))) return approvalQrFrom(String(hash).replace(/^#?aq=/, ""), C);
   const q = new URLSearchParams(String(hash || "").replace(/^#/, ""));
   if (!q.has("pay")) return null;
   const tag = q.get("pay");
@@ -72,6 +81,83 @@ export function fromLink(hash, C) {
   const chain = Number(q.get("chain"));
   if (chain !== C.id) return { refuse: `This link is for chain ${String(q.get("chain")).slice(0, 12)}. This page works on ${C.chain.name} (${C.id}) only.` };
   return tag === TAG ? buildFrom(q, chain) : approvalFrom(q, chain);
+}
+
+// ----------------------------------------------------------------------------- the compact approval
+// Base 43: the QR alphanumeric set without space and "%", which a URL would escape. Two bytes make
+// three characters (43^3 > 2^16), a last single byte two.
+const B43 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ$*+-./:";
+export function base43(bytes) {
+  let out = "";
+  for (let i = 0; i < bytes.length; i += 2) {
+    let v = i + 1 < bytes.length ? bytes[i] * 256 + bytes[i + 1] : bytes[i];
+    const n = i + 1 < bytes.length ? 3 : 2;
+    for (let k = 0; k < n; k++) { out += B43[v % 43]; v = Math.floor(v / 43); }
+  }
+  return out;
+}
+export function unbase43(s) {
+  if (s.length % 3 === 1) return null;
+  const out = [];
+  for (let i = 0; i < s.length; i += 3) {
+    const part = s.slice(i, i + 3), digits = [...part].map((c) => B43.indexOf(c));
+    if (digits.some((d) => d < 0)) return null;
+    const v = digits.reduceRight((a, d) => a * 43 + d, 0);
+    if (part.length === 3) { if (v > 0xffff) return null; out.push(v >> 8, v & 0xff); }
+    else { if (v > 0xff) return null; out.push(v); }
+  }
+  return Uint8Array.from(out);
+}
+
+const CURVE = parseAbiParameters("bytes authenticatorData, string clientDataFields, uint256 r, uint256 s");
+
+/** Approval n as a compact link for a QR code: { link, segments } (the link's start in byte mode, the
+ * base-43 rest in alphanumeric mode), or null if the curve signature isn't in its canonical form. */
+export function approvalQr(C, n, a, tx, base) {
+  let parts;
+  try { parts = decodeAbiParameters(CURVE, a.curveSig); } catch { return null; }
+  if (encodeAbiParameters(CURVE, parts).toLowerCase() !== a.curveSig.toLowerCase()) return null;
+  const [ad, fields, r, s] = parts;
+  const out = [];
+  const put = (hex) => out.push(...hexToBytes(hex));
+  const int = (v, len) => { const h = BigInt(v).toString(16).padStart(len * 2, "0"); if (h.length > len * 2) throw new Error("too big"); put("0x" + h); };
+  const bytes = (b, lenBytes) => { int(b.length, lenBytes); out.push(...b); };
+  const num = (v) => { const h = BigInt(v).toString(16), b = BigInt(v) ? hexToBytes("0x" + (h.length % 2 ? "0" : "") + h) : new Uint8Array(); bytes(b, 1); };
+  out.push(1);
+  int(C.id, 4); put(a.seat); put(a.safe); int(n, 8); put(a.nextKey);
+  for (const v of a.oneTime) put(v);
+  put(tx.to); num(tx.value); out.push(Number(tx.operation)); num(tx.nonce); bytes(hexToBytes(tx.data || "0x"), 2);
+  bytes(hexToBytes(ad), 2); bytes(new TextEncoder().encode(fields), 2); int(r, 32); int(s, 32);
+  const prefix = `${base}#aq=`, rest = base43(Uint8Array.from(out));
+  return { link: prefix + rest, segments: [{ mode: "byte", text: prefix }, { mode: "alnum", text: rest }] };
+}
+
+/** The compact approval -> the same { req } the approval link gives, or { refuse }. */
+function approvalQrFrom(s, C) {
+  const again = " Ask for the code again.", b = unbase43(decodeURIComponent(s.replace(/%(?![0-9A-Fa-f]{2})/g, "%25")));
+  if (!b || b[0] !== 1) return { refuse: `This code isn't a ${APPROVAL_QR_TAG} approval.` + again };
+  let i = 1;
+  const take = (n) => { if (i + n > b.length) throw new Error("short"); const x = b.slice(i, i + n); i += n; return x; };
+  const hex = (n) => bytesToHex(take(n));
+  const int = (n) => BigInt(hex(n));
+  const lenThen = (lenBytes, max) => { const n = Number(int(lenBytes)); if (n > max) throw new Error("long"); return take(n); };
+  const num = () => { const x = lenThen(1, 32); return x.length ? BigInt(bytesToHex(x)).toString() : "0"; };
+  try {
+    const chain = Number(int(4));
+    if (chain !== C.id) return { refuse: `This code is for chain ${chain}. This page works on ${C.chain.name} (${C.id}) only.` };
+    const seat = hex(20), safe = hex(20), n = int(8), nextKey = hex(32);
+    if (n > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error("n");
+    const oneTime = Array.from({ length: 67 }, () => hex(32));
+    const to = hex(20), value = num(), operation = take(1)[0], nonce = num(), data = bytesToHex(lenThen(2, 8192));
+    if (operation > 1) return { refuse: "This code's operation is neither a call nor a delegatecall." + again };
+    const ad = bytesToHex(lenThen(2, 1024)), fields = new TextDecoder("utf-8", { fatal: true }).decode(lenThen(2, 2048)), r = int(32), sv = int(32);
+    if (i !== b.length) throw new Error("trailing bytes");
+    const curveSig = encodeAbiParameters(CURVE, [ad, fields, r, sv]);
+    return { req: { tag: APPROVAL_TAG, chain, seat, safe, n: Number(n), nextKey, oneTime, curveSig,
+      tx: { to, value, data, operation, nonce } } };
+  } catch {
+    return { refuse: "This code's approval isn't whole, or has bytes it shouldn't." + again };
+  }
 }
 
 /** A Safe transaction waiting for votes, as a link to the wallet page. */

@@ -184,6 +184,8 @@ try {
   const H = await home();
   check(link === await page.locator(".share-link").inputValue() && link.startsWith(URL_ + "#pay=") && !link.includes(H.seat.slice(2).toLowerCase()) && !link.includes(H.safe.slice(2).toLowerCase()),
     "the link: this page's address, then public values only (it names neither the seat nor the Safe)");
+  await click("Show QR code");
+  check((await page.locator(".qr canvas").getAttribute("data-text")) === link, "Show QR code: the same link, as a QR code");
 
   const ctx2 = await newBrowser();
   const payer = await ctx2.newPage();
@@ -379,11 +381,19 @@ try {
   await page.reload();
   check(await waitFor(/Approval 5 is signed/) && (await signCount()) === before + 1 && (await page.locator(".share-link").inputValue()) === alink,
     "after a reload: the same approval, the same link, and no new passkey signature");
+  // The link is too long for one QR code; the code carries the approval's compact form (#aq=).
+  if (!(await page.locator(".qr canvas").count())) await click("Show QR code");
+  const qrText = await page.locator(".qr canvas").getAttribute("data-text");
+  await page.locator(".qr canvas").screenshot({ path: join(SHOTS, "qr-approval.png") });
+  check(qrText.startsWith(URL_ + "#aq=") && /^[0-9A-Z$*+\-./:]+$/.test(qrText.split("#aq=")[1]), "its QR code: the approval in compact form, this page's address then base 43");
   const tampered = new URLSearchParams(new URL(alink).hash.slice(1));
   tampered.set("next", "0x" + "ab".repeat(32));
   await payer.goto(URL_ + "#" + tampered);
   check(await waitFor(/The seat would refuse this approval \(Bad/, 30000, payer) && !(await payer.getByRole("button", { name: "Send it: one transaction" }).count()),
     "the other browser: the link with another next key, and the seat would refuse it; no button");
+  await payer.goto(qrText);
+  check(await waitFor(/Send approval 5[\s\S]*The seat accepts it/, 30000, payer) && (await payer.locator("#screen .verify .code").innerText()) === code,
+    "the compact form, opened as a phone's camera would: the same approval, the same check code, and the seat accepts it");
   await payer.goto(URL_);
   await payer.locator(".payment-request summary").click();
   await payer.locator("#pay-request-link").fill(alink);
@@ -611,6 +621,32 @@ try {
   check((await onChain()).nonce === nonce4 + 1 && formatEther(await pc.getBalance({ address: TO4 })) === "0.0001" &&
     Number(await pc.readContract({ address: H2.seat, abi: SEAT_ABI, functionName: "n" })) === 1, "on chain: the Safe ran it, and the second seat is at key 1");
   check(await page.locator("#act").waitFor({ state: "hidden", timeout: 15000 }).then(() => true, () => false), "the first browser sees it run, by itself");
+  // d. a phone with no wallet, as on a real one: the second browser adds the first seat to its own
+  // Safe, 1 of 2. Holding signs; nobody else is asked (its seat's vote is enough); the approval goes
+  // out as a link, and the first browser's wallet sends it from the main page.
+  await second.evaluate(() => localStorage.setItem("e2e.nowallet", "1"));
+  await second.goto(URL_ + "wallet.html");
+  await see(/your shielded safe[\s\S]*1 of 1 to approve/i, 30000, second);
+  await second.locator("#add-owner").fill(H.seat);
+  await second.locator("#owners .owner-add").getByRole("button", { name: "Review", exact: true }).click();
+  check(await see(/ADD OWNER[\s\S]*No wallet here: you then share the approval as a link/, 30000, second) && !(await second.getByText(/Ask another owner/).count()),
+    "a browser with no wallet, a 1 of 1: holding is offered, and no other owner is asked");
+  await second.getByLabel("I read the red page").check();
+  const b3 = await signCount3();
+  await hold(2400, second);
+  check(await see(/Approval 1 is signed\. Send it from another device/, 60000, second) && (await signCount3()) === b3 + 1, "…one tap: key 1 signs, and the approval waits, as a link");
+  await second.locator("#act").getByRole("button", { name: "Copy link" }).click();
+  const alink2 = await second.evaluate(() => window.__e2eCopied);
+  check(alink2.startsWith(URL_ + "#pay="), "the link opens on the main page, where any wallet can send it");
+  await page.goto(alink2);
+  await waitFor(/Send approval 1[\s\S]*The seat accepts it/, 30000);
+  await click("Send it: one transaction");
+  check(await waitFor(/Sent\. Approval 1 landed[\s\S]*The Safe ran the transaction/, 60000), "the first browser's wallet sends it");
+  const owners2 = (await pc.readContract({ address: H2.safe, abi: SAFE_OWNERS_ABI, functionName: "getOwners" })).map((o) => o.toLowerCase());
+  check(owners2.length === 2 && owners2.includes(H.seat.toLowerCase()), "on chain: the second Safe has both seats");
+  check(await second.locator("#act").waitFor({ state: "hidden", timeout: 15000 }).then(() => true, () => false) &&
+    await see(/1 of 2 to approve[\s\S]*Every approval needs a seat[\s\S]*A backup if your passkey is lost/, 30000, second),
+    "the second browser sees it land by itself: two seats, 1 of 2, and a backup");
   const listed = (await second.locator("#safes").innerText()).toLowerCase();
   check(listed.includes(H.safe.slice(-6).toLowerCase()) && listed.includes(H2.safe.slice(-6).toLowerCase()), "the second browser keeps both Safes its seat is in");
   await ctx3.close();

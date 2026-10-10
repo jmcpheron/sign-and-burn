@@ -323,3 +323,6 @@ main.wallet { max-width: 1100px; }
 @media (max-width: 600px) {
   .send-form, .owner-form { grid-template-columns: minmax(0, 1fr); }
 }
+.qr-wrap { margin-top: 10px; }
+.qr canvas { display: block; width: 100%; max-width: 320px; height: auto; margin-top: 8px; image-rendering: pixelated; border-radius: 6px; }
+.qr canvas.dense { max-width: 640px; }

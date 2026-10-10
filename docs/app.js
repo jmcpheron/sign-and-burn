@@ -5858,21 +5858,21 @@ function numToSizedHex(num2, size5) {
   return bytesToHex2(numberToBytesBE(num2, size5));
 }
 function weierstrassPoints(opts) {
-  const CURVE = validatePointOpts(opts);
-  const { Fp } = CURVE;
-  const Fn = Field(CURVE.n, CURVE.nBitLength);
-  const toBytes4 = CURVE.toBytes || ((_c, point, _isCompressed) => {
+  const CURVE2 = validatePointOpts(opts);
+  const { Fp } = CURVE2;
+  const Fn = Field(CURVE2.n, CURVE2.nBitLength);
+  const toBytes4 = CURVE2.toBytes || ((_c, point, _isCompressed) => {
     const a = point.toAffine();
     return concatBytes3(Uint8Array.from([4]), Fp.toBytes(a.x), Fp.toBytes(a.y));
   });
-  const fromBytes4 = CURVE.fromBytes || ((bytes2) => {
+  const fromBytes4 = CURVE2.fromBytes || ((bytes2) => {
     const tail = bytes2.subarray(1);
     const x = Fp.fromBytes(tail.subarray(0, Fp.BYTES));
     const y = Fp.fromBytes(tail.subarray(Fp.BYTES, 2 * Fp.BYTES));
     return { x, y };
   });
   function weierstrassEquation(x) {
-    const { a, b } = CURVE;
+    const { a, b } = CURVE2;
     const x2 = Fp.sqr(x);
     const x3 = Fp.mul(x2, x);
     return Fp.add(Fp.add(x3, Fp.mul(x, a)), b);
@@ -5882,17 +5882,17 @@ function weierstrassPoints(opts) {
     const right = weierstrassEquation(x);
     return Fp.eql(left, right);
   }
-  if (!isValidXY(CURVE.Gx, CURVE.Gy))
+  if (!isValidXY(CURVE2.Gx, CURVE2.Gy))
     throw new Error("bad curve params: generator point");
-  const _4a3 = Fp.mul(Fp.pow(CURVE.a, _3n2), _4n2);
-  const _27b2 = Fp.mul(Fp.sqr(CURVE.b), BigInt(27));
+  const _4a3 = Fp.mul(Fp.pow(CURVE2.a, _3n2), _4n2);
+  const _27b2 = Fp.mul(Fp.sqr(CURVE2.b), BigInt(27));
   if (Fp.is0(Fp.add(_4a3, _27b2)))
     throw new Error("bad curve params: a or b");
   function isWithinCurveOrder(num2) {
-    return inRange(num2, _1n5, CURVE.n);
+    return inRange(num2, _1n5, CURVE2.n);
   }
   function normPrivateKeyToScalar(key) {
-    const { allowedPrivateKeyLengths: lengths, nByteLength, wrapPrivateKey, n: N2 } = CURVE;
+    const { allowedPrivateKeyLengths: lengths, nByteLength, wrapPrivateKey, n: N2 } = CURVE2;
     if (lengths && typeof key !== "bigint") {
       if (isBytes2(key))
         key = bytesToHex2(key);
@@ -5933,7 +5933,7 @@ function weierstrassPoints(opts) {
   });
   const assertValidMemo = memoized((p) => {
     if (p.is0()) {
-      if (CURVE.allowInfinityPoint && !Fp.is0(p.py))
+      if (CURVE2.allowInfinityPoint && !Fp.is0(p.py))
         return;
       throw new Error("bad point: ZERO");
     }
@@ -6041,7 +6041,7 @@ function weierstrassPoints(opts) {
     // https://eprint.iacr.org/2015/1060, algorithm 3
     // Cost: 8M + 3S + 3*a + 2*b3 + 15add.
     double() {
-      const { a, b } = CURVE;
+      const { a, b } = CURVE2;
       const b3 = Fp.mul(b, _3n2);
       const { px: X1, py: Y1, pz: Z1 } = this;
       let X3 = Fp.ZERO, Y3 = Fp.ZERO, Z3 = Fp.ZERO;
@@ -6087,8 +6087,8 @@ function weierstrassPoints(opts) {
       const { px: X1, py: Y1, pz: Z1 } = this;
       const { px: X2, py: Y2, pz: Z2 } = other;
       let X3 = Fp.ZERO, Y3 = Fp.ZERO, Z3 = Fp.ZERO;
-      const a = CURVE.a;
-      const b3 = Fp.mul(CURVE.b, _3n2);
+      const a = CURVE2.a;
+      const b3 = Fp.mul(CURVE2.b, _3n2);
       let t0 = Fp.mul(X1, X2);
       let t1 = Fp.mul(Y1, Y2);
       let t2 = Fp.mul(Z1, Z2);
@@ -6146,7 +6146,7 @@ function weierstrassPoints(opts) {
      * an exposed private key e.g. sig verification, which works over *public* keys.
      */
     multiplyUnsafe(sc) {
-      const { endo: endo2, n: N2 } = CURVE;
+      const { endo: endo2, n: N2 } = CURVE2;
       aInRange("scalar", sc, _0n5, N2);
       const I = Point2.ZERO;
       if (sc === _0n5)
@@ -6185,7 +6185,7 @@ function weierstrassPoints(opts) {
      * @returns New point
      */
     multiply(scalar) {
-      const { endo: endo2, n: N2 } = CURVE;
+      const { endo: endo2, n: N2 } = CURVE2;
       aInRange("scalar", scalar, _1n5, N2);
       let point, fake;
       if (endo2) {
@@ -6212,8 +6212,8 @@ function weierstrassPoints(opts) {
      */
     multiplyAndAddUnsafe(Q, a, b) {
       const G2 = Point2.BASE;
-      const mul2 = (P2, a2) => a2 === _0n5 || a2 === _1n5 || !P2.equals(G2) ? P2.multiplyUnsafe(a2) : P2.multiply(a2);
-      const sum = mul2(this, a).add(mul2(Q, b));
+      const mul3 = (P2, a2) => a2 === _0n5 || a2 === _1n5 || !P2.equals(G2) ? P2.multiplyUnsafe(a2) : P2.multiply(a2);
+      const sum = mul3(this, a).add(mul3(Q, b));
       return sum.is0() ? void 0 : sum;
     }
     // Converts Projective point to affine (x, y) coordinates.
@@ -6223,7 +6223,7 @@ function weierstrassPoints(opts) {
       return toAffineMemo(this, iz);
     }
     isTorsionFree() {
-      const { h: cofactor, isTorsionFree } = CURVE;
+      const { h: cofactor, isTorsionFree } = CURVE2;
       if (cofactor === _1n5)
         return true;
       if (isTorsionFree)
@@ -6231,12 +6231,12 @@ function weierstrassPoints(opts) {
       throw new Error("isTorsionFree() has not been declared for the elliptic curve");
     }
     clearCofactor() {
-      const { h: cofactor, clearCofactor } = CURVE;
+      const { h: cofactor, clearCofactor } = CURVE2;
       if (cofactor === _1n5)
         return this;
       if (clearCofactor)
         return clearCofactor(Point2, this);
-      return this.multiplyUnsafe(CURVE.h);
+      return this.multiplyUnsafe(CURVE2.h);
     }
     toRawBytes(isCompressed = true) {
       abool("isCompressed", isCompressed);
@@ -6248,12 +6248,12 @@ function weierstrassPoints(opts) {
       return bytesToHex2(this.toRawBytes(isCompressed));
     }
   }
-  Point2.BASE = new Point2(CURVE.Gx, CURVE.Gy, Fp.ONE);
+  Point2.BASE = new Point2(CURVE2.Gx, CURVE2.Gy, Fp.ONE);
   Point2.ZERO = new Point2(Fp.ZERO, Fp.ONE, Fp.ZERO);
-  const { endo, nBitLength } = CURVE;
+  const { endo, nBitLength } = CURVE2;
   const wnaf = wNAF(Point2, endo ? Math.ceil(nBitLength / 2) : nBitLength);
   return {
-    CURVE,
+    CURVE: CURVE2,
     ProjectivePoint: Point2,
     normPrivateKeyToScalar,
     weierstrassEquation,
@@ -6274,8 +6274,8 @@ function validateOpts(curve) {
   return Object.freeze({ lowS: true, ...opts });
 }
 function weierstrass(curveDef) {
-  const CURVE = validateOpts(curveDef);
-  const { Fp, n: CURVE_ORDER, nByteLength, nBitLength } = CURVE;
+  const CURVE2 = validateOpts(curveDef);
+  const { Fp, n: CURVE_ORDER, nByteLength, nBitLength } = CURVE2;
   const compressedLen = Fp.BYTES + 1;
   const uncompressedLen = 2 * Fp.BYTES + 1;
   function modN2(a) {
@@ -6285,7 +6285,7 @@ function weierstrass(curveDef) {
     return invert(a, CURVE_ORDER);
   }
   const { ProjectivePoint: Point2, normPrivateKeyToScalar, weierstrassEquation, isWithinCurveOrder } = weierstrassPoints({
-    ...CURVE,
+    ...CURVE2,
     toBytes(_c, point, isCompressed) {
       const a = point.toAffine();
       const x = Fp.toBytes(a.x);
@@ -6373,7 +6373,7 @@ function weierstrass(curveDef) {
       const h2 = bits2int_modN(ensureBytes("msgHash", msgHash));
       if (rec == null || ![0, 1, 2, 3].includes(rec))
         throw new Error("recovery id invalid");
-      const radj = rec === 2 || rec === 3 ? r + CURVE.n : r;
+      const radj = rec === 2 || rec === 3 ? r + CURVE2.n : r;
       if (radj >= Fp.ORDER)
         throw new Error("recovery id 2 or 3 invalid");
       const prefix = (rec & 1) === 0 ? "02" : "03";
@@ -6425,8 +6425,8 @@ function weierstrass(curveDef) {
      * (groupLen + ceil(groupLen / 2)) with modulo bias being negligible.
      */
     randomPrivateKey: () => {
-      const length = getMinHashLength(CURVE.n);
-      return mapHashToField(CURVE.randomBytes(length), CURVE.n);
+      const length = getMinHashLength(CURVE2.n);
+      return mapHashToField(CURVE2.randomBytes(length), CURVE2.n);
     },
     /**
      * Creates precompute table for an arbitrary EC point. Makes point "cached".
@@ -6455,7 +6455,7 @@ function weierstrass(curveDef) {
     const fpl = Fp.BYTES;
     const compLen = fpl + 1;
     const uncompLen = 2 * fpl + 1;
-    if (CURVE.allowedPrivateKeyLengths || nByteLength === compLen) {
+    if (CURVE2.allowedPrivateKeyLengths || nByteLength === compLen) {
       return void 0;
     } else {
       return len === compLen || len === uncompLen;
@@ -6469,14 +6469,14 @@ function weierstrass(curveDef) {
     const b = Point2.fromHex(publicB);
     return b.multiply(normPrivateKeyToScalar(privateA)).toRawBytes(isCompressed);
   }
-  const bits2int = CURVE.bits2int || function(bytes2) {
+  const bits2int = CURVE2.bits2int || function(bytes2) {
     if (bytes2.length > 8192)
       throw new Error("input is too large");
     const num2 = bytesToNumberBE(bytes2);
     const delta = bytes2.length * 8 - nBitLength;
     return delta > 0 ? num2 >> BigInt(delta) : num2;
   };
-  const bits2int_modN = CURVE.bits2int_modN || function(bytes2) {
+  const bits2int_modN = CURVE2.bits2int_modN || function(bytes2) {
     return modN2(bits2int(bytes2));
   };
   const ORDER_MASK = bitMask(nBitLength);
@@ -6487,7 +6487,7 @@ function weierstrass(curveDef) {
   function prepSig(msgHash, privateKey, opts = defaultSigOpts) {
     if (["recovered", "canonical"].some((k) => k in opts))
       throw new Error("sign() legacy options not supported");
-    const { hash: hash3, randomBytes: randomBytes2 } = CURVE;
+    const { hash: hash3, randomBytes: randomBytes2 } = CURVE2;
     let { lowS, prehash, extraEntropy: ent } = opts;
     if (lowS == null)
       lowS = true;
@@ -6526,11 +6526,11 @@ function weierstrass(curveDef) {
     }
     return { seed, k2sig };
   }
-  const defaultSigOpts = { lowS: CURVE.lowS, prehash: false };
-  const defaultVerOpts = { lowS: CURVE.lowS, prehash: false };
+  const defaultSigOpts = { lowS: CURVE2.lowS, prehash: false };
+  const defaultVerOpts = { lowS: CURVE2.lowS, prehash: false };
   function sign2(msgHash, privKey, opts = defaultSigOpts) {
     const { seed, k2sig } = prepSig(msgHash, privKey, opts);
-    const C2 = CURVE;
+    const C2 = CURVE2;
     const drbg = createHmacDrbg(C2.hash.outputLen, C2.nByteLength, C2.hmac);
     return drbg(seed, k2sig);
   }
@@ -6574,7 +6574,7 @@ function weierstrass(curveDef) {
     if (lowS && _sig.hasHighS())
       return false;
     if (prehash)
-      msgHash = CURVE.hash(msgHash);
+      msgHash = CURVE2.hash(msgHash);
     const { r, s } = _sig;
     const h2 = bits2int_modN(msgHash);
     const is = invN(s);
@@ -6587,7 +6587,7 @@ function weierstrass(curveDef) {
     return v === r;
   }
   return {
-    CURVE,
+    CURVE: CURVE2,
     getPublicKey,
     getSharedSecret,
     sign: sign2,
@@ -7310,8 +7310,8 @@ function getEncodableList(list) {
         else
           cursor.pushUint32(bodyLength);
       }
-      for (const { encode: encode4 } of list) {
-        encode4(cursor);
+      for (const { encode: encode5 } of list) {
+        encode5(cursor);
       }
     }
   };
@@ -15874,7 +15874,7 @@ var init_AbiParameters = __esm({
     init_cursor3();
     init_Solidity();
     (function(encodePacked2) {
-      function encode4(type, value, isArray = false) {
+      function encode5(type, value, isArray = false) {
         if (type === "address") {
           const address = value;
           assert4(address);
@@ -15910,7 +15910,7 @@ var init_AbiParameters = __esm({
           const [_type, childType] = arrayMatch;
           const data = [];
           for (let i = 0; i < value.length; i++) {
-            data.push(encode4(childType, value[i], true));
+            data.push(encode5(childType, value[i], true));
           }
           if (data.length === 0)
             return "0x";
@@ -15918,7 +15918,7 @@ var init_AbiParameters = __esm({
         }
         throw new InvalidTypeError(type);
       }
-      encodePacked2.encode = encode4;
+      encodePacked2.encode = encode5;
     })(encodePacked || (encodePacked = {}));
     DataSizeTooSmallError = class extends BaseError3 {
       constructor({ data, parameters, size: size5 }) {
@@ -16052,8 +16052,8 @@ function getEncodableList2(list) {
         else
           cursor.pushUint32(bodyLength);
       }
-      for (const { encode: encode4 } of list) {
-        encode4(cursor);
+      for (const { encode: encode5 } of list) {
+        encode5(cursor);
       }
     }
   };
@@ -20294,8 +20294,10 @@ var init_esm = __esm({
     init_http2();
     init_address2();
     init_contract();
+    init_decodeAbiParameters();
     init_decodeFunctionData();
     init_decodeFunctionResult();
+    init_encodeAbiParameters();
     init_encodeFunctionData();
     init_getAddress();
     init_getContractAddress();
@@ -20963,12 +20965,12 @@ async function useWallet(C2, provider, { quiet = false } = {}) {
   return { w, account };
 }
 async function send(C2, W, calls) {
-  const encode4 = (cs) => encodeFunctionData({ abi: MULTICALL_ABI, functionName: "aggregate3", args: [cs] });
-  const data = encode4(calls), to = C2.cfg.multicall, account = W.account;
+  const encode5 = (cs) => encodeFunctionData({ abi: MULTICALL_ABI, functionName: "aggregate3", args: [cs] });
+  const data = encode5(calls), to = C2.cfg.multicall, account = W.account;
   await C2.pc.call({ account, to, data });
   let gas;
   try {
-    gas = await C2.pc.estimateGas({ account, to, data: encode4(calls.map((c) => ({ ...c, allowFailure: false }))) });
+    gas = await C2.pc.estimateGas({ account, to, data: encode5(calls.map((c) => ({ ...c, allowFailure: false }))) });
   } catch {
     gas = await C2.pc.estimateGas({ account, to, data }) + 300000n;
   }
@@ -21229,6 +21231,281 @@ var init_blockies = __esm({
   }
 });
 
+// src/qr.mjs
+function segmentBits(seg) {
+  const out = [], put = (val, len) => {
+    for (let i = len - 1; i >= 0; i--) out.push(val >>> i & 1);
+  };
+  if (seg.mode === "byte") {
+    for (const b of new TextEncoder().encode(seg.text)) put(b, 8);
+    return { bits: out, count: new TextEncoder().encode(seg.text).length };
+  }
+  const t = seg.text;
+  for (let i = 0; i < t.length; i += 2) {
+    const a = ALNUM.indexOf(t[i]);
+    if (a < 0) throw new Error(`not alphanumeric: ${JSON.stringify(t[i])}`);
+    if (i + 1 < t.length) {
+      const b = ALNUM.indexOf(t[i + 1]);
+      if (b < 0) throw new Error(`not alphanumeric: ${JSON.stringify(t[i + 1])}`);
+      put(a * 45 + b, 11);
+    } else put(a, 6);
+  }
+  return { bits: out, count: t.length };
+}
+function mul2(x, y) {
+  let z = 0;
+  for (let i = 7; i >= 0; i--) {
+    z = z << 1 ^ (z >>> 7) * 285;
+    z ^= (y >>> i & 1) * x;
+  }
+  return z;
+}
+function divisor(degree) {
+  const r = Array(degree - 1).fill(0).concat([1]);
+  let root = 1;
+  for (let i = 0; i < degree; i++) {
+    for (let j = 0; j < r.length; j++) {
+      r[j] = mul2(r[j], root);
+      if (j + 1 < r.length) r[j] ^= r[j + 1];
+    }
+    root = mul2(root, 2);
+  }
+  return r;
+}
+function remainder(data, div) {
+  const r = div.map(() => 0);
+  for (const b of data) {
+    const f = b ^ r.shift();
+    r.push(0);
+    div.forEach((c, i) => {
+      r[i] ^= mul2(c, f);
+    });
+  }
+  return r;
+}
+function encode4(segments, { ecl = "L", mask = -1 } = {}) {
+  const e = ECL[ecl];
+  const parts = segments.map((s) => ({ ...segmentBits(s), mode: MODES[s.mode] }));
+  let version4 = 0, bits = null;
+  for (let v = 1; v <= 40; v++) {
+    const cc2 = Math.floor((v + 7) / 17);
+    if (parts.some((p) => p.count >= 1 << p.mode.count[cc2])) continue;
+    const total = parts.reduce((n, p) => n + 4 + p.mode.count[cc2] + p.bits.length, 0);
+    if (total <= dataCodewords(v, e) * 8) {
+      version4 = v;
+      break;
+    }
+  }
+  if (!version4) return null;
+  const cc = Math.floor((version4 + 7) / 17), cap = dataCodewords(version4, e) * 8;
+  bits = [];
+  const put = (val, len) => {
+    for (let i2 = len - 1; i2 >= 0; i2--) bits.push(val >>> i2 & 1);
+  };
+  for (const p of parts) {
+    put(p.mode.bits, 4);
+    put(p.count, p.mode.count[cc]);
+    bits.push(...p.bits);
+  }
+  put(0, Math.min(4, cap - bits.length));
+  put(0, (8 - bits.length % 8) % 8);
+  for (let pad4 = 236; bits.length < cap; pad4 ^= 236 ^ 17) put(pad4, 8);
+  const data = [];
+  for (let i2 = 0; i2 < bits.length; i2 += 8) data.push(bits.slice(i2, i2 + 8).reduce((a, b) => a << 1 | b, 0));
+  const nBlocks = BLOCKS[e][version4], eccLen = ECC_PER_BLOCK[e][version4], raw = Math.floor(rawModules(version4) / 8);
+  const nShort = nBlocks - raw % nBlocks, shortLen = Math.floor(raw / nBlocks), div = divisor(eccLen);
+  const blocks = [];
+  for (let i2 = 0, k = 0; i2 < nBlocks; i2++) {
+    const dat = data.slice(k, k + shortLen - eccLen + (i2 < nShort ? 0 : 1));
+    k += dat.length;
+    const ecc = remainder(dat, div);
+    if (i2 < nShort) dat.push(0);
+    blocks.push(dat.concat(ecc));
+  }
+  const codewords = [];
+  for (let i2 = 0; i2 < blocks[0].length; i2++) {
+    blocks.forEach((b, j) => {
+      if (i2 !== shortLen - eccLen || j >= nShort) codewords.push(b[i2]);
+    });
+  }
+  const size5 = version4 * 4 + 17;
+  const m = Array.from({ length: size5 }, () => Array(size5).fill(false));
+  const fn = Array.from({ length: size5 }, () => Array(size5).fill(false));
+  const set = (x, y, dark) => {
+    m[y][x] = dark;
+    fn[y][x] = true;
+  };
+  for (let i2 = 0; i2 < size5; i2++) {
+    set(6, i2, i2 % 2 === 0);
+    set(i2, 6, i2 % 2 === 0);
+  }
+  const finder = (x, y) => {
+    for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) {
+      const d = Math.max(Math.abs(dx), Math.abs(dy)), xx = x + dx, yy = y + dy;
+      if (xx >= 0 && xx < size5 && yy >= 0 && yy < size5) set(xx, yy, d !== 2 && d !== 4);
+    }
+  };
+  finder(3, 3);
+  finder(size5 - 4, 3);
+  finder(3, size5 - 4);
+  const align = [];
+  if (version4 > 1) {
+    const n = Math.floor(version4 / 7) + 2, step2 = Math.floor((version4 * 8 + n * 3 + 5) / (n * 4 - 4)) * 2;
+    for (let pos = size5 - 7; align.length < n - 1; pos -= step2) align.unshift(pos);
+    align.unshift(6);
+  }
+  align.forEach((ay, i2) => align.forEach((ax, j) => {
+    if (i2 === 0 && j === 0 || i2 === 0 && j === align.length - 1 || i2 === align.length - 1 && j === 0) return;
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) set(ax + dx, ay + dy, Math.max(Math.abs(dx), Math.abs(dy)) !== 1);
+  }));
+  const format2 = (mk) => {
+    const d = FORMAT_BITS[e] << 3 | mk;
+    let r = d;
+    for (let i2 = 0; i2 < 10; i2++) r = r << 1 ^ (r >>> 9) * 1335;
+    const b = (d << 10 | r) ^ 21522, bit = (i2) => (b >>> i2 & 1) === 1;
+    for (let i2 = 0; i2 <= 5; i2++) set(8, i2, bit(i2));
+    set(8, 7, bit(6));
+    set(8, 8, bit(7));
+    set(7, 8, bit(8));
+    for (let i2 = 9; i2 < 15; i2++) set(14 - i2, 8, bit(i2));
+    for (let i2 = 0; i2 < 8; i2++) set(size5 - 1 - i2, 8, bit(i2));
+    for (let i2 = 8; i2 < 15; i2++) set(8, size5 - 15 + i2, bit(i2));
+    set(8, size5 - 8, true);
+  };
+  format2(0);
+  if (version4 >= 7) {
+    let r = version4;
+    for (let i2 = 0; i2 < 12; i2++) r = r << 1 ^ (r >>> 11) * 7973;
+    const b = version4 << 12 | r;
+    for (let i2 = 0; i2 < 18; i2++) {
+      const dark = (b >>> i2 & 1) === 1, a = size5 - 11 + i2 % 3, c = Math.floor(i2 / 3);
+      set(a, c, dark);
+      set(c, a, dark);
+    }
+  }
+  let i = 0;
+  for (let right = size5 - 1; right >= 1; right -= 2) {
+    if (right === 6) right = 5;
+    for (let vert = 0; vert < size5; vert++) for (let j = 0; j < 2; j++) {
+      const x = right - j, up = (right + 1 & 2) === 0, y = up ? size5 - 1 - vert : vert;
+      if (!fn[y][x] && i < codewords.length * 8) {
+        m[y][x] = (codewords[i >>> 3] >>> 7 - (i & 7) & 1) === 1;
+        i++;
+      }
+    }
+  }
+  const flip = (mk) => {
+    for (let y = 0; y < size5; y++) for (let x = 0; x < size5; x++) {
+      if (fn[y][x]) continue;
+      const inv2 = [
+        (x + y) % 2,
+        y % 2,
+        x % 3,
+        (x + y) % 3,
+        (Math.floor(x / 3) + Math.floor(y / 2)) % 2,
+        x * y % 2 + x * y % 3,
+        (x * y % 2 + x * y % 3) % 2,
+        ((x + y) % 2 + x * y % 3) % 2
+      ][mk] === 0;
+      if (inv2) m[y][x] = !m[y][x];
+    }
+  };
+  if (mask < 0) {
+    let best = Infinity;
+    for (let k = 0; k < 8; k++) {
+      flip(k);
+      format2(k);
+      const p = penalty(m, size5);
+      if (p < best) {
+        best = p;
+        mask = k;
+      }
+      flip(k);
+    }
+  }
+  flip(mask);
+  format2(mask);
+  return { version: version4, mask, size: size5, modules: m };
+}
+function penalty(m, size5) {
+  let score = 0;
+  const lines = (get) => {
+    for (let a = 0; a < size5; a++) {
+      let color = false, run2 = 0;
+      const hist = [0, 0, 0, 0, 0, 0, 0];
+      const add2 = (len) => {
+        if (hist[0] === 0) len += size5;
+        hist.pop();
+        hist.unshift(len);
+      };
+      const count = () => {
+        const n = hist[1], core = n > 0 && hist[2] === n && hist[3] === n * 3 && hist[4] === n && hist[5] === n;
+        return (core && hist[0] >= n * 4 && hist[6] >= n ? 1 : 0) + (core && hist[6] >= n * 4 && hist[0] >= n ? 1 : 0);
+      };
+      for (let b = 0; b < size5; b++) {
+        if (get(a, b) === color) {
+          run2++;
+          if (run2 === 5) score += 3;
+          else if (run2 > 5) score++;
+        } else {
+          add2(run2);
+          if (!color) score += count() * 40;
+          color = get(a, b);
+          run2 = 1;
+        }
+      }
+      if (color) {
+        add2(run2);
+        run2 = 0;
+      }
+      run2 += size5;
+      add2(run2);
+      score += count() * 40;
+    }
+  };
+  lines((y, x) => m[y][x]);
+  lines((x, y) => m[y][x]);
+  let dark = 0;
+  for (let y = 0; y < size5; y++) for (let x = 0; x < size5; x++) {
+    if (m[y][x]) dark++;
+    if (y < size5 - 1 && x < size5 - 1 && m[y][x] === m[y][x + 1] && m[y][x] === m[y + 1][x] && m[y][x] === m[y + 1][x + 1]) score += 3;
+  }
+  const total = size5 * size5;
+  score += (Math.ceil(Math.abs(dark * 20 - total * 10) / total) - 1) * 10;
+  return score;
+}
+var ECL, FORMAT_BITS, ECC_PER_BLOCK, BLOCKS, ALNUM, MODES, rawModules, dataCodewords;
+var init_qr = __esm({
+  "src/qr.mjs"() {
+    ECL = { L: 0, M: 1, Q: 2, H: 3 };
+    FORMAT_BITS = [1, 0, 3, 2];
+    ECC_PER_BLOCK = [
+      [-1, 7, 10, 15, 20, 26, 18, 20, 24, 30, 18, 20, 24, 26, 30, 22, 24, 28, 30, 28, 28, 28, 28, 30, 30, 26, 28, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30],
+      [-1, 10, 16, 26, 18, 24, 16, 18, 22, 22, 26, 30, 22, 22, 24, 24, 28, 28, 26, 26, 26, 26, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28],
+      [-1, 13, 22, 18, 26, 18, 24, 18, 22, 20, 24, 28, 26, 24, 20, 30, 24, 28, 28, 26, 30, 28, 30, 30, 30, 30, 28, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30],
+      [-1, 17, 28, 22, 16, 22, 28, 26, 26, 24, 28, 24, 28, 22, 24, 24, 30, 28, 28, 26, 28, 30, 24, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30]
+    ];
+    BLOCKS = [
+      [-1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 4, 4, 4, 4, 4, 6, 6, 6, 6, 7, 8, 8, 9, 9, 10, 12, 12, 12, 13, 14, 15, 16, 17, 18, 19, 19, 20, 21, 22, 24, 25],
+      [-1, 1, 1, 1, 2, 2, 4, 4, 4, 5, 5, 5, 8, 9, 9, 10, 10, 11, 13, 14, 16, 17, 17, 18, 20, 21, 23, 25, 26, 28, 29, 31, 33, 35, 37, 38, 40, 43, 45, 47, 49],
+      [-1, 1, 1, 2, 2, 4, 4, 6, 6, 8, 8, 8, 10, 12, 16, 12, 17, 16, 18, 21, 20, 23, 23, 25, 27, 29, 34, 34, 35, 38, 40, 43, 45, 48, 51, 53, 56, 59, 62, 65, 68],
+      [-1, 1, 1, 2, 4, 4, 4, 5, 6, 8, 8, 11, 11, 16, 16, 18, 16, 19, 21, 25, 25, 25, 34, 30, 32, 35, 37, 40, 42, 45, 48, 51, 54, 57, 60, 63, 66, 70, 74, 77, 81]
+    ];
+    ALNUM = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
+    MODES = { byte: { bits: 4, count: [8, 16, 16] }, alnum: { bits: 2, count: [9, 11, 13] } };
+    rawModules = (v) => {
+      let n = (16 * v + 128) * v + 64;
+      if (v >= 2) {
+        const align = Math.floor(v / 7) + 2;
+        n -= (25 * align - 10) * align - 55;
+        if (v >= 7) n -= 36;
+      }
+      return n;
+    };
+    dataCodewords = (v, e) => Math.floor(rawModules(v) / 8) - ECC_PER_BLOCK[e][v] * BLOCKS[e][v];
+  }
+});
+
 // src/ui.mjs
 function el(tag, props = {}, ...kids) {
   const e = document.createElement(tag);
@@ -21340,11 +21617,47 @@ function reviewParts(r, safe, tx, label) {
     ))
   ];
 }
-var C, useChain, $, short, eth, rows, txLink;
+function qrToggle(what) {
+  const segs = typeof what === "string" ? [{ mode: "byte", text: what }] : what;
+  const text = segs ? segs.map((g) => g.text).join("") : "";
+  const key = text || "(too long)", open = qrOpen.has(key);
+  const box = el("div", { class: "qr" });
+  if (open && !segs) box.append(el("p", { class: "small" }, "Too long for a QR code. Copy the link instead."));
+  else if (open) {
+    let q = qrMade.get(text);
+    if (!q) {
+      q = encode4(segs);
+      if (qrMade.size > 8) qrMade.clear();
+      qrMade.set(text, q);
+    }
+    if (!q) box.append(el("p", { class: "small" }, "Too long for a QR code. Copy the link instead."));
+    else {
+      const scale = q.size > 100 ? 4 : 8, n = (q.size + 8) * scale;
+      const c = el("canvas", { width: n, height: n, class: q.size > 100 ? "qr-code dense" : "qr-code", role: "img", "aria-label": "A QR code of the link", "data-text": text });
+      const ctx = c.getContext("2d");
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, n, n);
+      ctx.fillStyle = "#000";
+      q.modules.forEach((row, y) => row.forEach((dark, x) => {
+        if (dark) ctx.fillRect((x + 4) * scale, (y + 4) * scale, scale, scale);
+      }));
+      box.append(c, el("p", { class: "small" }, q.size > 100 ? `A dense code (version ${q.version}, ${q.size} × ${q.size}). Show it large, on a computer's screen say, and hold the camera steady.` : "Point the other device's camera at it."));
+    }
+  }
+  const btn = el("button", { type: "button", class: "link", "aria-expanded": String(open), onclick: () => {
+    if (qrOpen.has(key)) qrOpen.delete(key);
+    else qrOpen.add(key);
+    wrap3.replaceWith(qrToggle(what));
+  } }, open ? "Hide QR code" : "Show QR code");
+  const wrap3 = el("div", { class: "qr-wrap" }, btn, box);
+  return wrap3;
+}
+var C, useChain, $, short, eth, rows, txLink, qrOpen, qrMade;
 var init_ui = __esm({
   "src/ui.mjs"() {
     init_esm();
     init_blockies();
+    init_qr();
     C = null;
     useChain = (c) => {
       C = c;
@@ -21354,6 +21667,8 @@ var init_ui = __esm({
     eth = (wei) => `${Number(formatEther2(wei)).toLocaleString("en-US", { maximumFractionDigits: 6 })} ETH`;
     rows = (pairs) => el("dl", { class: "rows" }, ...pairs.filter(Boolean).map(([k, v]) => el("div", {}, el("dt", {}, k), el("dd", {}, v))));
     txLink = (h2) => C?.explorer ? el("a", { href: `${C.explorer}/tx/${h2}`, target: "_blank", rel: "noopener noreferrer", class: "mono" }, short(h2, 10, 6)) : el("span", { class: "mono" }, short(h2, 10, 6));
+    qrOpen = /* @__PURE__ */ new Set();
+    qrMade = /* @__PURE__ */ new Map();
   }
 });
 
@@ -21436,6 +21751,7 @@ function approvalLink(C2, n, a, tx, base) {
   return `${base}#${q}`;
 }
 function fromLink(hash3, C2) {
+  if (/^#?aq=/.test(String(hash3 || ""))) return approvalQrFrom(String(hash3).replace(/^#?aq=/, ""), C2);
   const q = new URLSearchParams(String(hash3 || "").replace(/^#/, ""));
   if (!q.has("pay")) return null;
   const tag = q.get("pay");
@@ -21443,6 +21759,125 @@ function fromLink(hash3, C2) {
   const chain = Number(q.get("chain"));
   if (chain !== C2.id) return { refuse: `This link is for chain ${String(q.get("chain")).slice(0, 12)}. This page works on ${C2.chain.name} (${C2.id}) only.` };
   return tag === TAG ? buildFrom(q, chain) : approvalFrom(q, chain);
+}
+function base43(bytes2) {
+  let out = "";
+  for (let i = 0; i < bytes2.length; i += 2) {
+    let v = i + 1 < bytes2.length ? bytes2[i] * 256 + bytes2[i + 1] : bytes2[i];
+    const n = i + 1 < bytes2.length ? 3 : 2;
+    for (let k = 0; k < n; k++) {
+      out += B43[v % 43];
+      v = Math.floor(v / 43);
+    }
+  }
+  return out;
+}
+function unbase43(s) {
+  if (s.length % 3 === 1) return null;
+  const out = [];
+  for (let i = 0; i < s.length; i += 3) {
+    const part = s.slice(i, i + 3), digits2 = [...part].map((c) => B43.indexOf(c));
+    if (digits2.some((d) => d < 0)) return null;
+    const v = digits2.reduceRight((a, d) => a * 43 + d, 0);
+    if (part.length === 3) {
+      if (v > 65535) return null;
+      out.push(v >> 8, v & 255);
+    } else {
+      if (v > 255) return null;
+      out.push(v);
+    }
+  }
+  return Uint8Array.from(out);
+}
+function approvalQr(C2, n, a, tx, base) {
+  let parts;
+  try {
+    parts = decodeAbiParameters(CURVE, a.curveSig);
+  } catch {
+    return null;
+  }
+  if (encodeAbiParameters(CURVE, parts).toLowerCase() !== a.curveSig.toLowerCase()) return null;
+  const [ad, fields, r, s] = parts;
+  const out = [];
+  const put = (hex3) => out.push(...hexToBytes(hex3));
+  const int = (v, len) => {
+    const h2 = BigInt(v).toString(16).padStart(len * 2, "0");
+    if (h2.length > len * 2) throw new Error("too big");
+    put("0x" + h2);
+  };
+  const bytes2 = (b, lenBytes) => {
+    int(b.length, lenBytes);
+    out.push(...b);
+  };
+  const num2 = (v) => {
+    const h2 = BigInt(v).toString(16), b = BigInt(v) ? hexToBytes("0x" + (h2.length % 2 ? "0" : "") + h2) : new Uint8Array();
+    bytes2(b, 1);
+  };
+  out.push(1);
+  int(C2.id, 4);
+  put(a.seat);
+  put(a.safe);
+  int(n, 8);
+  put(a.nextKey);
+  for (const v of a.oneTime) put(v);
+  put(tx.to);
+  num2(tx.value);
+  out.push(Number(tx.operation));
+  num2(tx.nonce);
+  bytes2(hexToBytes(tx.data || "0x"), 2);
+  bytes2(hexToBytes(ad), 2);
+  bytes2(new TextEncoder().encode(fields), 2);
+  int(r, 32);
+  int(s, 32);
+  const prefix = `${base}#aq=`, rest = base43(Uint8Array.from(out));
+  return { link: prefix + rest, segments: [{ mode: "byte", text: prefix }, { mode: "alnum", text: rest }] };
+}
+function approvalQrFrom(s, C2) {
+  const again = " Ask for the code again.", b = unbase43(decodeURIComponent(s.replace(/%(?![0-9A-Fa-f]{2})/g, "%25")));
+  if (!b || b[0] !== 1) return { refuse: `This code isn't a ${APPROVAL_QR_TAG} approval.` + again };
+  let i = 1;
+  const take = (n) => {
+    if (i + n > b.length) throw new Error("short");
+    const x = b.slice(i, i + n);
+    i += n;
+    return x;
+  };
+  const hex3 = (n) => bytesToHex(take(n));
+  const int = (n) => BigInt(hex3(n));
+  const lenThen = (lenBytes, max) => {
+    const n = Number(int(lenBytes));
+    if (n > max) throw new Error("long");
+    return take(n);
+  };
+  const num2 = () => {
+    const x = lenThen(1, 32);
+    return x.length ? BigInt(bytesToHex(x)).toString() : "0";
+  };
+  try {
+    const chain = Number(int(4));
+    if (chain !== C2.id) return { refuse: `This code is for chain ${chain}. This page works on ${C2.chain.name} (${C2.id}) only.` };
+    const seat = hex3(20), safe = hex3(20), n = int(8), nextKey = hex3(32);
+    if (n > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error("n");
+    const oneTime = Array.from({ length: 67 }, () => hex3(32));
+    const to = hex3(20), value = num2(), operation = take(1)[0], nonce = num2(), data = bytesToHex(lenThen(2, 8192));
+    if (operation > 1) return { refuse: "This code's operation is neither a call nor a delegatecall." + again };
+    const ad = bytesToHex(lenThen(2, 1024)), fields = new TextDecoder("utf-8", { fatal: true }).decode(lenThen(2, 2048)), r = int(32), sv = int(32);
+    if (i !== b.length) throw new Error("trailing bytes");
+    const curveSig = encodeAbiParameters(CURVE, [ad, fields, r, sv]);
+    return { req: {
+      tag: APPROVAL_TAG,
+      chain,
+      seat,
+      safe,
+      n: Number(n),
+      nextKey,
+      oneTime,
+      curveSig,
+      tx: { to, value, data, operation, nonce }
+    } };
+  } catch {
+    return { refuse: "This code's approval isn't whole, or has bytes it shouldn't." + again };
+  }
 }
 function proposalLink(C2, safe, tx, base) {
   const q = new URLSearchParams({
@@ -21518,7 +21953,7 @@ async function resolve(C2, req) {
   const calls = built ? [] : await buildCalls(C2, { pk, signer, seatNumber: req.seatNumber, firstKey: req.firstKey, seat });
   return { signer, seat, safe, built, calls };
 }
-var TAG, APPROVAL_TAG, PROPOSAL_TAG, HEX32, ADDR, UINT, ONE_TIME, b64, request;
+var TAG, APPROVAL_TAG, PROPOSAL_TAG, APPROVAL_QR_TAG, HEX32, ADDR, UINT, ONE_TIME, b64, request, B43, CURVE;
 var init_pay = __esm({
   "src/pay.mjs"() {
     init_esm();
@@ -21526,6 +21961,7 @@ var init_pay = __esm({
     TAG = "sign-and-burn/build/v1";
     APPROVAL_TAG = "sign-and-burn/approval/v1";
     PROPOSAL_TAG = "sign-and-burn/proposal/v1";
+    APPROVAL_QR_TAG = "sign-and-burn/approval-qr/v1";
     HEX32 = /^[0-9a-f]{64}$/;
     ADDR = /^0x[0-9a-f]{40}$/;
     UINT = /^(0|[1-9]\d{0,77})$/;
@@ -21539,6 +21975,8 @@ var init_pay = __esm({
       seatNumber: home2.seatNumber,
       firstKey: home2.firstKey.toLowerCase()
     });
+    B43 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ$*+-./:";
+    CURVE = parseAbiParameters("bytes authenticatorData, string clientDataFields, uint256 r, uint256 s");
   }
 });
 
@@ -21804,10 +22242,14 @@ async function voteSeat(tx) {
     const nonceBefore = S.safe.nonce;
     if (Number(tx.nonce) >= S.safe.nonce) keepProposal(tx);
     const others = S.votes.filter((v) => v.toLowerCase() !== S.seat.address.toLowerCase());
-    const got = await approve2({ C: S.C, pk: S.pk, seat: S.seat, safe: S.safe, tx, wallet: S.wallet, others, say });
+    const got = await approve2({ C: S.C, pk: S.pk, seat: S.seat, safe: S.safe, tx, wallet: canPay() ? S.wallet : null, others, say });
     S.draft = null;
     S.acks = {};
     await refresh();
+    if (!got.hash) {
+      S.flash = `Key ${got.n} signed it. Now send it from a device with a wallet: copy the link below.`;
+      return;
+    }
     const ran = S.safe.nonce > nonceBefore;
     S.flash = el("span", {}, `Key ${got.n}: signed, sent, burned. ` + (got.theirs ? "Someone copied the approval and sent it first: it can do only what you signed. " : "") + (ran ? "The Safe ran it. " : Number(tx.nonce) < nonceBefore ? "The Safe had moved past this transaction, so it ran nothing; the seat is at the next key now. " : `The seat's vote is on chain. The Safe runs it once ${S.safe.threshold} owners have approved. `), txLink(got.hash));
   });
@@ -22021,6 +22463,7 @@ function safesCard() {
     el("p", { class: "small" }, "Your seat's address. Another Safe adds this as an owner, and then your passkey can approve for it too:"),
     el("input", { class: "mono share-link", readonly: true, value: S.home.seat, "aria-label": "Your seat's address", onfocus: (e) => e.target.select() }),
     el("div", { class: "actions" }, el("button", { type: "button", onclick: () => copy(S.home.seat, "Copied your seat's address.") }, "Copy your seat's address")),
+    qrToggle(S.home.seat),
     el(
       "details",
       {},
@@ -22114,9 +22557,8 @@ function approvalCard() {
   const needRed = red ? ["red"] : [];
   if ((!seatVoted || overtaken) && S.seatOwns && !wElse) {
     const label = w ? `Hold to send approval ${w.n} again` : `Hold to approve with key ${n}`;
-    if (!S.wallet) buttons.push(el("span", { class: "small" }, "Connect a wallet to pay the seat's gas, or send it from ", el("a", { href: "./" }, "the main page"), " by link."));
-    else if (!canPay()) buttons.push(el("span", { class: "small" }, `${S.wallet.name}'s account has no ETH for the seat's gas.`));
-    else buttons.push(gated(holdButton(label, () => voteSeat(tx), { red }), [...needRed, ...elsewhere && !w ? ["elsewhere"] : []]));
+    if (canPay() || !w) buttons.push(gated(holdButton(label, () => voteSeat(tx), { red }), [...needRed, ...elsewhere && !w ? ["elsewhere"] : []]));
+    if (S.wallet && !canPay()) buttons.push(el("span", { class: "small" }, `${S.wallet.name}'s account has no ETH for gas.`));
   }
   const mineToo = S.wallet && isOwner(S.wallet.account) && !S.votes.some((v) => v.toLowerCase() === S.wallet.account.toLowerCase());
   if (mineToo && !overtaken && !w && count < t) {
@@ -22133,21 +22575,40 @@ function approvalCard() {
     rejectButton()
   ));
   if (elsewhere && !w && !seatVoted) out.push(el("p", { class: "note" }, `Another device made this seat, and this browser has no record of what its keys signed. If that device signed with key ${n} and its transaction is still pending, signing here would be key ${n}'s second signature: enough to forge a third. Check there first, and use one device per seat.`));
-  if (!overtaken && count < t) {
+  const mine_ = (S.seatOwns && !seatVoted && !wElse ? 1 : 0) + (mineToo && !w ? 1 : 0);
+  const askable = S.owners.some((o) => !o.yours && !same(o.address, S.wallet?.account) && !S.votes.some((v) => same(v, o.address)));
+  if (w) out.push(approvalShare(w, overtaken));
+  if (!overtaken && count < t && askable) {
     const link = proposalLink(S.C, S.safe.address, tx, location.origin + location.pathname);
     out.push(el(
       "div",
       { class: "share" },
-      el("h4", {}, "Ask another owner"),
+      el("h4", {}, count + mine_ >= t ? "Or ask another owner" : "Ask another owner"),
       el("p", { class: "small" }, `Send this link to another owner's device: a seat's, or a wallet's. Its console works out the hash itself, and its code should read ${r.verify}. It sees the votes cast so far on chain. The link holds the transaction, and nothing signed.`),
       el("input", { class: "mono share-link", readonly: true, value: link, "aria-label": "The link", onfocus: (e) => e.target.select() }),
-      el("div", { class: "actions" }, el("button", { type: "button", disabled: !!S.busy, onclick: () => copy(link, "Link copied. This page shows the new votes as they land.") }, "Copy link"))
+      el("div", { class: "actions" }, el("button", { type: "button", disabled: !!S.busy, onclick: () => copy(link, "Link copied. This page shows the new votes as they land.") }, "Copy link")),
+      qrToggle(link)
     ));
   }
   if (w && !overtaken) out.push(el("p", { class: "small" }, `Key ${w.n} already signed this approval. One signature per key, ever: the console will only send this same one again. No tap needed.`));
-  else if (!seatVoted && !overtaken) out.push(el("p", { class: "small" }, `Holding asks your passkey once. The console signs with key ${n}, burns it and names key ${n + 1}. Your wallet pays the gas.`));
+  else if (!seatVoted && !overtaken && S.seatOwns && !wElse) out.push(
+    el("p", { class: "small" }, `Holding asks your passkey once. The console signs with key ${n}, burns it and names key ${n + 1}. ` + (canPay() ? "Your wallet pays the gas." : `${S.wallet ? "No gas in that wallet" : "No wallet here"}: you then share the approval as a link, and a wallet on another device sends it. It pays the gas and approves nothing.`)),
+    S.wallet ? null : el("div", { class: "actions" }, el("button", { class: "link", type: "button", disabled: !!S.busy, onclick: connectWallet }, "I have a wallet in this browser"))
+  );
   if (mineToo && !overtaken && !w && count < t) out.push(el("p", { class: "small" }, "Your wallet votes with its own key, the curve key a broken curve would forge. It shows that key's public half on chain, if it wasn't already."));
   return out;
+}
+function approvalShare(w, overtaken) {
+  const link = approvalLink(S.C, w.n, w.approval, w.tx, new URL("./", location.href).href);
+  return el(
+    "div",
+    { class: "share" },
+    el("h4", {}, canPay() ? "Or send it from another device" : `Approval ${w.n} is signed. Send it from another device`),
+    el("p", { class: "small" }, `Copy this link to a device with a wallet on ${S.C.chain.name} and a little ETH for gas. It opens on the main page, which works out the hash itself (its code should read ${S.review.verify}), asks the seat, and sends it. ${overtaken ? "It will run nothing, and moves the seat to the next key. " : ""}This page moves on once it lands. Until then key ${w.n} sends nothing else.`),
+    el("input", { class: "mono share-link", readonly: true, value: link, "aria-label": "The link", onfocus: (e) => e.target.select() }),
+    el("div", { class: "actions" }, el("button", { class: canPay() ? "" : "go", type: "button", disabled: !!S.busy, onclick: () => copy(link, "Link copied. This page moves on once the approval lands.") }, "Copy link")),
+    qrToggle(approvalQr(S.C, w.n, w.approval, w.tx, new URL("./", location.href).href)?.segments ?? null)
+  );
 }
 function rejectButton() {
   if (S.current?.locked) return null;
@@ -22863,6 +23324,7 @@ function fundShareBox(disabled) {
       el("button", { type: "button", disabled, onclick: copySafe }, "Copy the Safe's address"),
       faucets()
     ),
+    qrToggle(buildLink()),
     S2.shared ? el("p", { class: "small", role: "status" }, `${S2.shared} This page looks at the chain every few seconds.`) : null
   );
 }
@@ -22895,6 +23357,7 @@ function shareBox(first, disabled) {
       el("button", { class: first ? "go" : "", type: "button", disabled, onclick: () => copyLink(buildLink()) }, "Copy link"),
       S2.shared ? el("button", { type: "button", disabled, onclick: checkBuilt }, "Check again") : null
     ),
+    qrToggle(link),
     S2.shared ? el("p", { class: "small", role: "status" }, `${S2.shared} This page looks at the chain every few seconds.`) : null,
     el(
       "details",
@@ -23107,6 +23570,8 @@ function approvalShareBox(w, first, disabled) {
       el("button", { class: first ? "go" : "", type: "button", disabled, onclick: () => copyLink(link) }, "Copy link"),
       S2.shared ? el("button", { type: "button", disabled, onclick: checkLanded }, "Check again") : null
     ),
+    // The link is too long for a QR code; the code carries the same approval in its compact form.
+    qrToggle(approvalQr(S2.C, w.n, w.approval, w.tx, location.origin + location.pathname)?.segments ?? null),
     S2.shared ? el("p", { class: "small", role: "status" }, `${S2.shared} This page looks at the chain every few seconds.`) : null,
     el(
       "details",
